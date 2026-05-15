@@ -29,23 +29,44 @@ export const apiClient = {
     const {
       requiresAuth = true, // Changed default to true for better security
       timeout = config.api.timeout,
-      headers = {},
+      headers,
       ...fetchOptions
     } = options;
 
     const url = getApiUrl(endpoint);
-    const requestHeaders: Record<string, string> = {
+    
+    // Production-safe headers handling using Headers API
+    const requestHeaders = new Headers({
       'Content-Type': 'application/json',
-      ...headers,
-    };
+    });
+
+    // Safely merge custom headers
+    if (headers) {
+      if (headers instanceof Headers) {
+        headers.forEach((value, key) => {
+          requestHeaders.set(key, value);
+        });
+      } else if (Array.isArray(headers)) {
+        headers.forEach(([key, value]) => {
+          requestHeaders.set(key, value);
+        });
+      } else {
+        Object.entries(headers as Record<string, string>).forEach(([key, value]) => {
+          requestHeaders.set(key, value);
+        });
+      }
+    }
 
     // Add auth token if required
     if (requiresAuth) {
+      if (typeof window === 'undefined') {
+        throw new ApiError('Not authenticated', 401);
+      }
       const token = localStorage.getItem(config.storage.token);
       if (!token) {
         throw new ApiError('Not authenticated', 401);
       }
-      requestHeaders['Authorization'] = `Bearer ${token}`;
+      requestHeaders.set('Authorization', `Bearer ${token}`);
     }
 
     // Create abort controller for timeout

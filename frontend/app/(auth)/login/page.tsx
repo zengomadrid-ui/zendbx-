@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { apiFetch, getOAuthUrl } from '@/lib/fetch-utils';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -22,18 +23,15 @@ export default function LoginPage() {
       console.log('📡 Sending login request to backend...');
       console.log('📧 Email:', email);
       
-      const response = await fetch('http://localhost:8000/api/auth/login', {
+      const response = await apiFetch('api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           email: email,
           password: password,
         }),
       }).catch(fetchError => {
         console.error('❌ Network error:', fetchError);
-        throw new Error('Cannot connect to backend. Is the server running on port 8000?');
+        throw new Error('Cannot connect to backend. Is the server running?');
       });
 
       console.log('📥 Response status:', response.status);
@@ -179,7 +177,7 @@ export default function LoginPage() {
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => window.location.href = 'http://localhost:8000/api/auth/oauth/google/login'}
+              onClick={() => window.location.href = getOAuthUrl('google')}
               className="flex items-center justify-center px-4 py-2 border border-gray-700 rounded-lg text-sm font-medium text-gray-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
             >
               <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -193,7 +191,7 @@ export default function LoginPage() {
 
             <button
               type="button"
-              onClick={() => window.location.href = 'http://localhost:8000/api/auth/oauth/github/login'}
+              onClick={() => window.location.href = getOAuthUrl('github')}
               className="flex items-center justify-center px-4 py-2 border border-gray-700 rounded-lg text-sm font-medium text-gray-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
             >
               <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">

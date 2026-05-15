@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { apiFetch, getOAuthUrl } from '@/lib/fetch-utils';
 
 export default function SignupPage() {
   const [formData, setFormData] = useState({
@@ -25,11 +26,8 @@ export default function SignupPage() {
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/auth/signup', {
+      const response = await apiFetch('api/auth/signup', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
@@ -206,7 +204,7 @@ export default function SignupPage() {
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => window.location.href = 'http://localhost:8000/api/auth/oauth/google/login'}
+              onClick={() => window.location.href = getOAuthUrl('google')}
               className="flex items-center justify-center px-4 py-2 border border-gray-700 rounded-lg text-sm font-medium text-gray-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
             >
               <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -220,7 +218,7 @@ export default function SignupPage() {
 
             <button
               type="button"
-              onClick={() => window.location.href = 'http://localhost:8000/api/auth/oauth/github/login'}
+              onClick={() => window.location.href = getOAuthUrl('github')}
               className="flex items-center justify-center px-4 py-2 border border-gray-700 rounded-lg text-sm font-medium text-gray-300 bg-zinc-800 hover:bg-zinc-700 transition-colors"
             >
               <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">

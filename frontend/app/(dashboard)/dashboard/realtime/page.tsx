@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { getRealtimeWsUrl } from '@/lib/fetch-utils';
 
 interface Message {
   id: string;
@@ -45,7 +46,7 @@ export default function RealtimePage() {
       return;
     }
 
-    const newSocket = io('http://localhost:8001', {
+    const newSocket = io(getRealtimeWsUrl(), {
       transports: ['websocket'],
       reconnection: true,
       reconnectionDelay: 1000,

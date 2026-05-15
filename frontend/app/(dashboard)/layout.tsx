@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { apiFetch } from '@/lib/fetch-utils';
 
 interface User {
   id: string;
@@ -228,11 +229,7 @@ export default function DashboardLayout({
       try {
         console.log('📡 Dashboard: Fetching user data...');
         // Fetch user
-        const userResponse = await fetch('http://localhost:8000/api/auth/me', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
+        const userResponse = await apiFetch('api/auth/me');
 
         console.log('📥 Dashboard: User response status:', userResponse.status);
 
@@ -257,11 +254,7 @@ export default function DashboardLayout({
         // Check if user has projects (skip if already on onboarding page)
         if (pathname !== '/onboarding') {
           console.log('📡 Dashboard: Fetching projects...');
-          const projectsResponse = await fetch('http://localhost:8000/api/projects', {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-            },
-          });
+          const projectsResponse = await apiFetch('api/projects');
 
           console.log('📥 Dashboard: Projects response status:', projectsResponse.status);
 
@@ -302,11 +295,8 @@ export default function DashboardLayout({
               
               // Update last_selected_project_id in database if it changed
               if (userData.last_selected_project_id !== currentProject.id) {
-                fetch(`http://localhost:8000/api/auth/me/last-project/${currentProject.id}`, {
+                apiFetch(`api/auth/me/last-project/${currentProject.id}`, {
                   method: 'PUT',
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                  },
                 }).catch(err => console.error('Failed to update last project:', err));
               }
             }
