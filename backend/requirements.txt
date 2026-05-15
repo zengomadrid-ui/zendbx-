@@ -1,0 +1,47 @@
+# FastAPI and dependencies
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Database (PostgreSQL)
+asyncpg==0.29.0
+sqlalchemy==2.0.25
+alembic==1.13.1
+psycopg2-binary==2.9.9
+
+# AI - OpenRouter (supports GPT-4, Claude, Llama, etc.)
+openai==1.10.0  # OpenRouter uses OpenAI-compatible API
+httpx==0.26.0
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+bcrypt==4.1.2
+authlib==1.3.0
+itsdangerous==2.1.2
+pyotp==2.9.0  # For TOTP/MFA
+user-agents==2.2.0  # For device detection
+
+# CSV Processing & Data Analysis
+pandas==2.2.0
+chardet==5.2.0
+sqlparse==0.4.4
+
+# File Storage
+boto3==1.34.34  # For S3-compatible storage
+aiofiles==23.2.1
+
+# Background Jobs & Caching
+celery==5.3.6
+redis==5.0.1
+redis[hiredis]==5.0.1  # High-performance Redis client
+
+# WebSocket for Realtime
+websockets==12.0
+
+# Utilities
+python-dotenv==1.0.0
+email-validator==2.1.0
+python-slugify==8.0.1

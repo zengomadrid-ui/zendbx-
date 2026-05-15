@@ -1,0 +1,229 @@
+"""
+Row Level Security (RLS) Enforcer
+
+Provides utilities to enforce RLS policies in API endpoints.
+Wraps database queries with RLS context setting.
+
+Key Features:
+- Automatic RLS context injection
+- Service role bypass support
+- Query wrapping with user context
+- Error handling for RLS violations
+"""
+import asyncpg
+from typing import Any, List, Optional
+from fastapi import Request, HTTPException
+import logging
+
+from ..middleware.rls_context import set_rls_context, clear_rls_context
+
+logger = logging.getLogger(__name__)
+
+
+class RLSEnforcer:
+    """
+    Enforces Row Level Security on database queries
+    
+    Usage:
+        enforcer = RLSEnforcer(request)
+        result = await enforcer.execute(pool, query, *params)
+    """
+    
+    def __init__(self, request: Request):
+        """
+        Initialize RLS enforcer with request context
+        
+        Args:
+            request: FastAPI request object with RLS context
+        """
+        self.request = request
+        self.user_id = getattr(request.state, 'rls_user_id', None)
+        self.role = getattr(request.state, 'rls_role', 'anon')
+        self.project_id = getattr(request.state, 'rls_project_id', None)
+    
+    @property
+    def is_service_role(self) -> bool:
+        """Check if current request has service_role privileges"""
+        return self.role == "service_role"
+    
+    @property
+    def is_authenticated(self) -> bool:
+        """Check if user is authenticated"""
+        return self.role in ["authenticated", "service_role"] and self.user_id is not None
+    
+    async def execute(
+        self,
+        pool: asyncpg.Pool,
+        query: str,
+        *params,
+        bypass_rls: bool = False
+    ) -> List[asyncpg.Record]:
+        """
+        Execute query with RLS context
+        
+        Args:
+            pool: Database connection pool
+            query: SQL query to execute
+            *params: Query parameters
+            bypass_rls: If True and service_role, bypass RLS
+        
+        Returns:
+            Query results
+        
+        Raises:
+            HTTPException: If RLS blocks access
+        """
+        async with pool.acquire() as conn:
+            try:
+                # Set RLS context unless bypassing
+                if not (bypass_rls and self.is_service_role):
+                    await set_rls_context(conn, self.user_id, self.role)
+                else:
+                    logger.info(f"Bypassing RLS with service_role for query")
+                
+                # Execute query
+                result = await conn.fetch(query, *params)
+                
+                return result
+                
+            except asyncpg.exceptions.InsufficientPrivilegeError as e:
+                logger.warning(f"RLS blocked query: {str(e)}")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied by row level security policy"
+                )
+            except asyncpg.exceptions.PostgresError as e:
+                logger.error(f"Database error: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Database error occurred"
+                )
+            finally:
+                # Always clear context
+                await clear_rls_context(conn)
+    
+    async def execute_one(
+        self,
+        pool: asyncpg.Pool,
+        query: str,
+        *params,
+        bypass_rls: bool = False
+    ) -> Optional[asyncpg.Record]:
+        """
+        Execute query and return single row
+        
+        Args:
+            pool: Database connection pool
+            query: SQL query to execute
+            *params: Query parameters
+            bypass_rls: If True and service_role, bypass RLS
+        
+        Returns:
+            Single row or None
+        """
+        async with pool.acquire() as conn:
+            try:
+                # Set RLS context unless bypassing
+                if not (bypass_rls and self.is_service_role):
+                    await set_rls_context(conn, self.user_id, self.role)
+                else:
+                    logger.info(f"Bypassing RLS with service_role for query")
+                
+                # Execute query
+                result = await conn.fetchrow(query, *params)
+                
+                return result
+                
+            except asyncpg.exceptions.InsufficientPrivilegeError as e:
+                logger.warning(f"RLS blocked query: {str(e)}")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied by row level security policy"
+                )
+            except asyncpg.exceptions.PostgresError as e:
+                logger.error(f"Database error: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Database error occurred"
+                )
+            finally:
+                await clear_rls_context(conn)
+    
+    async def execute_command(
+        self,
+        pool: asyncpg.Pool,
+        query: str,
+        *params,
+        bypass_rls: bool = False
+    ) -> str:
+        """
+        Execute command (INSERT, UPDATE, DELETE) with RLS
+        
+        Args:
+            pool: Database connection pool
+            query: SQL command to execute
+            *params: Query parameters
+            bypass_rls: If True and service_role, bypass RLS
+        
+        Returns:
+            Command status string
+        """
+        async with pool.acquire() as conn:
+            try:
+                # Set RLS context unless bypassing
+                if not (bypass_rls and self.is_service_role):
+                    await set_rls_context(conn, self.user_id, self.role)
+                else:
+                    logger.info(f"Bypassing RLS with service_role for command")
+                
+                # Execute command
+                result = await conn.execute(query, *params)
+                
+                return result
+                
+            except asyncpg.exceptions.InsufficientPrivilegeError as e:
+                logger.warning(f"RLS blocked command: {str(e)}")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied by row level security policy"
+                )
+            except asyncpg.exceptions.PostgresError as e:
+                logger.error(f"Database error: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Database error occurred"
+                )
+            finally:
+                await clear_rls_context(conn)
+    
+    def require_authenticated(self):
+        """Require user to be authenticated"""
+        if not self.is_authenticated:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required"
+            )
+    
+    def require_service_role(self):
+        """Require service_role privileges"""
+        if not self.is_service_role:
+            raise HTTPException(
+                status_code=403,
+                detail="Service role required for this operation"
+            )
+
+
+def get_rls_enforcer(request: Request) -> RLSEnforcer:
+    """
+    Dependency to get RLS enforcer from request
+    
+    Usage:
+        @router.get("/data")
+        async def get_data(
+            request: Request,
+            enforcer: RLSEnforcer = Depends(get_rls_enforcer)
+        ):
+            result = await enforcer.execute(pool, "SELECT * FROM my_table")
+            return result
+    """
+    return RLSEnforcer(request)

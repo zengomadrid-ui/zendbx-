@@ -1,0 +1,188 @@
+"""
+Auto Table Creation Service
+Automatically creates tables on first access with smart schema inference
+"""
+import asyncpg
+import logging
+from typing import Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+
+async def ensure_table_exists(
+    pool: asyncpg.Pool,
+    table_name: str,
+    sample_data: Optional[Dict[str, Any]] = None
+) -> bool:
+    """
+    Check if table exists, create if not
+    
+    Args:
+        pool: Database connection pool
+        table_name: Name of the table
+        sample_data: Sample data for schema inference
+    
+    Returns:
+        bool: True if table exists or was created successfully
+    """
+    async with pool.acquire() as conn:
+        # Check if table exists
+        exists = await conn.fetchval("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' AND table_name = $1
+            )
+        """, table_name)
+        
+        if exists:
+            logger.debug(f"Table '{table_name}' already exists")
+            return True
+        
+        logger.info(f"Creating table '{table_name}'...")
+        
+        # Create table based on type
+        if table_name == "users":
+            await create_users_table(conn)
+        else:
+            await create_generic_table(conn, table_name, sample_data)
+        
+        logger.info(f"Table '{table_name}' created successfully")
+        return True
+
+
+async def create_users_table(conn: asyncpg.Connection):
+    """Create standard users table"""
+    await conn.execute("""
+        CREATE TABLE users (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email TEXT UNIQUE NOT NULL,
+            name TEXT,
+            provider TEXT DEFAULT 'email',
+            avatar_url TEXT,
+            metadata JSONB DEFAULT '{}'::jsonb,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            last_login_at TIMESTAMPTZ
+        );
+        
+        CREATE INDEX idx_users_email ON users(email);
+        CREATE INDEX idx_users_created_at ON users(created_at DESC);
+    """)
+    logger.info("Created users table with indexes")
+
+
+async def create_generic_table(
+    conn: asyncpg.Connection,
+    table_name: str,
+    sample_data: Optional[Dict[str, Any]] = None
+):
+    """
+    Create a generic table with schema inferred from sample data
+    
+    Args:
+        conn: Database connection
+        table_name: Name of the table
+        sample_data: Sample data for schema inference
+    """
+    # Start with base columns
+    columns = [
+        "id UUID PRIMARY KEY DEFAULT gen_random_uuid()",
+        "created_at TIMESTAMPTZ DEFAULT NOW()",
+        "updated_at TIMESTAMPTZ DEFAULT NOW()"
+    ]
+    
+    # Infer additional columns from sample data
+    if sample_data:
+        for key, value in sample_data.items():
+            if key in ["id", "created_at", "updated_at"]:
+                continue
+            
+            # Infer PostgreSQL type from Python type
+            col_type = infer_column_type(value)
+            columns.append(f"{key} {col_type}")
+    
+    # Create table
+    create_sql = f"CREATE TABLE {table_name} ({', '.join(columns)})"
+    await conn.execute(create_sql)
+    
+    # Create indexes
+    await conn.execute(f"CREATE INDEX idx_{table_name}_created_at ON {table_name}(created_at DESC)")
+    
+    logger.info(f"Created generic table '{table_name}' with {len(columns)} columns")
+
+
+def infer_column_type(value: Any) -> str:
+    """
+    Infer PostgreSQL column type from Python value
+    
+    Args:
+        value: Sample value
+    
+    Returns:
+        str: PostgreSQL column type
+    """
+    if value is None:
+        return "TEXT"
+    elif isinstance(value, bool):
+        return "BOOLEAN"
+    elif isinstance(value, int):
+        return "INTEGER"
+    elif isinstance(value, float):
+        return "NUMERIC"
+    elif isinstance(value, (dict, list)):
+        return "JSONB"
+    elif isinstance(value, str):
+        # Check if it looks like a UUID
+        if len(value) == 36 and value.count('-') == 4:
+            return "UUID"
+        # Check if it looks like a timestamp
+        elif 'T' in value or '-' in value[:10]:
+            return "TIMESTAMPTZ"
+        else:
+            return "TEXT"
+    else:
+        return "TEXT"
+
+
+async def auto_sync_user(
+    pool: asyncpg.Pool,
+    user_id: str,
+    email: str,
+    name: Optional[str] = None,
+    provider: str = "email",
+    avatar_url: Optional[str] = None,
+    metadata: Optional[Dict] = None
+):
+    """
+    Automatically sync user to users table
+    Creates table if doesn't exist, uses UPSERT to avoid duplicates
+    
+    Args:
+        pool: Database connection pool
+        user_id: User UUID
+        email: User email
+        name: User name
+        provider: Auth provider (email, google, github, etc.)
+        avatar_url: Avatar URL
+        metadata: Additional metadata
+    """
+    # Ensure users table exists
+    await ensure_table_exists(pool, "users")
+    
+    # UPSERT user
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO users (id, email, name, provider, avatar_url, metadata, last_login_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                email = EXCLUDED.email,
+                name = EXCLUDED.name,
+                provider = EXCLUDED.provider,
+                avatar_url = EXCLUDED.avatar_url,
+                metadata = EXCLUDED.metadata,
+                last_login_at = NOW(),
+                updated_at = NOW()
+        """, user_id, email, name, provider, avatar_url, metadata or {})
+    
+    logger.info(f"User {email} synced to users table")
