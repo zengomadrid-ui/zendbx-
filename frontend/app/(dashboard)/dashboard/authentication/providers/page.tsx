@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 
 interface Provider {
   id: string;
   name: string;
   description: string;
-  icon: JSX.Element;
+  icon: React.ReactNode;
   enabled: boolean;
   configurable: boolean;
 }
