@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function OAuthCallbackPage() {
+function CallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -49,5 +49,22 @@ export default function OAuthCallbackPage() {
         <p className="text-sm text-gray-400">Completing authentication...</p>
       </div>
     </div>
+  );
+}
+
+export default function OAuthCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-zinc-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 bg-gradient-to-br from-orange-600 to-orange-500 rounded-lg flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <span className="text-white font-bold text-2xl">N</span>
+          </div>
+          <p className="text-sm text-gray-400">Loading...</p>
+        </div>
+      </div>
+    }>
+      <CallbackContent />
+    </Suspense>
   );
 }
