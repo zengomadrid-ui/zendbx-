@@ -20,7 +20,7 @@ function CallbackContent() {
       localStorage.setItem('token', token);
       
       // Fetch user data
-      fetch('http://localhost:8000/api/auth/me', {
+      fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

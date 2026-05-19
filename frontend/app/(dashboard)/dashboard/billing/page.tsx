@@ -54,7 +54,7 @@ export default function BillingPage() {
       }
       
       // Fetch current subscription and usage
-      const subRes = await fetch('http://localhost:8000/api/billing/subscription', {
+      const subRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/billing/subscription`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -69,7 +69,7 @@ export default function BillingPage() {
       setSubscription(subData);
 
       // Fetch available plans
-      const plansRes = await fetch('http://localhost:8000/api/billing/plans', {
+      const plansRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/billing/plans`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -97,7 +97,7 @@ export default function BillingPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:8000/api/billing/upgrade', {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/billing/upgrade`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

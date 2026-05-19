@@ -46,7 +46,7 @@ export default function ProjectsPage() {
 
   const fetchProjects = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/projects', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
@@ -64,7 +64,7 @@ export default function ProjectsPage() {
   const fetchProjectKeys = async (projectId: string) => {
     try {
       // Use the /keys endpoint that returns full keys
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/keys`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/keys`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
@@ -103,7 +103,7 @@ export default function ProjectsPage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -142,7 +142,7 @@ export default function ProjectsPage() {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:8000/api/projects', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

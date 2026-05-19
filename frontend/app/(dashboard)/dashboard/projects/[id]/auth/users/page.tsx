@@ -54,7 +54,7 @@ export default function ProjectUsersPage() {
         ORDER BY created_at DESC
       `;
 
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/query`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/query`, {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,

@@ -50,9 +50,9 @@ export default function TriggersPage() {
       };
 
       const [triggersRes, functionsRes, tablesRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/projects/${projectId}/db/triggers`, { headers }),
-        fetch(`http://localhost:8000/api/projects/${projectId}/db/functions`, { headers }),
-        fetch(`http://localhost:8000/api/projects/${projectId}/db/tables`, { headers })
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/triggers`, { headers }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/functions`, { headers }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/tables`, { headers })
       ]);
 
       if (triggersRes.ok) {
@@ -82,7 +82,7 @@ export default function TriggersPage() {
       const projectId = localStorage.getItem("current_project_id");
       const token = localStorage.getItem("token");
       
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/db/triggers`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/triggers`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -119,8 +119,7 @@ export default function TriggersPage() {
       const projectId = localStorage.getItem("current_project_id");
       const token = localStorage.getItem("token");
       
-      const response = await fetch(
-        `http://localhost:8000/api/projects/${projectId}/db/triggers/${triggerName}?table_name=${tableName}`,
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/triggers/${triggerName}?table_name=${tableName}`,
         {
           method: "DELETE",
           headers: {

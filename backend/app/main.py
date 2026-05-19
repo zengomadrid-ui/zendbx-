@@ -10,16 +10,22 @@ app = FastAPI(
 )
 
 # CORS middleware - Must be added before routes
-# Allow multiple ports for development
+# Allow multiple ports for development and production domains
 if settings.ENVIRONMENT == "development":
     allowed_origins = [
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
+        "https://devapp.zendbx.in",  # Production frontend
     ]
 else:
-    allowed_origins = settings.get_allowed_origins
+    # Production: Allow configured origins + production frontend
+    configured_origins = settings.get_allowed_origins
+    if isinstance(configured_origins, list):
+        allowed_origins = configured_origins + ["https://devapp.zendbx.in"]
+    else:
+        allowed_origins = ["https://devapp.zendbx.in"]
 
 app.add_middleware(
     CORSMiddleware,

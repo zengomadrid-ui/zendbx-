@@ -41,7 +41,7 @@ export default function SchemaVisualizerPage() {
       const projectId = localStorage.getItem("current_project_id");
       const token = localStorage.getItem("token");
       
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/db/schema`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/schema`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "x-project-id": projectId || ""

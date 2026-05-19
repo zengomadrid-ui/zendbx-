@@ -110,7 +110,7 @@ export default function SQLEditorPage() {
     setShowExplanation(false);
 
     try {
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/query`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -156,7 +156,7 @@ export default function SQLEditorPage() {
     setAiLoading(true);
 
     try {
-      const res = await fetch(`http://localhost:8000/api/ai/${projectId}/explain-error`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/ai/${projectId}/explain-error`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -200,7 +200,7 @@ export default function SQLEditorPage() {
     setAiResponse(null);
 
     try {
-      const res = await fetch(`http://localhost:8000/api/ai/${projectId}/query`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/ai/${projectId}/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -235,7 +235,7 @@ export default function SQLEditorPage() {
     setExplanation(null);
 
     try {
-      const res = await fetch(`http://localhost:8000/api/ai/${projectId}/explain`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/ai/${projectId}/explain`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

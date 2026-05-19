@@ -36,7 +36,7 @@ export default function TablesPage() {
       const projectId = localStorage.getItem("current_project_id");
       const token = localStorage.getItem("token");
       
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/db/tables`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/tables`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "x-project-id": projectId || ""
@@ -84,7 +84,7 @@ export default function TablesPage() {
         ORDER BY t.tablename;
       `;
       
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/query`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/query`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -120,7 +120,7 @@ export default function TablesPage() {
       const projectId = localStorage.getItem("current_project_id");
       const token = localStorage.getItem("token");
       
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/db/tables`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/tables`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -150,7 +150,7 @@ export default function TablesPage() {
       const projectId = localStorage.getItem("current_project_id");
       const token = localStorage.getItem("token");
       
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/db/tables/${tableName}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/tables/${tableName}`, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${token}`,

@@ -46,7 +46,7 @@ export default function LogsPage() {
   const fetchStats = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/audit/logs/stats', {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/audit/logs/stats`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -70,7 +70,7 @@ export default function LogsPage() {
       if (successFilter) params.append('success', successFilter);
       params.append('limit', '100');
       
-      const response = await fetch(`http://localhost:8000/api/audit/logs?${params}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/audit/logs?${params}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

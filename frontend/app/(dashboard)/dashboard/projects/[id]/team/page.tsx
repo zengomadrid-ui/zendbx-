@@ -53,7 +53,7 @@ export default function TeamPage() {
   const fetchMembers = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/members`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/members`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -70,7 +70,7 @@ export default function TeamPage() {
   const fetchMessages = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/messages`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/messages`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -147,7 +147,7 @@ export default function TeamPage() {
     
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/messages`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -180,7 +180,7 @@ export default function TeamPage() {
     
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/invite`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/invite`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -209,7 +209,7 @@ export default function TeamPage() {
     
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/members/${userId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/members/${userId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -230,7 +230,7 @@ export default function TeamPage() {
   const handleUpdateRole = async (userId: string, newRole: string) => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/members/${userId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/members/${userId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

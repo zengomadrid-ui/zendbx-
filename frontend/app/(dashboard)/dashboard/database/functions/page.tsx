@@ -33,7 +33,7 @@ $$;`);
       const projectId = localStorage.getItem("current_project_id");
       const token = localStorage.getItem("token");
       
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/db/functions`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/functions`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "x-project-id": projectId || ""
@@ -59,7 +59,7 @@ $$;`);
       const projectId = localStorage.getItem("current_project_id");
       const token = localStorage.getItem("token");
       
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/db/functions`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/functions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -98,7 +98,7 @@ $$;`);
       const projectId = localStorage.getItem("current_project_id");
       const token = localStorage.getItem("token");
       
-      const response = await fetch(`http://localhost:8000/api/projects/${projectId}/db/functions/${functionName}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/db/functions/${functionName}`, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${token}`,
