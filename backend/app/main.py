@@ -1,13 +1,37 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import close_all_pools
+import traceback
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     debug=settings.DEBUG
 )
+
+# Global exception handler to prevent crashes and always return CORS headers
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch all unhandled exceptions and return proper error response with CORS headers"""
+    print(f"❌ UNHANDLED EXCEPTION: {type(exc).__name__}: {str(exc)}")
+    print(f"❌ Traceback:")
+    print(traceback.format_exc())
+    
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": f"Internal server error: {str(exc)}",
+            "type": type(exc).__name__
+        },
+        headers={
+            "Access-Control-Allow-Origin": "*",  # Emergency CORS
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 # CORS middleware - Must be added before routes
 # Production-safe CORS configuration
@@ -54,47 +78,66 @@ async def startup():
     print(f"Environment: {settings.ENVIRONMENT}")
     print(f"Database: Connected")
     
-    # Initialize Redis for quota tracking
-    from app.core.redis_client import redis_client
-    await redis_client.connect()
+    # Initialize Redis for quota tracking (optional - don't crash if unavailable)
+    try:
+        from app.core.redis_client import redis_client
+        await redis_client.connect()
+        print(f"📊 Redis connected")
+    except Exception as e:
+        print(f"⚠️  Redis connection failed (continuing without Redis): {str(e)}")
     
-    # Start realtime listener if enabled
+    # Start realtime listener if enabled (optional - don't crash if unavailable)
     if settings.ENABLE_REALTIME:
-        from app.services.realtime_listener import realtime_listener
-        from app.services.websocket_client import websocket_client
-        
-        # Set callback to forward events to WebSocket server
-        realtime_listener.set_callback(websocket_client.broadcast_event)
-        
-        # Start listening to main database
-        await realtime_listener.start_listening(
-            settings.DATABASE_URL,
-            "main"
-        )
-        
-        print(f"📡 Realtime listener started")
-        print(f"🔗 WebSocket server: {settings.WEBSOCKET_SERVER_URL}")
+        try:
+            from app.services.realtime_listener import realtime_listener
+            from app.services.websocket_client import websocket_client
+            
+            # Set callback to forward events to WebSocket server
+            realtime_listener.set_callback(websocket_client.broadcast_event)
+            
+            # Start listening to main database
+            await realtime_listener.start_listening(
+                settings.DATABASE_URL,
+                "main"
+            )
+            
+            print(f"📡 Realtime listener started")
+            print(f"🔗 WebSocket server: {settings.WEBSOCKET_SERVER_URL}")
+        except Exception as e:
+            print(f"⚠️  Realtime listener failed (continuing without realtime): {str(e)}")
 
 @app.on_event("shutdown")
 async def shutdown():
     """Cleanup on shutdown"""
-    # Disconnect Redis
-    from app.core.redis_client import redis_client
-    await redis_client.disconnect()
-    print("📊 Redis disconnected")
+    # Disconnect Redis (if connected)
+    try:
+        from app.core.redis_client import redis_client
+        await redis_client.disconnect()
+        print("📊 Redis disconnected")
+    except Exception as e:
+        print(f"⚠️  Redis disconnect failed: {str(e)}")
     
-    # Stop realtime listener
+    # Stop realtime listener (if running)
     if settings.ENABLE_REALTIME:
-        from app.services.realtime_listener import realtime_listener
-        from app.services.websocket_client import websocket_client
-        
-        await realtime_listener.stop_listening()
-        await websocket_client.close()
-        print("📡 Realtime listener stopped")
+        try:
+            from app.services.realtime_listener import realtime_listener
+            from app.services.websocket_client import websocket_client
+            
+            await realtime_listener.stop_listening()
+            await websocket_client.close()
+            print("📡 Realtime listener stopped")
+        except Exception as e:
+            print(f"⚠️  Realtime listener stop failed: {str(e)}")
     
-    from app.core.db_router import close_all_pools as close_project_pools
-    await close_project_pools()
-    await close_all_pools()
+    # Close database pools
+    try:
+        from app.core.db_router import close_all_pools as close_project_pools
+        await close_project_pools()
+        await close_all_pools()
+        print("💾 Database pools closed")
+    except Exception as e:
+        print(f"⚠️  Database pool close failed: {str(e)}")
+    
     print("Application shutdown complete")
 
 @app.get("/")

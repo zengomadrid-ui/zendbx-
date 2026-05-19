@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     
     # WebSocket Server
     WEBSOCKET_SERVER_URL: str = "http://localhost:3002"
-    ENABLE_REALTIME: bool = True
+    ENABLE_REALTIME: bool = False  # Disabled by default for production safety
     
     # Domain Configuration for Wildcard Subdomains
     BASE_DOMAIN: str = "zendbx.in"  # Production domain
