@@ -29,7 +29,7 @@ export default function ProjectAuthPage() {
   const fetchProjectInfo = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -45,7 +45,7 @@ export default function ProjectAuthPage() {
   const fetchStats = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/auth/stats`,
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/auth/stats`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

@@ -162,7 +162,7 @@ export default function BackupsPage() {
       const token = localStorage.getItem('token');
       
       // Create a download link
-      const url = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/backups/${backupId}/download`;
+      const url = `${process.env.NEXT_PUBLIC_API_URL!}/api/backups/${backupId}/download`;
       
       // Use fetch to download with auth header
       const response = await fetch(url, {

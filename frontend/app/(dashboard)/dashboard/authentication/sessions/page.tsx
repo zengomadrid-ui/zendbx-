@@ -28,7 +28,7 @@ export default function SessionsPage() {
   const fetchSessions = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/sessions`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/sessions`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -49,7 +49,7 @@ export default function SessionsPage() {
     setDeletingId(sessionId);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/sessions/${sessionId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/sessions/${sessionId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -69,7 +69,7 @@ export default function SessionsPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/sessions`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/sessions`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });

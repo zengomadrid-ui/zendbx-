@@ -43,7 +43,7 @@ export default function UsersPage() {
   const checkUserRole = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/me`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -68,7 +68,7 @@ export default function UsersPage() {
         if (providerFilter) params.append('provider', providerFilter);
         if (statusFilter) params.append('is_suspended', statusFilter);
 
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/users?${params}`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/admin/users?${params}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -78,7 +78,7 @@ export default function UsersPage() {
         }
       } else {
         // Non-admin: Fetch only their own user info
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/me`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/me`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
@@ -119,7 +119,7 @@ export default function UsersPage() {
     setActionLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/users/${selectedUser.id}/suspend`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/admin/users/${selectedUser.id}/suspend`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -147,7 +147,7 @@ export default function UsersPage() {
     setActionLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/users/${userId}/unsuspend`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/admin/users/${userId}/unsuspend`, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -168,7 +168,7 @@ export default function UsersPage() {
     setActionLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/admin/users/${user.id}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/admin/users/${user.id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });

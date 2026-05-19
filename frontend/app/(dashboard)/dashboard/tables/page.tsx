@@ -50,8 +50,9 @@ export default function TablesPageEditable() {
     const projectId = localStorage.getItem('current_project_id');
     if (!projectId) return;
 
-    // Connect to WebSocket server
-    const socket = io('http://localhost:3001', {
+    // Connect to WebSocket server using environment variable
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL!;
+    const socket = io(wsUrl, {
       transports: ['websocket'],
       reconnection: true,
       reconnectionDelay: 1000,

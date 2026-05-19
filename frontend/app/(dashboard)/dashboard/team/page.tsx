@@ -41,7 +41,7 @@ export default function TeamOverviewPage() {
       const token = localStorage.getItem("token");
       
       // Fetch all projects
-      const projectsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects`, {
+      const projectsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -55,7 +55,7 @@ export default function TeamOverviewPage() {
       const projectsWithMembers = await Promise.all(
         projectsData.map(async (project: Project) => {
           try {
-            const membersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${project.id}/members`,
+            const membersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${project.id}/members`,
               { headers: { Authorization: `Bearer ${token}` } }
             );
             

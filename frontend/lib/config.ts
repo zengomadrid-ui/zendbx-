@@ -13,11 +13,20 @@ const getEnvVar = (key: string, fallback: string): string => {
   return process.env[key] || fallback;
 };
 
+// Check if we're in production
+const isProduction = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production' || 
+                     process.env.NODE_ENV === 'production';
+
 export const config = {
   // API Configuration
   api: {
-    baseUrl: getEnvVar('NEXT_PUBLIC_API_URL', 'http://localhost:8000'),
-    wsUrl: getEnvVar('NEXT_PUBLIC_WS_URL', 'http://localhost:8001'),
+    // In production, REQUIRE environment variable - no localhost fallback
+    baseUrl: isProduction 
+      ? (process.env.NEXT_PUBLIC_API_URL || 'https://zendbx-13.onrender.com')
+      : getEnvVar('NEXT_PUBLIC_API_URL', 'http://localhost:8000'),
+    wsUrl: isProduction
+      ? (process.env.NEXT_PUBLIC_WS_URL || 'wss://zendbx-13.onrender.com')
+      : getEnvVar('NEXT_PUBLIC_WS_URL', 'http://localhost:8001'),
     timeout: 30000, // 30 seconds
   },
 
@@ -25,7 +34,9 @@ export const config = {
   app: {
     name: 'ZenDBX',
     description: 'Backend-as-a-Service with AI-powered database management',
-    url: getEnvVar('NEXT_PUBLIC_APP_URL', 'http://localhost:3000'),
+    url: isProduction
+      ? (process.env.NEXT_PUBLIC_APP_URL || 'https://devapp.zendbx.in')
+      : getEnvVar('NEXT_PUBLIC_APP_URL', 'http://localhost:3000'),
   },
 
   // Feature Flags

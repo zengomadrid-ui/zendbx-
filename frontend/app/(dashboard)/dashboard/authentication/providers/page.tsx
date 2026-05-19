@@ -245,7 +245,7 @@ export default function ProvidersPage() {
                 <label className="block text-xs text-[#a1a1a1] mb-2">Redirect URI</label>
                 <input
                   type="text"
-                  value="http://localhost:3000/callback"
+                  value={`${process.env.NEXT_PUBLIC_APP_URL!}/callback`}
                   readOnly
                   className="w-full px-3 py-2 bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg text-sm text-[#6b6b6b] focus:outline-none"
                 />

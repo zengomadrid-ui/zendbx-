@@ -66,7 +66,7 @@ export default function DashboardPage() {
 
     try {
       // First, get the list of projects
-      const projectsResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects`, {
+      const projectsResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -94,7 +94,7 @@ export default function DashboardPage() {
     if (!token) return;
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/overview`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/overview`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

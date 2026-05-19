@@ -62,7 +62,7 @@ export default function RLSPage() {
         ORDER BY t.tablename;
       `;
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/query`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/query`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -109,7 +109,7 @@ export default function RLSPage() {
       
       const sql = `ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;`;
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/query`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/query`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -136,7 +136,7 @@ export default function RLSPage() {
       
       const sql = `ALTER TABLE ${tableName} DISABLE ROW LEVEL SECURITY;`;
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/projects/${projectId}/query`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/query`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
