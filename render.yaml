@@ -1,17 +1,9 @@
 services:
   - type: web
     name: zendbx-backend
-    env: python
+    env: docker
     region: oregon
     plan: starter
-    buildCommand: |
-      python --version
-      pip install --upgrade pip
-      pip install -r requirements.txt
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    rootDir: backend
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
-      - key: RENDER_PYTHON_VERSION
-        value: 3.11.9
