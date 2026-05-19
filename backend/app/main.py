@@ -10,41 +10,33 @@ app = FastAPI(
 )
 
 # CORS middleware - Must be added before routes
-# Allow multiple ports for development and production domains
-if settings.ENVIRONMENT == "development":
+# Production-safe CORS configuration
+if settings.ENVIRONMENT == "production":
+    # Production: Strict CORS
+    allowed_origins = [
+        "https://devapp.zendbx.in",
+        "https://zendbx.in",
+        "https://www.zendbx.in",
+    ]
+    print(f"🔒 Production CORS enabled for: {allowed_origins}")
+else:
+    # Development: Allow localhost
     allowed_origins = [
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
-        "https://devapp.zendbx.in",  # Production frontend
     ]
-else:
-    # Production: Allow configured origins + production frontend
-    configured_origins = settings.get_allowed_origins
-    if isinstance(configured_origins, list):
-        allowed_origins = configured_origins + ["https://devapp.zendbx.in"]
-    else:
-        allowed_origins = ["https://devapp.zendbx.in"]
+    print(f"🔓 Development CORS enabled for: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "apikey",
-        "x-project-id",
-        "X-Requested-With",
-        "Accept",
-        "Origin",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers"
-    ],
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
     expose_headers=["*"],
-    max_age=3600,  # Cache preflight requests for 1 hour
+    max_age=3600,
 )
 
 # Add Project Context Middleware for multi-tenant support

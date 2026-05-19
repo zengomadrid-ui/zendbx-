@@ -80,46 +80,97 @@ async def get_current_user(
 async def signup(user_data: UserCreate):
     """Register a new user"""
     
-    # Check if user already exists
-    existing = await execute_on_main_db(
-        "SELECT id FROM users WHERE email = $1",
-        user_data.email
-    )
-    
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+    try:
+        print(f"📝 Signup attempt for email: {user_data.email}")
+        
+        # Check if user already exists
+        existing = await execute_on_main_db(
+            "SELECT id FROM users WHERE email = $1",
+            user_data.email
         )
-    
-    # Hash password
-    password_hash = hash_password(user_data.password)
-    
-    # Create user
-    result = await execute_on_main_db(
-        """
-        INSERT INTO users (email, password_hash, full_name)
-        VALUES ($1, $2, $3)
-        RETURNING id, email, full_name, avatar_url, is_active, is_verified, plan, role, created_at
-        """,
-        user_data.email,
-        password_hash,
-        user_data.full_name
-    )
-    
-    user = dict(result[0])
-    
-    # Create access token with role
-    access_token = create_access_token({
-        "sub": str(user["id"]),
-        "email": user["email"],
-        "role": user.get("role", "user")
-    })
-    
-    return Token(
-        access_token=access_token,
-        user=UserResponse(**user)
-    )
+        
+        if existing:
+            print(f"❌ Email already registered: {user_data.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        print(f"✅ Email available: {user_data.email}")
+        
+        # Hash password
+        try:
+            password_hash = hash_password(user_data.password)
+            print(f"✅ Password hashed successfully")
+        except Exception as e:
+            print(f"❌ Password hashing failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Password hashing failed: {str(e)}"
+            )
+        
+        # Create user
+        try:
+            result = await execute_on_main_db(
+                """
+                INSERT INTO users (email, password_hash, full_name)
+                VALUES ($1, $2, $3)
+                RETURNING id, email, full_name, avatar_url, is_active, is_verified, plan, role, created_at
+                """,
+                user_data.email,
+                password_hash,
+                user_data.full_name
+            )
+            print(f"✅ User created in database")
+        except Exception as e:
+            print(f"❌ Database insert failed: {str(e)}")
+            print(f"❌ Error type: {type(e).__name__}")
+            import traceback
+            print(f"❌ Traceback: {traceback.format_exc()}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create user: {str(e)}"
+            )
+        
+        user = dict(result[0])
+        print(f"✅ User data retrieved: {user['email']}")
+        
+        # Create access token with role
+        try:
+            access_token = create_access_token({
+                "sub": str(user["id"]),
+                "email": user["email"],
+                "role": user.get("role", "user")
+            })
+            print(f"✅ Access token created")
+        except Exception as e:
+            print(f"❌ Token creation failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Token creation failed: {str(e)}"
+            )
+        
+        print(f"🎉 Signup successful for: {user['email']}")
+        
+        return Token(
+            access_token=access_token,
+            user=UserResponse(**user)
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Catch any unexpected errors
+        print(f"❌ Unexpected error in signup: {str(e)}")
+        print(f"❌ Error type: {type(e).__name__}")
+        import traceback
+        print(f"❌ Full traceback:")
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Signup failed: {str(e)}"
+        )
 
 # ============================================
 # LOGIN
@@ -129,48 +180,70 @@ async def signup(user_data: UserCreate):
 async def login(credentials: UserLogin):
     """Login user"""
     
-    # Get user
-    result = await execute_on_main_db(
-        "SELECT id, email, full_name, avatar_url, is_active, is_verified, plan, role, password_hash, created_at FROM users WHERE email = $1",
-        credentials.email
-    )
-    
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+    try:
+        print(f"🔐 Login attempt for email: {credentials.email}")
+        
+        # Get user
+        result = await execute_on_main_db(
+            "SELECT id, email, full_name, avatar_url, is_active, is_verified, plan, role, password_hash, created_at FROM users WHERE email = $1",
+            credentials.email
         )
-    
-    user = dict(result[0])
-    
-    # Verify password
-    if not verify_password(credentials.password, user["password_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+        
+        if not result:
+            print(f"❌ User not found: {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        user = dict(result[0])
+        print(f"✅ User found: {user['email']}")
+        
+        # Verify password
+        if not verify_password(credentials.password, user["password_hash"]):
+            print(f"❌ Invalid password for: {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        print(f"✅ Password verified for: {credentials.email}")
+        
+        # Check if active
+        if not user["is_active"]:
+            print(f"❌ Inactive account: {credentials.email}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is inactive"
+            )
+        
+        # Create access token with role
+        access_token = create_access_token({
+            "sub": str(user["id"]),
+            "email": user["email"],
+            "role": user.get("role", "user")
+        })
+        
+        # Remove password_hash from response
+        user.pop("password_hash")
+        
+        print(f"🎉 Login successful for: {user['email']}")
+        
+        return Token(
+            access_token=access_token,
+            user=UserResponse(**user)
         )
-    
-    # Check if active
-    if not user["is_active"]:
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Unexpected error in login: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is inactive"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login failed: {str(e)}"
         )
-    
-    # Create access token with role
-    access_token = create_access_token({
-        "sub": str(user["id"]),
-        "email": user["email"],
-        "role": user.get("role", "user")
-    })
-    
-    # Remove password_hash from response
-    user.pop("password_hash")
-    
-    return Token(
-        access_token=access_token,
-        user=UserResponse(**user)
-    )
 
 # ============================================
 # GET CURRENT USER
