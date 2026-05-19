@@ -4,10 +4,18 @@ from app.core.database import execute_on_main_db, execute_on_project_db
 from app.models.schemas import MessageResponse
 from typing import List
 from uuid import UUID
-import pandas as pd
 import chardet
 import io
 import json
+import csv
+
+# Try to import pandas, but make it optional
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    print("Warning: pandas not available. CSV import will use basic CSV module.")
 
 router = APIRouter()
 
@@ -35,8 +43,47 @@ async def verify_project_access(project_id: UUID, user_id: UUID) -> dict:
 # HELPER: Infer Column Types
 # ============================================
 
+def infer_column_type_basic(values):
+    """Infer PostgreSQL type from list of values (fallback when pandas not available)"""
+    # Remove None/empty values
+    clean_values = [v for v in values if v is not None and str(v).strip()]
+    
+    if not clean_values:
+        return 'TEXT'
+    
+    # Try integer
+    try:
+        for v in clean_values[:10]:
+            int(v)
+        return 'INTEGER'
+    except (ValueError, TypeError):
+        pass
+    
+    # Try float
+    try:
+        for v in clean_values[:10]:
+            float(v)
+        return 'DECIMAL'
+    except (ValueError, TypeError):
+        pass
+    
+    # Try boolean
+    bool_values = {'true', 'false', 't', 'f', 'yes', 'no', '1', '0'}
+    if all(str(v).lower() in bool_values for v in clean_values[:10]):
+        return 'BOOLEAN'
+    
+    # Default to TEXT
+    max_length = max(len(str(v)) for v in clean_values)
+    if max_length < 255:
+        return f'VARCHAR({max(max_length, 50)})'
+    return 'TEXT'
+
 def infer_column_type(series):
     """Infer PostgreSQL type from pandas series"""
+    if not PANDAS_AVAILABLE:
+        # Fallback to basic type inference
+        return infer_column_type_basic(series)
+    
     dtype = series.dtype
     
     if dtype == 'int64':
@@ -72,6 +119,12 @@ async def upload_csv(
     current_user: dict = Depends(get_current_user)
 ):
     """Upload and analyze CSV file"""
+    
+    if not PANDAS_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="CSV import feature temporarily unavailable. Please contact support."
+        )
     
     project = await verify_project_access(project_id, current_user["id"])
     
