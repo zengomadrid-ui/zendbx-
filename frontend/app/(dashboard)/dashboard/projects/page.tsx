@@ -133,7 +133,7 @@ export default function ProjectsPage() {
 
   const getApiUrl = (slug?: string) => {
     if (!slug) return null;
-    return `http://localhost:8000/p/${slug}`;
+    return `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/p/${slug}`;
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
