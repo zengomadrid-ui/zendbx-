@@ -8,16 +8,16 @@ class Settings(BaseSettings):
     APP_NAME: str = "ZENDBX"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False  # Default to False for production safety
-    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")  # Default to production
+    ENVIRONMENT: str = "production"  # Default to production
     
     # Database - NO LOCALHOST DEFAULT!
     # In production, this MUST be set via environment variable
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    DATABASE_URL: str = ""
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 10
     
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
+    SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
@@ -79,8 +79,12 @@ class Settings(BaseSettings):
     ENABLE_SUBDOMAIN_ROUTING: bool = True  # Enable project.zendbx.in routing
     
     class Config:
-        env_file = ".env"
+        # Only load .env file in development
+        # In production (Docker/Render), use environment variables only
+        env_file = ".env" if os.getenv("ENVIRONMENT", "development") == "development" else None
+        env_file_encoding = 'utf-8'
         case_sensitive = True
+        extra = "ignore"
     
     def validate_required_settings(self):
         """Validate that required settings are configured"""
@@ -104,6 +108,25 @@ class Settings(BaseSettings):
         return True
 
 settings = Settings()
+
+# Debug: Print environment variable status (SAFE - no secrets printed)
+print("\n" + "="*60)
+print("ENVIRONMENT VARIABLE CHECK")
+print("="*60)
+print(f"ENVIRONMENT: {settings.ENVIRONMENT}")
+print(f"DATABASE_URL exists: {bool(settings.DATABASE_URL)}")
+print(f"DATABASE_URL length: {len(settings.DATABASE_URL) if settings.DATABASE_URL else 0}")
+print(f"SECRET_KEY exists: {bool(settings.SECRET_KEY)}")
+print(f"SECRET_KEY length: {len(settings.SECRET_KEY) if settings.SECRET_KEY else 0}")
+print(f"APP_NAME: {settings.APP_NAME}")
+
+# Additional debug: Check raw os.environ
+import os as os_module
+print(f"\nRaw os.environ check:")
+print(f"  DATABASE_URL in os.environ: {'DATABASE_URL' in os_module.environ}")
+print(f"  SECRET_KEY in os.environ: {'SECRET_KEY' in os_module.environ}")
+print(f"  ENVIRONMENT in os.environ: {'ENVIRONMENT' in os_module.environ}")
+print("="*60 + "\n")
 
 # Validate settings on import (will fail fast if misconfigured)
 if settings.ENVIRONMENT == "production":

@@ -1,0 +1,48 @@
+# Ignore local environment files
+.env
+.env.local
+.env.*.local
+
+# Ignore development files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ignore test files
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Ignore documentation
+*.md
+!README.md
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore uploads and backups
+uploads/
+backups/
+*.sql.gz
+
+# Ignore logs
+*.log
+logs/
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
