@@ -239,28 +239,11 @@ Access-Control-Allow-Headers: *
 
 ## Troubleshooting
 
-### Issue: "relation 'users' does not exist" or "relation 'projects' does not exist"
+### Issue: "relation 'users' does not exist"
 
-**Cause:** Database schema not initialized (automatic initialization might have failed)
+**Cause:** Database is connected but schema not initialized
 
-**Solution:**
-
-1. **Check Render logs** for initialization messages:
-   - Look for "DATABASE INITIALIZATION CHECK"
-   - Check if it says "✅ Database schema initialized successfully"
-
-2. **If automatic initialization failed**, run manual initialization:
-```bash
-psql "YOUR_DATABASE_URL" -f backend/database/init_schema_safe.sql
-```
-
-3. **Restart the backend service** on Render
-
-4. **Verify tables exist:**
-```bash
-psql "YOUR_DATABASE_URL" -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';"
-```
-Expected: 23 tables
+**Solution:** Run Step 6 (Initialize Database Schema)
 
 ---
 

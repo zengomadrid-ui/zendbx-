@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { apiFetch } from '@/lib/fetch-utils';
 
 interface Project {
   id: string;
@@ -46,11 +47,7 @@ export default function ProjectsPage() {
 
   const fetchProjects = async () => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
+      const response = await apiFetch('api/projects');
       
       if (response.ok) {
         const data = await response.json();
@@ -64,11 +61,7 @@ export default function ProjectsPage() {
   const fetchProjectKeys = async (projectId: string) => {
     try {
       // Use the /keys endpoint that returns full keys
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/keys`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
+      const response = await apiFetch(`api/projects/${projectId}/keys`);
       
       if (response.ok) {
         const data = await response.json();
@@ -103,11 +96,8 @@ export default function ProjectsPage() {
     }
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}`, {
+      const response = await apiFetch(`api/projects/${projectId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
       });
 
       if (response.ok) {
@@ -142,12 +132,8 @@ export default function ProjectsPage() {
     setError('');
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects`, {
+      const response = await apiFetch('api/projects', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
         body: JSON.stringify({
           name: projectName,
           description: description || null,
