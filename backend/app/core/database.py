@@ -373,23 +373,29 @@ def smart_split_sql(query: str) -> list:
     return statements
 
 async def create_project_database(database_name: str) -> bool:
-    """Create a new project database"""
+    """
+    Create a new project schema (not a separate database)
+    Uses PostgreSQL schemas for multi-tenancy instead of separate databases
+    This works on managed PostgreSQL services like Render
+    """
     try:
+        print(f"🔧 Creating project schema: {database_name}")
         pool = await get_main_db_pool()
         async with pool.acquire() as conn:
-            # Create database
-            await conn.execute(f'CREATE DATABASE {database_name}')
+            # Create schema instead of database
+            await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{database_name}"')
+            print(f"✅ Schema created: {database_name}")
             
-        # Initialize the new database with template
-        project_pool = await get_project_db_pool(database_name)
-        async with project_pool.acquire() as conn:
-            # Enable extensions
+            # Set search path to new schema
+            await conn.execute(f'SET search_path TO "{database_name}"')
+            
+            # Enable extensions (these are database-wide, not schema-specific)
             await conn.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
             await conn.execute('CREATE EXTENSION IF NOT EXISTS "pg_stat_statements"')
             
-            # Create helper function
-            await conn.execute('''
-                CREATE OR REPLACE FUNCTION update_updated_at_column()
+            # Create helper function in the schema
+            await conn.execute(f'''
+                CREATE OR REPLACE FUNCTION "{database_name}".update_updated_at_column()
                 RETURNS TRIGGER AS $$
                 BEGIN
                     NEW.updated_at = NOW();
@@ -397,10 +403,11 @@ async def create_project_database(database_name: str) -> bool:
                 END;
                 $$ LANGUAGE plpgsql;
             ''')
+            print(f"✅ Helper function created in schema: {database_name}")
             
-            # Create metadata table
-            await conn.execute('''
-                CREATE TABLE _nexora_metadata (
+            # Create metadata table in the schema
+            await conn.execute(f'''
+                CREATE TABLE "{database_name}"._zendbx_metadata (
                     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
                     table_name VARCHAR(255) UNIQUE NOT NULL,
                     created_by VARCHAR(255),
@@ -408,26 +415,33 @@ async def create_project_database(database_name: str) -> bool:
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
             ''')
+            print(f"✅ Metadata table created in schema: {database_name}")
             
+        print(f"🎉 Project schema fully initialized: {database_name}")
         return True
     except Exception as e:
-        print(f"Error creating database: {e}")
+        print(f"❌ Error creating project schema {database_name}: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         return False
 
 async def drop_project_database(database_name: str) -> bool:
-    """Drop a project database"""
+    """
+    Drop a project schema (not a separate database)
+    Removes the schema and all its contents
+    """
     try:
-        # Close connection pool if exists
-        if database_name in connection_pools:
-            await connection_pools[database_name].close()
-            del connection_pools[database_name]
-        
-        # Drop database
+        print(f"🗑️  Dropping project schema: {database_name}")
         pool = await get_main_db_pool()
         async with pool.acquire() as conn:
-            await conn.execute(f'DROP DATABASE IF EXISTS {database_name}')
+            # Drop schema with CASCADE to remove all objects
+            await conn.execute(f'DROP SCHEMA IF EXISTS "{database_name}" CASCADE')
+            print(f"✅ Schema dropped: {database_name}")
         
         return True
+    except Exception as e:
+        print(f"❌ Error dropping project schema {database_name}: {e}")
+        return False
     except Exception as e:
         print(f"Error dropping database: {e}")
         return False
