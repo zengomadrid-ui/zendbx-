@@ -115,7 +115,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
     name VARCHAR(255) NOT NULL,
     key_hash VARCHAR(255) UNIQUE NOT NULL,
     key_prefix VARCHAR(20) NOT NULL,
+    encrypted_key TEXT,
     role VARCHAR(50) NOT NULL,
+    key_type VARCHAR(50),
     last_used_at TIMESTAMPTZ,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()

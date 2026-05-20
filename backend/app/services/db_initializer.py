@@ -122,7 +122,8 @@ class DatabaseInitializer:
                 
                 # Execute safe initialization script (idempotent)
                 init_scripts = [
-                    'init_schema_safe.sql'
+                    'init_schema_safe.sql',
+                    'add_api_keys_columns.sql'  # Add missing columns migration
                 ]
                 
                 for script_name in init_scripts:
