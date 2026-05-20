@@ -198,7 +198,7 @@ psql "YOUR_DATABASE_URL" -f backend/database/init_schema_safe.sql
 #### Test Health Endpoint:
 
 ```bash
-curl https://zendbx-13.onrender.com/health
+curl https://zendbx-2-zpp9.onrender.com/health
 ```
 
 **Expected response:**
@@ -213,7 +213,7 @@ curl https://zendbx-13.onrender.com/health
 #### Test CORS:
 
 ```bash
-curl -X OPTIONS https://zendbx-13.onrender.com/api/auth/signup \
+curl -X OPTIONS https://zendbx-2-zpp9.onrender.com/api/auth/signup \
   -H "Origin: https://devapp.zendbx.in" \
   -H "Access-Control-Request-Method: POST" \
   -v
@@ -232,7 +232,7 @@ Access-Control-Allow-Headers: *
 2. Fill in the form
 3. Click "Sign Up"
 4. Open Browser DevTools → Network tab
-5. Check the request to `https://zendbx-13.onrender.com/api/auth/signup`
+5. Check the request to `https://zendbx-2-zpp9.onrender.com/api/auth/signup`
 6. Should return 201 Created with user data and token
 
 ---
@@ -308,8 +308,8 @@ After completing all steps, verify:
 
 ### Your Deployment URLs:
 - Frontend: https://devapp.zendbx.in
-- Backend: https://zendbx-13.onrender.com
-- Health Check: https://zendbx-13.onrender.com/health
+- Backend: https://zendbx-2-zpp9.onrender.com
+- Health Check: https://zendbx-2-zpp9.onrender.com/health
 
 ### Important Files:
 - Backend Config: `backend/app/core/config.py`

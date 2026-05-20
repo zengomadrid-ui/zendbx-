@@ -90,7 +90,7 @@ const url = process.env.NEXT_PUBLIC_API_URL!;
 const isProduction = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
 
 baseUrl: isProduction 
-  ? (process.env.NEXT_PUBLIC_API_URL || 'https://zendbx-13.onrender.com')
+  ? (process.env.NEXT_PUBLIC_API_URL || 'https://zendbx-2-zpp9.onrender.com')
   : getEnvVar('NEXT_PUBLIC_API_URL', 'http://localhost:8000')
 ```
 
@@ -98,9 +98,9 @@ baseUrl: isProduction
 
 **Production Environment Variables (Vercel):**
 ```env
-NEXT_PUBLIC_API_URL=https://zendbx-13.onrender.com
+NEXT_PUBLIC_API_URL=https://zendbx-2-zpp9.onrender.com
 NEXT_PUBLIC_APP_URL=https://devapp.zendbx.in
-NEXT_PUBLIC_WS_URL=wss://zendbx-13.onrender.com
+NEXT_PUBLIC_WS_URL=wss://zendbx-2-zpp9.onrender.com
 NEXT_PUBLIC_ENVIRONMENT=production
 ```
 
@@ -110,9 +110,9 @@ NEXT_PUBLIC_ENVIRONMENT=production
 
 1. Go to Vercel Dashboard → Project Settings → Environment Variables
 2. Ensure these are set for **Production**:
-   - `NEXT_PUBLIC_API_URL` = `https://zendbx-13.onrender.com`
+   - `NEXT_PUBLIC_API_URL` = `https://zendbx-2-zpp9.onrender.com`
    - `NEXT_PUBLIC_APP_URL` = `https://devapp.zendbx.in`
-   - `NEXT_PUBLIC_WS_URL` = `wss://zendbx-13.onrender.com`
+   - `NEXT_PUBLIC_WS_URL` = `wss://zendbx-2-zpp9.onrender.com`
    - `NEXT_PUBLIC_ENVIRONMENT` = `production`
 
 ### Step 2: Commit and Push
@@ -135,9 +135,9 @@ Changes:
 - Production safety guaranteed with non-null assertions
 
 Production URLs:
-- API: https://zendbx-13.onrender.com
+- API: https://zendbx-2-zpp9.onrender.com
 - App: https://devapp.zendbx.in
-- WebSocket: wss://zendbx-13.onrender.com"
+- WebSocket: wss://zendbx-2-zpp9.onrender.com"
 
 git push origin main
 ```
@@ -167,7 +167,7 @@ vercel --prod --force
 4. Clear network log
 5. Try to sign up or log in
 6. **Verify:**
-   - ✅ ALL requests go to `https://zendbx-13.onrender.com`
+   - ✅ ALL requests go to `https://zendbx-2-zpp9.onrender.com`
    - ❌ NO requests to `localhost:8000`
    - ❌ NO requests to `localhost:8001`
    - ❌ NO requests to `localhost:3000`
@@ -203,14 +203,14 @@ grep -r "localhost" .next/static/
 After deployment, verify:
 
 1. ✅ Frontend loads at https://devapp.zendbx.in
-2. ✅ Backend responds at https://zendbx-13.onrender.com/health
+2. ✅ Backend responds at https://zendbx-2-zpp9.onrender.com/health
 3. ✅ Signup creates new user successfully
 4. ✅ Login authenticates and redirects to dashboard
 5. ✅ Dashboard loads user data
 6. ✅ Projects can be created
 7. ✅ SQL editor executes queries
 8. ✅ WebSocket connections work (if applicable)
-9. ✅ ALL Network requests go to zendbx-13.onrender.com
+9. ✅ ALL Network requests go to zendbx-2-zpp9.onrender.com
 10. ✅ ZERO requests to localhost
 11. ✅ NO CORS errors in console
 12. ✅ NO 401/403 errors

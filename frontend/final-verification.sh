@@ -41,7 +41,7 @@ fi
 echo ""
 echo "5. Checking environment files..."
 if [ -f ".env.production" ]; then
-    if grep -q "NEXT_PUBLIC_API_URL=https://zendbx-13.onrender.com" .env.production; then
+    if grep -q "NEXT_PUBLIC_API_URL=https://zendbx-2-zpp9.onrender.com" .env.production; then
         echo "✅ Production API URL configured correctly"
     else
         echo "❌ Production API URL not configured"
@@ -58,7 +58,7 @@ echo "========================================="
 echo ""
 echo "Production is ready for deployment:"
 echo "  Frontend: https://devapp.zendbx.in"
-echo "  Backend: https://zendbx-13.onrender.com"
+echo "  Backend: https://zendbx-2-zpp9.onrender.com"
 echo ""
 echo "Next steps:"
 echo "  1. git add ."

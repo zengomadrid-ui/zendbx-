@@ -22,10 +22,10 @@ export const config = {
   api: {
     // In production, REQUIRE environment variable - no localhost fallback
     baseUrl: isProduction 
-      ? (process.env.NEXT_PUBLIC_API_URL || 'https://zendbx-13.onrender.com')
+      ? (process.env.NEXT_PUBLIC_API_URL || 'https://zendbx-2-zpp9.onrender.com')
       : getEnvVar('NEXT_PUBLIC_API_URL', 'http://localhost:8000'),
     wsUrl: isProduction
-      ? (process.env.NEXT_PUBLIC_WS_URL || 'wss://zendbx-13.onrender.com')
+      ? (process.env.NEXT_PUBLIC_WS_URL || 'wss://zendbx-2-zpp9.onrender.com')
       : getEnvVar('NEXT_PUBLIC_WS_URL', 'http://localhost:8001'),
     timeout: 30000, // 30 seconds
   },

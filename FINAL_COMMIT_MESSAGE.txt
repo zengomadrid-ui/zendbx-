@@ -81,15 +81,15 @@ production deployment NEVER attempts to connect to localhost.
 ## Production URLs
 
 - Frontend: https://devapp.zendbx.in
-- Backend API: https://zendbx-13.onrender.com
-- WebSocket: wss://zendbx-13.onrender.com
+- Backend API: https://zendbx-2-zpp9.onrender.com
+- WebSocket: wss://zendbx-2-zpp9.onrender.com
 
 ## Required Environment Variables (Vercel)
 
 ```env
-NEXT_PUBLIC_API_URL=https://zendbx-13.onrender.com
+NEXT_PUBLIC_API_URL=https://zendbx-2-zpp9.onrender.com
 NEXT_PUBLIC_APP_URL=https://devapp.zendbx.in
-NEXT_PUBLIC_WS_URL=wss://zendbx-13.onrender.com
+NEXT_PUBLIC_WS_URL=wss://zendbx-2-zpp9.onrender.com
 NEXT_PUBLIC_ENVIRONMENT=production
 ```
 
@@ -97,7 +97,7 @@ NEXT_PUBLIC_ENVIRONMENT=production
 
 1. Verify environment variables are set in Vercel
 2. Deploy with CLEAR BUILD CACHE (critical!)
-3. Verify all Network requests go to zendbx-13.onrender.com
+3. Verify all Network requests go to zendbx-2-zpp9.onrender.com
 4. Verify NO requests to localhost
 
 ## Breaking Change

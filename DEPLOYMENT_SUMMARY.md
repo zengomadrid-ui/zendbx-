@@ -9,7 +9,7 @@ Fix frontend-backend communication for production deployment by replacing all ha
 
 #### 1. Environment Configuration
 - **File:** `frontend/.env.production`
-  - Set `NEXT_PUBLIC_API_URL=https://zendbx-13.onrender.com`
+  - Set `NEXT_PUBLIC_API_URL=https://zendbx-2-zpp9.onrender.com`
   - Set `NEXT_PUBLIC_APP_URL=https://devapp.zendbx.in`
 
 - **File:** `frontend/.env.local`
@@ -89,7 +89,7 @@ All instances of `http://localhost:8000` replaced with `${process.env.NEXT_PUBLI
 ### Manual Verification Required
 After deployment, verify:
 1. Frontend loads at https://devapp.zendbx.in
-2. Backend responds at https://zendbx-13.onrender.com
+2. Backend responds at https://zendbx-2-zpp9.onrender.com
 3. No CORS errors in browser console
 4. Authentication flow works end-to-end
 5. API calls succeed (check Network tab)
@@ -112,7 +112,7 @@ git push origin main
 - Render will auto-deploy from GitHub
 - Or manually trigger from dashboard
 - Wait for build to complete (~5-10 minutes)
-- Verify: https://zendbx-13.onrender.com/health
+- Verify: https://zendbx-2-zpp9.onrender.com/health
 
 ### 3. Deploy Frontend (Vercel)
 - Vercel will auto-deploy from GitHub
@@ -129,7 +129,7 @@ git push origin main
 5. Create a project
 6. Run a SQL query
 7. Verify:
-   - All API calls go to `zendbx-13.onrender.com`
+   - All API calls go to `zendbx-2-zpp9.onrender.com`
    - No CORS errors
    - No 401/403 errors
    - Data loads correctly
@@ -177,7 +177,7 @@ If only CORS issues:
 ## 🎉 Expected Outcome
 
 After successful deployment:
-- Frontend at https://devapp.zendbx.in communicates with backend at https://zendbx-13.onrender.com
+- Frontend at https://devapp.zendbx.in communicates with backend at https://zendbx-2-zpp9.onrender.com
 - No CORS errors
 - No localhost references in production
 - Full authentication and API functionality

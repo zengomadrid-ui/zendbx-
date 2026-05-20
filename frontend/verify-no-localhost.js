@@ -83,7 +83,7 @@ if (issuesFound === 0) {
   console.log('✅ SUCCESS! No hardcoded localhost URLs found.');
   console.log('✅ All API calls are using environment variables.');
   console.log('\n📝 Production Configuration:');
-  console.log('   NEXT_PUBLIC_API_URL=https://zendbx-13.onrender.com');
+  console.log('   NEXT_PUBLIC_API_URL=https://zendbx-2-zpp9.onrender.com');
   console.log('   NEXT_PUBLIC_APP_URL=https://devapp.zendbx.in');
   console.log('\n🚀 Ready for deployment!');
 } else {

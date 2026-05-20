@@ -6,7 +6,7 @@
 - ✅ Replaced all hardcoded `http://localhost:8000` URLs with environment variables
 - ✅ Updated 22 frontend files to use `process.env.NEXT_PUBLIC_API_URL`
 - ✅ Fixed import page to use correct environment variable
-- ✅ Updated `.env.production` with production backend URL: `https://zendbx-13.onrender.com`
+- ✅ Updated `.env.production` with production backend URL: `https://zendbx-2-zpp9.onrender.com`
 - ✅ Updated `.env.local` for local development
 
 ### 2. Backend CORS Configuration
@@ -33,10 +33,10 @@
 2. **Render will automatically deploy** (if auto-deploy is enabled)
    - Or manually trigger deployment from Render dashboard
    - Wait for build to complete
-   - Verify deployment at: https://zendbx-13.onrender.com
+   - Verify deployment at: https://zendbx-2-zpp9.onrender.com
 
 3. **Verify backend health:**
-   - Visit: https://zendbx-13.onrender.com/health
+   - Visit: https://zendbx-2-zpp9.onrender.com/health
    - Should return: `{"status": "healthy", "database": "connected", ...}`
 
 ### Step 2: Deploy Frontend to Vercel
@@ -47,7 +47,7 @@
 
 2. **Verify environment variables in Vercel:**
    - Go to Vercel Dashboard → Project Settings → Environment Variables
-   - Ensure `NEXT_PUBLIC_API_URL` is set to: `https://zendbx-13.onrender.com`
+   - Ensure `NEXT_PUBLIC_API_URL` is set to: `https://zendbx-2-zpp9.onrender.com`
    - Ensure `NEXT_PUBLIC_APP_URL` is set to: `https://devapp.zendbx.in`
 
 3. **Verify frontend:**
@@ -70,7 +70,7 @@
 
 3. **Check for Errors:**
    - Open browser DevTools → Network tab
-   - Verify all API calls go to `https://zendbx-13.onrender.com`
+   - Verify all API calls go to `https://zendbx-2-zpp9.onrender.com`
    - No `localhost:8000` calls should appear
    - No CORS errors should appear
 
@@ -90,9 +90,9 @@
 ## 🌐 Production URLs
 
 - **Frontend:** https://devapp.zendbx.in
-- **Backend API:** https://zendbx-13.onrender.com
-- **Backend Health:** https://zendbx-13.onrender.com/health
-- **API Docs:** https://zendbx-13.onrender.com/docs
+- **Backend API:** https://zendbx-2-zpp9.onrender.com
+- **Backend Health:** https://zendbx-2-zpp9.onrender.com/health
+- **API Docs:** https://zendbx-2-zpp9.onrender.com/docs
 
 ## 🔍 Troubleshooting
 
@@ -135,9 +135,9 @@
 
 ### Frontend (Vercel)
 ```env
-NEXT_PUBLIC_API_URL=https://zendbx-13.onrender.com
+NEXT_PUBLIC_API_URL=https://zendbx-2-zpp9.onrender.com
 NEXT_PUBLIC_APP_URL=https://devapp.zendbx.in
-NEXT_PUBLIC_WS_URL=wss://zendbx-13.onrender.com
+NEXT_PUBLIC_WS_URL=wss://zendbx-2-zpp9.onrender.com
 NEXT_PUBLIC_ENVIRONMENT=production
 ```
 
@@ -152,7 +152,7 @@ SECRET_KEY=<your-secret-key>
 ## ✨ Success Criteria
 
 - ✅ Frontend loads at https://devapp.zendbx.in
-- ✅ Backend responds at https://zendbx-13.onrender.com
+- ✅ Backend responds at https://zendbx-2-zpp9.onrender.com
 - ✅ No CORS errors in browser console
 - ✅ No localhost:8000 calls in Network tab
 - ✅ Authentication works (signup/login)

@@ -138,7 +138,7 @@ Fixes:
 
 Production URLs:
 - Frontend: https://devapp.zendbx.in
-- Backend: https://zendbx-13.onrender.com"
+- Backend: https://zendbx-2-zpp9.onrender.com"
 
 git push origin main
 ```
@@ -166,7 +166,7 @@ git push origin main
 #### Test Health Endpoint
 
 ```bash
-curl https://zendbx-13.onrender.com/health
+curl https://zendbx-2-zpp9.onrender.com/health
 ```
 
 Expected response:
@@ -192,7 +192,7 @@ Expected response:
 
 **In Browser Console:**
 - ✅ No CORS errors
-- ✅ Request to `https://zendbx-13.onrender.com/api/auth/signup`
+- ✅ Request to `https://zendbx-2-zpp9.onrender.com/api/auth/signup`
 - ✅ Status: 201 Created
 - ✅ Response contains `access_token` and `user` object
 
