@@ -1,21 +1,23 @@
 from pydantic_settings import BaseSettings
 from typing import List, Union
 import json
+import os
 
 class Settings(BaseSettings):
     # Application
     APP_NAME: str = "ZENDBX"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
-    ENVIRONMENT: str = "development"
+    DEBUG: bool = False  # Default to False for production safety
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production")  # Default to production
     
-    # Database
-    DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/nexora_main"
-    DATABASE_POOL_SIZE: int = 10  # Reduced for Windows stability
-    DATABASE_MAX_OVERFLOW: int = 5  # Reduced for Windows stability
+    # Database - NO LOCALHOST DEFAULT!
+    # In production, this MUST be set via environment variable
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    DATABASE_POOL_SIZE: int = 20
+    DATABASE_MAX_OVERFLOW: int = 10
     
     # Security
-    SECRET_KEY: str = "your-secret-key-change-in-production"
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
@@ -79,5 +81,35 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+    
+    def validate_required_settings(self):
+        """Validate that required settings are configured"""
+        errors = []
+        
+        if not self.DATABASE_URL:
+            errors.append("DATABASE_URL is required but not set")
+        elif "localhost" in self.DATABASE_URL or "127.0.0.1" in self.DATABASE_URL:
+            if self.ENVIRONMENT == "production":
+                errors.append(f"DATABASE_URL contains localhost in production: {self.DATABASE_URL}")
+        
+        if not self.SECRET_KEY:
+            errors.append("SECRET_KEY is required but not set")
+        elif len(self.SECRET_KEY) < 32:
+            errors.append(f"SECRET_KEY must be at least 32 characters (current: {len(self.SECRET_KEY)})")
+        
+        if errors:
+            error_msg = "\n".join([f"  ❌ {err}" for err in errors])
+            raise ValueError(f"\n🚨 Configuration Errors:\n{error_msg}\n\nSet these environment variables in Render Dashboard.")
+        
+        return True
 
 settings = Settings()
+
+# Validate settings on import (will fail fast if misconfigured)
+if settings.ENVIRONMENT == "production":
+    try:
+        settings.validate_required_settings()
+        print("✅ Configuration validated successfully")
+    except ValueError as e:
+        print(str(e))
+        raise

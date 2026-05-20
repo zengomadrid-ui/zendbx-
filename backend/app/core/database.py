@@ -8,12 +8,23 @@ connection_pools: Dict[str, asyncpg.Pool] = {}
 
 async def get_main_db_pool() -> asyncpg.Pool:
     """
-    Get connection pool for main database with Windows optimization
-    Implements connection pooling best practices for Windows + PostgreSQL
+    Get connection pool for main database
+    Supports both local development and cloud PostgreSQL (Render, AWS RDS, etc.)
     """
     if "main" not in connection_pools:
         max_retries = 3
         retry_delay = 2
+        
+        # Extract database host for logging (sanitized)
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(settings.DATABASE_URL)
+            db_host = parsed.hostname or "unknown"
+            db_name = parsed.path.lstrip('/') or "unknown"
+            print(f"🔌 Connecting to PostgreSQL: {db_host}/{db_name}")
+        except:
+            db_host = "unknown"
+            print(f"🔌 Connecting to PostgreSQL...")
         
         for attempt in range(max_retries):
             try:
@@ -25,63 +36,93 @@ async def get_main_db_pool() -> asyncpg.Pool:
                         pass
                     del connection_pools["main"]
                 
-                # Optimized pool settings for Windows
+                # Determine if we need SSL (cloud databases usually require it)
+                ssl_context = None
+                if any(indicator in settings.DATABASE_URL.lower() for indicator in ['render.com', 'amazonaws.com', 'azure.com', 'digitalocean.com']):
+                    import ssl
+                    ssl_context = ssl.create_default_context()
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
+                    print(f"🔒 SSL enabled for cloud database")
+                
+                # Create connection pool
                 connection_pools["main"] = await asyncpg.create_pool(
                     settings.DATABASE_URL,
-                    min_size=1,  # Minimal idle connections
-                    max_size=10,  # Reasonable max for Windows
-                    max_queries=50000,  # Recycle connections after 50k queries
-                    max_inactive_connection_lifetime=300,  # 5 min idle timeout
-                    timeout=30,  # Connection timeout
-                    command_timeout=60,  # Query timeout
+                    min_size=2,
+                    max_size=settings.DATABASE_POOL_SIZE,
+                    max_queries=50000,
+                    max_inactive_connection_lifetime=300,
+                    timeout=30,
+                    command_timeout=60,
+                    ssl=ssl_context,
                     server_settings={
                         'application_name': 'zendbx',
-                        'jit': 'off',  # Disable JIT for stability
-                        'statement_timeout': '60000'  # 60 second statement timeout
+                        'jit': 'off',
+                        'statement_timeout': '60000'
                     }
                 )
                 
                 # Test the pool with a simple query
                 async with connection_pools["main"].acquire() as conn:
-                    await conn.fetchval('SELECT 1')
+                    result = await conn.fetchval('SELECT 1')
+                    if result == 1:
+                        print(f"✅ Database connection successful (attempt {attempt + 1})")
+                    else:
+                        raise Exception("Database test query failed")
                 
-                print(f"✅ Database pool created (attempt {attempt + 1})")
                 break
                 
             except Exception as e:
+                error_msg = str(e)
                 if attempt < max_retries - 1:
-                    print(f"⚠️  Pool creation attempt {attempt + 1} failed: {e}")
+                    print(f"⚠️  Connection attempt {attempt + 1} failed: {error_msg}")
                     print(f"   Retrying in {retry_delay}s...")
                     await asyncio.sleep(retry_delay)
                     retry_delay *= 2
                 else:
-                    print(f"\n❌ Failed to create database pool after {max_retries} attempts")
-                    print(f"   Error: {e}")
-                    print("\n🔧 Permanent Fix Required:")
-                    print("   1. Restart PostgreSQL: net stop postgresql-x64-17 && net start postgresql-x64-17")
-                    print("   2. Increase max_connections in postgresql.conf")
-                    print("   3. Consider using Docker or WSL for better stability")
-                    raise
+                    print(f"\n❌ Failed to connect to database after {max_retries} attempts")
+                    print(f"   Error: {error_msg}")
+                    print(f"   Database Host: {db_host}")
+                    print(f"\n🔧 Troubleshooting:")
+                    print(f"   1. Verify DATABASE_URL environment variable is set correctly")
+                    print(f"   2. Check database server is running and accessible")
+                    print(f"   3. Verify network connectivity and firewall rules")
+                    print(f"   4. Check database credentials are correct")
+                    
+                    # Don't print Windows-specific instructions in production
+                    if settings.ENVIRONMENT != "production":
+                        print(f"   5. For local development: Ensure PostgreSQL service is running")
+                    
+                    raise Exception(f"Database connection failed: {error_msg}")
                     
     return connection_pools["main"]
 
 async def get_project_db_pool(database_name: str) -> asyncpg.Pool:
-    """Get connection pool for a project database with Windows optimization"""
+    """Get connection pool for a project database"""
     if database_name not in connection_pools:
         try:
             # Parse main database URL and replace database name
             parts = settings.DATABASE_URL.rsplit("/", 1)
             project_db_url = f"{parts[0]}/{database_name}"
             
-            # Optimized pool settings for project databases
+            # Determine if we need SSL
+            ssl_context = None
+            if any(indicator in settings.DATABASE_URL.lower() for indicator in ['render.com', 'amazonaws.com', 'azure.com', 'digitalocean.com']):
+                import ssl
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+            
+            # Create pool for project database
             connection_pools[database_name] = await asyncpg.create_pool(
                 project_db_url,
-                min_size=1,  # Minimal idle connections
+                min_size=1,
                 max_size=5,  # Smaller pool for project DBs
                 max_queries=50000,
                 max_inactive_connection_lifetime=300,
                 timeout=30,
                 command_timeout=60,
+                ssl=ssl_context,
                 server_settings={
                     'application_name': f'zendbx_{database_name[:20]}',
                     'jit': 'off',

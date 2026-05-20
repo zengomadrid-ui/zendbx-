@@ -76,6 +76,19 @@ async def startup():
     """Initialize application"""
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}...")
     print(f"Environment: {settings.ENVIRONMENT}")
+    
+    # Initialize database schema if needed
+    try:
+        from app.services.db_initializer import initialize_database_on_startup
+        db_ready = await initialize_database_on_startup(settings.DATABASE_URL)
+        
+        if not db_ready:
+            print("⚠️  WARNING: Database schema incomplete - some features may not work")
+            print("   The application will continue, but you should initialize the schema manually")
+    except Exception as e:
+        print(f"⚠️  Database initialization check failed: {str(e)}")
+        print("   Continuing startup, but database may not be properly initialized")
+    
     print(f"Database: Connected")
     
     # Initialize Redis for quota tracking (optional - don't crash if unavailable)
