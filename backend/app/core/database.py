@@ -177,6 +177,9 @@ async def execute_on_project_db(database_name: str, query: str, *args):
     for idx, stmt in enumerate(statements, 1):
         start = time.time()
         async with pool.acquire() as conn:
+            # CRITICAL: Set search_path for EACH statement in multi-statement queries
+            await conn.execute(f'SET search_path TO "{database_name}", public')
+            
             try:
                 result = await conn.fetch(stmt)
                 exec_time = int((time.time() - start) * 1000)
