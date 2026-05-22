@@ -390,8 +390,8 @@ async def create_project_database(database_name: str) -> bool:
             await conn.execute(f'SET search_path TO "{database_name}"')
             
             # Enable extensions (these are database-wide, not schema-specific)
-            await conn.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
-            await conn.execute('CREATE EXTENSION IF NOT EXISTS "pg_stat_statements"')
+            # uuid-ossp not needed - using gen_random_uuid() instead
+            # pg_stat_statements optional
             
             # Create helper function in the schema
             await conn.execute(f'''
@@ -408,7 +408,7 @@ async def create_project_database(database_name: str) -> bool:
             # Create metadata table in the schema
             await conn.execute(f'''
                 CREATE TABLE "{database_name}"._zendbx_metadata (
-                    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     table_name VARCHAR(255) UNIQUE NOT NULL,
                     created_by VARCHAR(255),
                     created_at TIMESTAMPTZ DEFAULT NOW(),

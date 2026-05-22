@@ -1,0 +1,51 @@
+# This is the fixed create_project_database function
+# Copy this to replace the one in database.py
+
+async def create_project_database(database_name: str) -> bool:
+    """
+    Create a new project schema (not a separate database)
+    Uses PostgreSQL schemas for multi-tenancy instead of separate databases
+    Works on Render free tier without requiring uuid-ossp extension
+    """
+    try:
+        print(f"🔧 Creating project schema: {database_name}")
+        pool = await get_main_db_pool()
+        async with pool.acquire() as conn:
+            # Step 1: Create schema
+            await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{database_name}"')
+            print(f"✅ Schema created: {database_name}")
+            
+            # Step 2: Create helper function in the schema
+            # Fixed: Use $$ for dollar quoting
+            await conn.execute(f'''
+                CREATE OR REPLACE FUNCTION "{database_name}".update_updated_at_column()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    NEW.updated_at = NOW();
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+            ''')
+            print(f"✅ Helper function created in schema: {database_name}")
+            
+            # Step 3: Create metadata table using gen_random_uuid()
+            # This is built into PostgreSQL 13+ and doesn't require extensions
+            await conn.execute(f'''
+                CREATE TABLE IF NOT EXISTS "{database_name}"._zendbx_metadata (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    table_name VARCHAR(255) UNIQUE NOT NULL,
+                    created_by VARCHAR(255),
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            ''')
+            print(f"✅ Metadata table created in schema: {database_name}")
+            
+        print(f"🎉 Project schema fully initialized: {database_name}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error creating project schema {database_name}: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        return False
