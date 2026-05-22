@@ -53,13 +53,14 @@ async def get_project_overview_stats(
         
         # Get database statistics
         async with pool.acquire() as conn:
-            # Get table count and total rows
+            # Get table count and total rows (filter by project schema)
             try:
-                tables_stats = await conn.fetchrow("""
+                tables_stats = await conn.fetchrow(f"""
                     SELECT 
                         COUNT(*) as table_count,
                         COALESCE(SUM(n_live_tup), 0) as total_rows
                     FROM pg_stat_user_tables
+                    WHERE schemaname = '{db_name}'
                 """)
             except Exception as e:
                 tables_stats = {"table_count": 0, "total_rows": 0}
@@ -72,40 +73,41 @@ async def get_project_overview_stats(
             except Exception as e:
                 db_size = 0
             
-            # Get function count
+            # Get function count (filter by project schema)
             try:
-                function_count = await conn.fetchval("""
+                function_count = await conn.fetchval(f"""
                     SELECT COUNT(*)
                     FROM pg_proc p
                     JOIN pg_namespace n ON p.pronamespace = n.oid
-                    WHERE n.nspname = 'public'
+                    WHERE n.nspname = '{db_name}'
                     AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
                 """)
             except Exception as e:
                 function_count = 0
             
-            # Get trigger count
+            # Get trigger count (filter by project schema)
             try:
-                trigger_count = await conn.fetchval("""
+                trigger_count = await conn.fetchval(f"""
                     SELECT COUNT(*)
                     FROM pg_trigger t
                     JOIN pg_class c ON t.tgrelid = c.oid
                     JOIN pg_namespace n ON c.relnamespace = n.oid
-                    WHERE n.nspname = 'public'
+                    WHERE n.nspname = '{db_name}'
                     AND NOT t.tgisinternal
                 """)
             except Exception as e:
                 trigger_count = 0
             
-            # Get recent activity (tables modified in last 24 hours)
+            # Get recent activity (tables modified in last 24 hours, filter by project schema)
             try:
-                recent_activity = await conn.fetchval("""
+                recent_activity = await conn.fetchval(f"""
                     SELECT COUNT(*)
                     FROM pg_stat_user_tables
-                    WHERE last_vacuum IS NOT NULL 
+                    WHERE schemaname = '{db_name}'
+                    AND (last_vacuum IS NOT NULL 
                        OR last_autovacuum IS NOT NULL
                        OR last_analyze IS NOT NULL
-                       OR last_autoanalyze IS NOT NULL
+                       OR last_autoanalyze IS NOT NULL)
                 """)
             except Exception as e:
                 recent_activity = 0

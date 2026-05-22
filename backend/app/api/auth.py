@@ -502,7 +502,7 @@ async def update_last_selected_project(
         project = await execute_on_main_db(
             "SELECT id FROM projects WHERE id = $1 AND user_id = $2",
             project_id,
-            UUID(current_user["id"])
+            current_user["id"]  # Already a UUID object
         )
         
         if not project:
@@ -515,14 +515,17 @@ async def update_last_selected_project(
         await execute_on_main_db(
             "UPDATE users SET last_selected_project_id = $1, updated_at = NOW() WHERE id = $2",
             project_id,
-            UUID(current_user["id"])
+            current_user["id"]  # Already a UUID object
         )
         
-        return {"message": "Last selected project updated successfully"}
+        return {"message": "Last selected project updated successfully", "success": True}
         
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        print(f"❌ Error updating last selected project: {str(e)}")
+        print(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update last selected project: {str(e)}"
