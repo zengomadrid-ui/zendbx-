@@ -116,12 +116,6 @@ async def list_tables(
     
     print(f"✅ Returning {len(tables)} tables to frontend")
     return tables
-            "column_count": row["column_count"],
-            "size_bytes": 0,
-            "created_at": None
-        })
-    
-    return tables
 
 # ============================================
 # CREATE TABLE
