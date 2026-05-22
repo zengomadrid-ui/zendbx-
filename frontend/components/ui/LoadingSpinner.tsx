@@ -18,14 +18,20 @@ export function LoadingSpinner({ size = 'md', className = '' }: LoadingSpinnerPr
 
   return (
     <div className={`${sizes[size]} relative ${className}`}>
-      <Image
-        src="/AURIX - 3.png"
-        alt="Loading"
-        width={96}
-        height={96}
-        className="w-full h-full object-contain animate-pulse"
-        priority
-      />
+      {/* Glowing background effect */}
+      <div className="absolute inset-0 bg-orange-500/20 rounded-full blur-xl animate-pulse"></div>
+      
+      {/* Logo with pulse and subtle rotation */}
+      <div className="relative animate-pulse">
+        <Image
+          src="/AURIX - 3.png"
+          alt="Loading"
+          width={96}
+          height={96}
+          className="w-full h-full object-contain drop-shadow-[0_0_15px_rgba(249,115,22,0.5)]"
+          priority
+        />
+      </div>
     </div>
   );
 }
