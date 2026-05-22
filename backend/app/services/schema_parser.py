@@ -22,9 +22,19 @@ class SchemaParser:
         }
     
     @staticmethod
-    async def get_tables(db: asyncpg.Pool) -> List[Dict]:
-        """Get all tables with their columns from all user schemas"""
-        query = """
+    async def get_tables(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
+        """
+        Get all tables with their columns
+        If schema_name is provided, only get tables from that schema
+        Otherwise, get from public schema
+        """
+        # Determine which schema to query
+        if schema_name is None:
+            schema_filter = "t.table_schema = 'public'"
+        else:
+            schema_filter = f"t.table_schema = '{schema_name}'"
+        
+        query = f"""
         SELECT 
             t.table_schema,
             t.table_name,
@@ -51,8 +61,9 @@ class SchemaParser:
         JOIN information_schema.columns c 
             ON t.table_name = c.table_name 
             AND t.table_schema = c.table_schema
-        WHERE t.table_schema NOT IN ('pg_catalog', 'information_schema')
+        WHERE {schema_filter}
         AND t.table_type = 'BASE TABLE'
+        AND t.table_name NOT LIKE '_zendbx_%'
         AND t.table_name NOT LIKE '_nexora_%'
         GROUP BY t.table_schema, t.table_name
         ORDER BY t.table_schema, t.table_name

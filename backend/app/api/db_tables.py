@@ -36,7 +36,7 @@ class AddColumnRequest(BaseModel):
 
 
 async def get_project_db_from_header(x_project_id: str = Header(...)):
-    """Get project database pool from header"""
+    """Get project database pool and schema name from header"""
     try:
         # Get the database name from projects table
         from app.core.database import get_main_db_pool
@@ -50,19 +50,21 @@ async def get_project_db_from_header(x_project_id: str = Header(...)):
                 raise HTTPException(status_code=404, detail="Project not found")
             
             db_name = result["database_name"]
-            return await get_project_db_pool(db_name)
+            pool = await get_project_db_pool(db_name)
+            # Return both pool and schema name
+            return {"pool": pool, "schema": db_name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/")
 async def list_tables(
-    db = Depends(get_project_db_from_header),
+    db_info = Depends(get_project_db_from_header),
     current_user: dict = Depends(get_current_user)
 ):
-    """List all tables in the database"""
+    """List all tables in the project schema"""
     try:
-        tables = await SchemaParser.get_tables(db)
+        tables = await SchemaParser.get_tables(db_info["pool"], db_info["schema"])
         return {"tables": tables}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -71,12 +73,15 @@ async def list_tables(
 @router.get("/{table_name}")
 async def get_table_details(
     table_name: str,
-    db = Depends(get_project_db_from_header),
+    db_info = Depends(get_project_db_from_header),
     current_user: dict = Depends(get_current_user)
 ):
     """Get detailed information about a table"""
     try:
-        details = await SchemaParser.get_table_details(db, table_name)
+        # Prepend schema name if not already included
+        if '.' not in table_name:
+            table_name = f"{db_info['schema']}.{table_name}"
+        details = await SchemaParser.get_table_details(db_info["pool"], table_name)
         return details
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -85,13 +90,13 @@ async def get_table_details(
 @router.post("/")
 async def create_table(
     request: CreateTableRequest,
-    db = Depends(get_project_db_from_header),
+    db_info = Depends(get_project_db_from_header),
     current_user: dict = Depends(get_current_user)
 ):
     """Create a new table"""
     try:
         columns = [col.dict() for col in request.columns]
-        result = await TableManager.create_table(db, request.table_name, columns)
+        result = await TableManager.create_table(db_info["pool"], request.table_name, columns, db_info["schema"])
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -100,12 +105,12 @@ async def create_table(
 @router.delete("/{table_name}")
 async def drop_table(
     table_name: str,
-    db = Depends(get_project_db_from_header),
+    db_info = Depends(get_project_db_from_header),
     current_user: dict = Depends(get_current_user)
 ):
     """Drop a table"""
     try:
-        result = await TableManager.drop_table(db, table_name)
+        result = await TableManager.drop_table(db_info["pool"], table_name, db_info["schema"])
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -115,12 +120,12 @@ async def drop_table(
 async def add_column(
     table_name: str,
     request: AddColumnRequest,
-    db = Depends(get_project_db_from_header),
+    db_info = Depends(get_project_db_from_header),
     current_user: dict = Depends(get_current_user)
 ):
     """Add a column to an existing table"""
     try:
-        result = await TableManager.add_column(db, table_name, request.dict())
+        result = await TableManager.add_column(db_info["pool"], table_name, request.dict(), db_info["schema"])
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -130,12 +135,12 @@ async def add_column(
 async def drop_column(
     table_name: str,
     column_name: str,
-    db = Depends(get_project_db_from_header),
+    db_info = Depends(get_project_db_from_header),
     current_user: dict = Depends(get_current_user)
 ):
     """Drop a column from a table"""
     try:
-        result = await TableManager.drop_column(db, table_name, column_name)
+        result = await TableManager.drop_column(db_info["pool"], table_name, column_name, db_info["schema"])
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
