@@ -98,47 +98,22 @@ async def get_main_db_pool() -> asyncpg.Pool:
     return connection_pools["main"]
 
 async def get_project_db_pool(database_name: str) -> asyncpg.Pool:
-    """Get connection pool for a project database"""
-    if database_name not in connection_pools:
-        try:
-            # Parse main database URL and replace database name
-            parts = settings.DATABASE_URL.rsplit("/", 1)
-            project_db_url = f"{parts[0]}/{database_name}"
-            
-            # Determine if we need SSL
-            ssl_context = None
-            if any(indicator in settings.DATABASE_URL.lower() for indicator in ['render.com', 'amazonaws.com', 'azure.com', 'digitalocean.com']):
-                import ssl
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
-            
-            # Create pool for project database
-            connection_pools[database_name] = await asyncpg.create_pool(
-                project_db_url,
-                min_size=1,
-                max_size=5,  # Smaller pool for project DBs
-                max_queries=50000,
-                max_inactive_connection_lifetime=300,
-                timeout=30,
-                command_timeout=60,
-                ssl=ssl_context,
-                server_settings={
-                    'application_name': f'zendbx_{database_name[:20]}',
-                    'jit': 'off',
-                    'statement_timeout': '60000'
-                }
-            )
-        except Exception as e:
-            print(f"❌ Failed to create pool for {database_name}: {e}")
-            raise
-    return connection_pools[database_name]
+    """
+    Get connection pool for a project schema
+    Since we use schemas (not separate databases), we return the main pool
+    and set the search_path when executing queries
+    """
+    # We use schemas, not separate databases, so just return the main pool
+    # The search_path will be set in execute_on_project_db
+    return await get_main_db_pool()
 
 async def execute_on_main_db(query: str, *args):
     """Execute query on main database"""
     pool = await get_main_db_pool()
     async with pool.acquire() as conn:
-        return await conn.fetch(query, *args)
+            # Set search_path to the project schema
+            await conn.execute(f'SET search_path TO "{database_name}", public')
+            return await conn.fetch(query, *args)
 
 async def execute_on_project_db(database_name: str, query: str, *args):
     """
@@ -154,6 +129,8 @@ async def execute_on_project_db(database_name: str, query: str, *args):
     # If there are parameters, this must be a single parameterized statement
     if args:
         async with pool.acquire() as conn:
+            # Set search_path to the project schema
+            await conn.execute(f'SET search_path TO "{database_name}", public')
             return await conn.fetch(query, *args)
     
     # For queries without parameters, we need to handle multi-statement execution
@@ -166,6 +143,8 @@ async def execute_on_project_db(database_name: str, query: str, *args):
     semicolon_count = query_stripped.count(';')
     if semicolon_count == 0 or (semicolon_count == 1 and query_stripped.endswith(';')):
         async with pool.acquire() as conn:
+            # Set search_path to the project schema
+            await conn.execute(f'SET search_path TO "{database_name}", public')
             try:
                 result = await conn.fetch(query)
                 return result
@@ -184,6 +163,8 @@ async def execute_on_project_db(database_name: str, query: str, *args):
     if len(statements) == 1:
         # Single statement after smart split
         async with pool.acquire() as conn:
+            # Set search_path to the project schema
+            await conn.execute(f'SET search_path TO "{database_name}", public')
             try:
                 return await conn.fetch(statements[0])
             except:
