@@ -65,7 +65,36 @@ async def list_tables(
     project = await verify_project_access(project_id, current_user["id"])
     schema_name = project["database_name"]  # Schema name is same as database_name
     
-    print(f"📋 Listing tables for project {project_id}, schema: {schema_name}")
+    print(f"\n{'='*60}")
+    print(f"📋 LIST TABLES REQUEST")
+    print(f"{'='*60}")
+    print(f"Project ID: {project_id}")
+    print(f"Schema Name: {schema_name}")
+    print(f"User ID: {current_user['id']}")
+    
+    # First, check what schemas exist
+    all_schemas = await execute_on_project_db(
+        project["database_name"],
+        "SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog', 'information_schema') ORDER BY schema_name"
+    )
+    print(f"\n📂 Available schemas in database:")
+    for s in all_schemas:
+        print(f"   - {s['schema_name']}")
+    
+    # Check ALL tables in database (for debugging)
+    all_tables = await execute_on_project_db(
+        project["database_name"],
+        """
+        SELECT table_schema, table_name 
+        FROM information_schema.tables 
+        WHERE table_type = 'BASE TABLE'
+        AND table_schema NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY table_schema, table_name
+        """
+    )
+    print(f"\n📊 ALL tables in database:")
+    for t in all_tables:
+        print(f"   - {t['table_schema']}.{t['table_name']}")
     
     # Query actual database for tables in the project schema
     result = await execute_on_project_db(
@@ -88,9 +117,10 @@ async def list_tables(
         """
     )
     
-    print(f"📊 Found {len(result)} tables in schema '{schema_name}'")
+    print(f"\n🎯 Tables in target schema '{schema_name}': {len(result)}")
     for row in result:
         print(f"   - {row['table_schema']}.{row['table_name']} ({row['column_count']} columns)")
+    print(f"{'='*60}\n")
     
     tables = []
     for row in result:
