@@ -65,39 +65,57 @@ async def list_tables(
     project = await verify_project_access(project_id, current_user["id"])
     schema_name = project["database_name"]  # Schema name is same as database_name
     
+    print(f"📋 Listing tables for project {project_id}, schema: {schema_name}")
+    
     # Query actual database for tables in the project schema
     result = await execute_on_project_db(
         project["database_name"],
         f"""
         SELECT 
             t.table_name,
+            t.table_schema,
             COUNT(c.column_name) as column_count
         FROM information_schema.tables t
         LEFT JOIN information_schema.columns c 
             ON t.table_name = c.table_name 
-            AND c.table_schema = '{schema_name}'
+            AND c.table_schema = t.table_schema
         WHERE t.table_schema = '{schema_name}'
         AND t.table_type = 'BASE TABLE'
         AND t.table_name NOT LIKE '_zendbx_%'
         AND t.table_name NOT LIKE '_nexora_%'
-        GROUP BY t.table_name
+        GROUP BY t.table_schema, t.table_name
         ORDER BY t.table_name
         """
     )
     
+    print(f"📊 Found {len(result)} tables in schema '{schema_name}'")
+    for row in result:
+        print(f"   - {row['table_schema']}.{row['table_name']} ({row['column_count']} columns)")
+    
     tables = []
     for row in result:
         # Get row count for each table (with schema prefix)
-        count_result = await execute_on_project_db(
-            project["database_name"],
-            f'SELECT COUNT(*) as count FROM "{schema_name}"."{row["table_name"]}"'
-        )
-        row_count = count_result[0]["count"] if count_result else 0
+        try:
+            count_result = await execute_on_project_db(
+                project["database_name"],
+                f'SELECT COUNT(*) as count FROM "{schema_name}"."{row["table_name"]}"'
+            )
+            row_count = count_result[0]["count"] if count_result else 0
+        except Exception as e:
+            print(f"⚠️ Could not get row count for {row['table_name']}: {str(e)}")
+            row_count = 0
         
         tables.append({
             "table_name": row["table_name"],
             "columns": [],
             "row_count": row_count,
+            "column_count": row["column_count"],
+            "size_bytes": 0,
+            "created_at": None
+        })
+    
+    print(f"✅ Returning {len(tables)} tables to frontend")
+    return tables
             "column_count": row["column_count"],
             "size_bytes": 0,
             "created_at": None

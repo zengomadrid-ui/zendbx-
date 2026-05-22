@@ -455,19 +455,13 @@ Adapt the table name and columns to match the description. Keep it minimal."""
         pool: asyncpg.Pool,
         table_def: Dict[str, Any],
         project_id: UUID,
-        user_id: UUID
+        user_id: UUID,
+        schema_name: str
     ):
         """Create a single table from definition"""
         
         table_name = table_def["name"]
         columns = table_def["columns"]
-        
-        # Get schema name from project
-        project_result = await execute_on_main_db(
-            "SELECT database_name FROM projects WHERE id = $1",
-            project_id
-        )
-        schema_name = project_result[0]["database_name"]
         
         # Build CREATE TABLE statement
         column_defs = []
@@ -488,8 +482,9 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             
             column_defs.append(col_def)
         
+        # CRITICAL: Create table with explicit schema prefix to ensure it's in the correct schema
         create_sql = f"""
-        CREATE TABLE IF NOT EXISTS "{table_name}" (
+        CREATE TABLE IF NOT EXISTS "{schema_name}"."{table_name}" (
             {', '.join(column_defs)}
         );
         """
@@ -498,6 +493,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             # Set search_path to project schema
             await conn.execute(f'SET search_path TO "{schema_name}", public')
             await conn.execute(create_sql)
+            print(f"✅ Created table '{schema_name}'.'{table_name}'")
         
         # Store in user_tables for tracking (with error handling)
         schema_def = {
@@ -531,11 +527,12 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             constraint_name = f"fk_{table_name}_{fk['column']}"
             on_delete = fk.get("on_delete", "CASCADE")
             
+            # Use explicit schema prefix for both tables
             alter_sql = f"""
-            ALTER TABLE "{table_name}"
+            ALTER TABLE "{schema_name}"."{table_name}"
             ADD CONSTRAINT "{constraint_name}"
             FOREIGN KEY ("{fk['column']}")
-            REFERENCES "{fk['references_table']}" ("{fk['references_column']}")
+            REFERENCES "{schema_name}"."{fk['references_table']}" ("{fk['references_column']}")
             ON DELETE {on_delete};
             """
             
@@ -543,6 +540,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
                 await conn.execute(f'SET search_path TO "{schema_name}", public')
                 try:
                     await conn.execute(alter_sql)
+                    print(f"✅ Created foreign key on '{schema_name}'.'{table_name}'.'{fk['column']}'")
                 except asyncpg.DuplicateObjectError:
                     pass  # Constraint already exists
     
@@ -556,14 +554,16 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             unique = "UNIQUE" if index_def.get("unique", False) else ""
             index_name = f"idx_{table_name}_{'_'.join(columns)}_{idx}"
             
+            # Use explicit schema prefix
             create_index_sql = f"""
-            CREATE {unique} INDEX IF NOT EXISTS "{index_name}"
-            ON "{table_name}" ({', '.join(f'"{col}"' for col in columns)});
+            CREATE {unique} INDEX IF NOT EXISTS "{schema_name}"."{index_name}"
+            ON "{schema_name}"."{table_name}" ({', '.join(f'"{col}"' for col in columns)});
             """
             
             async with pool.acquire() as conn:
                 await conn.execute(f'SET search_path TO "{schema_name}", public')
                 await conn.execute(create_index_sql)
+                print(f"✅ Created index '{schema_name}'.'{index_name}'")
     
     async def _enable_auth(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
         """Enable RLS and create basic auth policy"""
@@ -571,10 +571,10 @@ Adapt the table name and columns to match the description. Keep it minimal."""
         table_name = table_def["name"]
         rls_policy = table_def.get("rls_policy", "Users can only access their own data")
         
-        # Enable RLS
+        # Enable RLS with explicit schema prefix
         async with pool.acquire() as conn:
             await conn.execute(f'SET search_path TO "{schema_name}", public')
-            await conn.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY;')
+            await conn.execute(f'ALTER TABLE "{schema_name}"."{table_name}" ENABLE ROW LEVEL SECURITY;')
             
             # Check if table has user_id column
             has_user_id = await conn.fetchval(
@@ -596,7 +596,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             if "own data" in rls_policy.lower() or "user" in rls_policy.lower():
                 # Assume table has user_id column
                 policy_sql = f"""
-                CREATE POLICY "{table_name}_user_policy" ON "{table_name}"
+                CREATE POLICY "{table_name}_user_policy" ON "{schema_name}"."{table_name}"
                 FOR ALL
                 USING (
                     auth.is_service_role() OR 
@@ -605,6 +605,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
                 """
                 try:
                     await conn.execute(policy_sql)
+                    print(f"✅ Enabled RLS on '{schema_name}'.'{table_name}'")
                 except asyncpg.DuplicateObjectError:
                     pass
                 except Exception as e:
@@ -652,16 +653,17 @@ Adapt the table name and columns to match the description. Keep it minimal."""
                     print(f"Warning: Could not create notify function: {str(e)}")
                     return
             
-            # Create trigger for realtime notifications
+            # Create trigger for realtime notifications with explicit schema prefix
             trigger_sql = f"""
             CREATE TRIGGER "{table_name}_realtime_trigger"
-            AFTER INSERT OR UPDATE OR DELETE ON "{table_name}"
+            AFTER INSERT OR UPDATE OR DELETE ON "{schema_name}"."{table_name}"
             FOR EACH ROW
-            EXECUTE FUNCTION notify_database_change();
+            EXECUTE FUNCTION "{schema_name}".notify_database_change();
             """
             
             try:
                 await conn.execute(trigger_sql)
+                print(f"✅ Enabled realtime on '{schema_name}'.'{table_name}'")
             except asyncpg.DuplicateObjectError:
                 pass  # Trigger already exists
             except Exception as e:
