@@ -375,7 +375,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             # Step 1: Create all tables
             for table_def in plan.get("tables", []):
                 try:
-                    await self._create_table(pool, table_def, project_id, user_id)
+                    await self._create_table(pool, table_def, project_id, user_id, db_name)
                     results["tables_created"].append(table_def["name"])
                 except Exception as e:
                     results["errors"].append(f"Failed to create table {table_def['name']}: {str(e)}")
@@ -385,7 +385,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             for table_def in plan.get("tables", []):
                 if "foreign_keys" in table_def and table_def["foreign_keys"]:
                     try:
-                        await self._create_foreign_keys(pool, table_def)
+                        await self._create_foreign_keys(pool, table_def, db_name)
                         results["relationships_created"].append(table_def["name"])
                     except Exception as e:
                         results["errors"].append(f"Failed to create foreign keys for {table_def['name']}: {str(e)}")
@@ -394,7 +394,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             for table_def in plan.get("tables", []):
                 if "indexes" in table_def and table_def["indexes"]:
                     try:
-                        await self._create_indexes(pool, table_def)
+                        await self._create_indexes(pool, table_def, db_name)
                         results["indexes_created"].append(table_def["name"])
                     except Exception as e:
                         results["errors"].append(f"Failed to create indexes for {table_def['name']}: {str(e)}")
@@ -403,7 +403,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             for table_def in plan.get("tables", []):
                 if table_def.get("enable_auth", False):
                     try:
-                        await self._enable_auth(pool, table_def)
+                        await self._enable_auth(pool, table_def, db_name)
                         results["auth_enabled"].append(table_def["name"])
                     except Exception as e:
                         results["errors"].append(f"Failed to enable auth for {table_def['name']}: {str(e)}")
@@ -412,7 +412,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             for table_def in plan.get("tables", []):
                 if table_def.get("enable_realtime", False):
                     try:
-                        await self._enable_realtime(pool, table_def)
+                        await self._enable_realtime(pool, table_def, db_name)
                         results["realtime_enabled"].append(table_def["name"])
                     except Exception as e:
                         results["errors"].append(f"Failed to enable realtime for {table_def['name']}: {str(e)}")
@@ -438,6 +438,13 @@ Adapt the table name and columns to match the description. Keep it minimal."""
         
         table_name = table_def["name"]
         columns = table_def["columns"]
+        
+        # Get schema name from project
+        project_result = await execute_on_main_db(
+            "SELECT database_name FROM projects WHERE id = $1",
+            project_id
+        )
+        schema_name = project_result[0]["database_name"]
         
         # Build CREATE TABLE statement
         column_defs = []
@@ -465,6 +472,8 @@ Adapt the table name and columns to match the description. Keep it minimal."""
         """
         
         async with pool.acquire() as conn:
+            # Set search_path to project schema
+            await conn.execute(f'SET search_path TO "{schema_name}", public')
             await conn.execute(create_sql)
         
         # Store in user_tables for tracking (with error handling)
@@ -490,7 +499,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             # If user_tables doesn't exist or has different schema, just skip tracking
             print(f"Warning: Could not track table in user_tables: {str(e)}")
     
-    async def _create_foreign_keys(self, pool: asyncpg.Pool, table_def: Dict[str, Any]):
+    async def _create_foreign_keys(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
         """Add foreign key constraints"""
         
         table_name = table_def["name"]
@@ -508,12 +517,13 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             """
             
             async with pool.acquire() as conn:
+                await conn.execute(f'SET search_path TO "{schema_name}", public')
                 try:
                     await conn.execute(alter_sql)
                 except asyncpg.DuplicateObjectError:
                     pass  # Constraint already exists
     
-    async def _create_indexes(self, pool: asyncpg.Pool, table_def: Dict[str, Any]):
+    async def _create_indexes(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
         """Create indexes on table"""
         
         table_name = table_def["name"]
@@ -529,9 +539,10 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             """
             
             async with pool.acquire() as conn:
+                await conn.execute(f'SET search_path TO "{schema_name}", public')
                 await conn.execute(create_index_sql)
     
-    async def _enable_auth(self, pool: asyncpg.Pool, table_def: Dict[str, Any]):
+    async def _enable_auth(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
         """Enable RLS and create basic auth policy"""
         
         table_name = table_def["name"]
@@ -539,14 +550,15 @@ Adapt the table name and columns to match the description. Keep it minimal."""
         
         # Enable RLS
         async with pool.acquire() as conn:
+            await conn.execute(f'SET search_path TO "{schema_name}", public')
             await conn.execute(f'ALTER TABLE "{table_name}" ENABLE ROW LEVEL SECURITY;')
             
             # Check if table has user_id column
             has_user_id = await conn.fetchval(
-                """
+                f"""
                 SELECT EXISTS (
                     SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = $1 AND column_name = 'user_id'
+                    WHERE table_schema = '{schema_name}' AND table_name = $1 AND column_name = 'user_id'
                 )
                 """,
                 table_name
@@ -575,18 +587,21 @@ Adapt the table name and columns to match the description. Keep it minimal."""
                 except Exception as e:
                     print(f"Warning: Could not create RLS policy: {str(e)}")
     
-    async def _enable_realtime(self, pool: asyncpg.Pool, table_def: Dict[str, Any]):
+    async def _enable_realtime(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
         """Enable realtime triggers on table"""
         
         table_name = table_def["name"]
         
         async with pool.acquire() as conn:
+            await conn.execute(f'SET search_path TO "{schema_name}", public')
+            
             # First check if the notify function exists
             check_function = await conn.fetchval(
-                """
+                f"""
                 SELECT EXISTS (
-                    SELECT 1 FROM pg_proc 
-                    WHERE proname = 'notify_database_change'
+                    SELECT 1 FROM pg_proc p
+                    JOIN pg_namespace n ON p.pronamespace = n.oid
+                    WHERE n.nspname = '{schema_name}' AND p.proname = 'notify_database_change'
                 )
                 """
             )
