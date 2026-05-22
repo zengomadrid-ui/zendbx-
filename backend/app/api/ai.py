@@ -390,23 +390,29 @@ async def generate_backend(
         )
         
         if not result["success"]:
+            error_msg = result.get("error", "Failed to generate backend")
+            print(f"❌ Backend generation failed: {error_msg}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result.get("error", "Failed to generate backend")
+                detail=error_msg
             )
         
         return {
             "success": True,
             "description": description,
-            "plan": result["plan"],
-            "execution": result["execution"],
-            "summary": result["summary"],
+            "plan": result.get("plan", {}),
+            "execution": result.get("execution", {}),
+            "summary": result.get("summary", "Backend generated successfully!"),
             "message": "Backend generated successfully! 🎉"
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ Backend generation error: {str(e)}")
+        print(f"❌ Traceback:\n{error_trace}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate backend: {str(e)}"

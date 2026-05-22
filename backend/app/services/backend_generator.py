@@ -46,30 +46,53 @@ class BackendGeneratorService:
             Dictionary with generation results and created resources
         """
         
-        # Step 1: Analyze description and generate backend plan
-        plan = await self._generate_backend_plan(description)
-        
-        if not plan or "error" in plan:
+        try:
+            # Step 1: Analyze description and generate backend plan
+            print(f"🤖 Generating backend plan for: {description[:50]}...")
+            plan = await self._generate_backend_plan(description)
+            
+            if not plan or "error" in plan:
+                error_msg = plan.get("error", "Failed to generate backend plan") if plan else "Failed to generate backend plan"
+                print(f"❌ Plan generation failed: {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "description": description
+                }
+            
+            print(f"✅ Plan generated with {len(plan.get('tables', []))} tables")
+            
+            # Step 2: Execute the plan
+            print(f"🔨 Executing backend plan...")
+            execution_result = await self._execute_backend_plan(
+                project_id=project_id,
+                plan=plan,
+                user_id=user_id
+            )
+            
+            print(f"✅ Execution complete. Success: {execution_result['success']}")
+            
+            # Step 3: Generate summary
+            summary = self._generate_summary(plan, execution_result)
+            
+            return {
+                "success": execution_result["success"],
+                "description": description,
+                "plan": plan,
+                "execution": execution_result,
+                "summary": summary
+            }
+            
+        except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"❌ Backend generation exception: {str(e)}")
+            print(f"❌ Traceback:\n{error_trace}")
             return {
                 "success": False,
-                "error": plan.get("error", "Failed to generate backend plan"),
+                "error": f"Backend generation failed: {str(e)}",
                 "description": description
             }
-        
-        # Step 2: Execute the plan
-        execution_result = await self._execute_backend_plan(
-            project_id=project_id,
-            plan=plan,
-            user_id=user_id
-        )
-        
-        return {
-            "success": execution_result["success"],
-            "description": description,
-            "plan": plan,
-            "execution": execution_result,
-            "summary": self._generate_summary(plan, execution_result)
-        }
     
     # ============================================
     # STEP 1: GENERATE BACKEND PLAN
