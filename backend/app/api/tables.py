@@ -60,23 +60,25 @@ async def list_tables(
     project_id: UUID,
     current_user: dict = Depends(get_current_user)
 ):
-    """List all tables in project"""
+    """List all tables in project schema"""
     
     project = await verify_project_access(project_id, current_user["id"])
+    schema_name = project["database_name"]  # Schema name is same as database_name
     
-    # Query actual database for tables
+    # Query actual database for tables in the project schema
     result = await execute_on_project_db(
         project["database_name"],
-        """
+        f"""
         SELECT 
             t.table_name,
             COUNT(c.column_name) as column_count
         FROM information_schema.tables t
         LEFT JOIN information_schema.columns c 
             ON t.table_name = c.table_name 
-            AND c.table_schema = 'public'
-        WHERE t.table_schema = 'public' 
+            AND c.table_schema = '{schema_name}'
+        WHERE t.table_schema = '{schema_name}'
         AND t.table_type = 'BASE TABLE'
+        AND t.table_name NOT LIKE '_zendbx_%'
         AND t.table_name NOT LIKE '_nexora_%'
         GROUP BY t.table_name
         ORDER BY t.table_name
@@ -85,10 +87,10 @@ async def list_tables(
     
     tables = []
     for row in result:
-        # Get row count for each table
+        # Get row count for each table (with schema prefix)
         count_result = await execute_on_project_db(
             project["database_name"],
-            f"SELECT COUNT(*) as count FROM {row['table_name']}"
+            f'SELECT COUNT(*) as count FROM "{schema_name}"."{row["table_name"]}"'
         )
         row_count = count_result[0]["count"] if count_result else 0
         
