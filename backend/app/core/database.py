@@ -111,9 +111,7 @@ async def execute_on_main_db(query: str, *args):
     """Execute query on main database"""
     pool = await get_main_db_pool()
     async with pool.acquire() as conn:
-            # Set search_path to the project schema
-            await conn.execute(f'SET search_path TO "{database_name}", public')
-            return await conn.fetch(query, *args)
+        return await conn.fetch(query, *args)
 
 async def execute_on_project_db(database_name: str, query: str, *args):
     """
