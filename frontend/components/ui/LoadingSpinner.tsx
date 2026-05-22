@@ -1,7 +1,8 @@
 /**
  * Loading Spinner Component
- * Reusable loading indicator
+ * Reusable loading indicator with logo
  */
+import Image from 'next/image';
 
 interface LoadingSpinnerProps {
   size?: 'sm' | 'md' | 'lg';
@@ -10,15 +11,22 @@ interface LoadingSpinnerProps {
 
 export function LoadingSpinner({ size = 'md', className = '' }: LoadingSpinnerProps) {
   const sizes = {
-    sm: 'w-4 h-4 border-2',
-    md: 'w-8 h-8 border-3',
-    lg: 'w-12 h-12 border-4',
+    sm: 'w-8 h-8',
+    md: 'w-16 h-16',
+    lg: 'w-24 h-24',
   };
 
   return (
-    <div
-      className={`${sizes[size]} border-orange-500 border-t-transparent rounded-full animate-spin ${className}`}
-    />
+    <div className={`${sizes[size]} relative ${className}`}>
+      <Image
+        src="/AURIX - 3.png"
+        alt="Loading"
+        width={96}
+        height={96}
+        className="w-full h-full object-contain animate-pulse"
+        priority
+      />
+    </div>
   );
 }
 
