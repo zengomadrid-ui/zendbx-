@@ -508,19 +508,19 @@ Adapt the table name and columns to match the description. Keep it minimal."""
         try:
             await execute_on_main_db(
                 """
-                INSERT INTO user_tables (project_id, table_name, schema_definition, created_by)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO user_tables (project_id, table_name, schema_definition)
+                VALUES ($1, $2, $3)
                 ON CONFLICT (project_id, table_name) DO UPDATE
                 SET schema_definition = $3, updated_at = NOW()
                 """,
                 project_id,
                 table_name,
-                json.dumps(schema_def),
-                user_id
+                json.dumps(schema_def)
             )
+            print(f"✅ Tracked table '{table_name}' in user_tables metadata")
         except Exception as e:
             # If user_tables doesn't exist or has different schema, just skip tracking
-            print(f"Warning: Could not track table in user_tables: {str(e)}")
+            print(f"⚠️ Warning: Could not track table in user_tables: {str(e)}")
     
     async def _create_foreign_keys(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
         """Add foreign key constraints"""
