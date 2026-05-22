@@ -12,7 +12,7 @@ router = APIRouter(prefix="/db/schema", tags=["Database Schema"])
 
 
 async def get_project_db_from_header(x_project_id: str = Header(...)):
-    """Get project database pool from header"""
+    """Get project database pool and schema name from header"""
     try:
         from app.core.database import get_main_db_pool
         main_pool = await get_main_db_pool()
@@ -25,19 +25,20 @@ async def get_project_db_from_header(x_project_id: str = Header(...)):
                 raise HTTPException(status_code=404, detail="Project not found")
             
             db_name = result["database_name"]
-            return await get_project_db_pool(db_name)
+            pool = await get_project_db_pool(db_name)
+            return {"pool": pool, "schema_name": db_name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/")
 async def get_schema(
-    db = Depends(get_project_db_from_header),
+    db_info = Depends(get_project_db_from_header),
     current_user: dict = Depends(get_current_user)
 ):
     """Get complete database schema for visualization"""
     try:
-        schema = await SchemaParser.get_full_schema(db)
+        schema = await SchemaParser.get_full_schema(db_info["pool"], db_info["schema_name"])
         return schema
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -45,12 +46,12 @@ async def get_schema(
 
 @router.get("/relationships")
 async def get_relationships(
-    db = Depends(get_project_db_from_header),
+    db_info = Depends(get_project_db_from_header),
     current_user: dict = Depends(get_current_user)
 ):
     """Get all foreign key relationships"""
     try:
-        relationships = await SchemaParser.get_relationships(db)
+        relationships = await SchemaParser.get_relationships(db_info["pool"], db_info["schema_name"])
         return {"relationships": relationships}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

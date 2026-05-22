@@ -161,9 +161,15 @@ class FunctionManager:
         return {"success": True, "function": function_name}
     
     @staticmethod
-    async def list_functions(db: asyncpg.Pool) -> List[Dict]:
+    async def list_functions(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
         """List all user-defined functions (excluding system/extension functions)"""
-        query = """
+        # Determine which schema to query
+        if schema_name is None:
+            schema_filter = "n.nspname = 'public'"
+        else:
+            schema_filter = f"n.nspname = '{schema_name}'"
+        
+        query = f"""
         SELECT 
             p.proname as name,
             pg_get_functiondef(p.oid) as definition,
@@ -171,7 +177,7 @@ class FunctionManager:
             pg_get_function_result(p.oid) as return_type
         FROM pg_proc p
         JOIN pg_namespace n ON p.pronamespace = n.oid
-        WHERE n.nspname = 'public'
+        WHERE {schema_filter}
         AND p.proname NOT LIKE 'pg_%'
         AND p.proname NOT LIKE 'uuid_%'
         AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')

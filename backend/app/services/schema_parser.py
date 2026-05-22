@@ -11,10 +11,10 @@ class SchemaParser:
     """Parses database schema into structured format for visualization"""
     
     @staticmethod
-    async def get_full_schema(db: asyncpg.Pool) -> Dict[str, Any]:
+    async def get_full_schema(db: asyncpg.Pool, schema_name: str = None) -> Dict[str, Any]:
         """Get complete schema with tables, columns, and relationships"""
-        tables = await SchemaParser.get_tables(db)
-        relationships = await SchemaParser.get_relationships(db)
+        tables = await SchemaParser.get_tables(db, schema_name)
+        relationships = await SchemaParser.get_relationships(db, schema_name)
         
         return {
             "tables": tables,
@@ -71,9 +71,15 @@ class SchemaParser:
         return await DBManager.fetch_all(db, query)
     
     @staticmethod
-    async def get_relationships(db: asyncpg.Pool) -> List[Dict]:
+    async def get_relationships(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
         """Get foreign key relationships between tables"""
-        query = """
+        # Determine which schema to query
+        if schema_name is None:
+            schema_filter = "tc.table_schema = 'public'"
+        else:
+            schema_filter = f"tc.table_schema = '{schema_name}'"
+        
+        query = f"""
         SELECT
             tc.table_name as from_table,
             kcu.column_name as from_column,
@@ -86,7 +92,7 @@ class SchemaParser:
         JOIN information_schema.constraint_column_usage ccu
             ON ccu.constraint_name = tc.constraint_name
         WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND tc.table_schema = 'public'
+        AND {schema_filter}
         ORDER BY tc.table_name
         """
         return await DBManager.fetch_all(db, query)
