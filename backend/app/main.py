@@ -184,7 +184,8 @@ from app.api import (
     team,  # Team collaboration
     analytics,  # Performance analytics
     billing,  # Billing & Usage Quotas
-    admin_quotas  # Admin quota management
+    admin_quotas,  # Admin quota management
+    migrate  # Database migrations
 )
 
 # Multi-tenant APIs (new) - These MUST come first to override old endpoints
@@ -236,3 +237,6 @@ app.include_router(billing.router, tags=["billing"])
 
 # Admin Quota Management API
 app.include_router(admin_quotas.router, tags=["admin-quotas"])
+
+# Database Migration API
+app.include_router(migrate.router, prefix="/api", tags=["migrations"])
