@@ -34,13 +34,13 @@ BEGIN
     v_service_hash := encode(digest(v_service_key, 'sha256'), 'hex');
     v_service_prefix := substring(v_service_key, 1, 20) || '...';
     
-    -- Insert anon key
-    INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, role, key_type, is_active)
-    VALUES (p_user_id, p_project_id, 'anon (public)', v_anon_hash, v_anon_prefix, 'read', 'anon', TRUE);
+    -- Insert anon key with full JWT in encrypted_key
+    INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+    VALUES (p_user_id, p_project_id, 'anon (public)', v_anon_hash, v_anon_prefix, v_anon_key, 'read', 'anon', TRUE);
     
-    -- Insert service_role key
-    INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, role, key_type, is_active)
-    VALUES (p_user_id, p_project_id, 'service_role (secret)', v_service_hash, v_service_prefix, 'admin', 'service_role', TRUE);
+    -- Insert service_role key with full JWT in encrypted_key
+    INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+    VALUES (p_user_id, p_project_id, 'service_role (secret)', v_service_hash, v_service_prefix, v_service_key, 'admin', 'service_role', TRUE);
     
     -- Return the keys (only time they'll be shown)
     RETURN QUERY SELECT v_anon_key, v_service_key;

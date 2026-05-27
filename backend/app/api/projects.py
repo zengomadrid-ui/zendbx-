@@ -49,22 +49,22 @@ async def create_default_project_keys(project_id: UUID, user_id: UUID) -> dict:
     # Generate service_role key (private)
     service_key, service_hash, service_prefix = generate_supabase_key("service_role")
     
-    # Insert anon key
+    # Insert anon key with full JWT in encrypted_key column
     await execute_on_main_db(
         """
-        INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, role, key_type, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """,
-        user_id, project_id, "anon (public)", anon_hash, anon_prefix, "read", "anon", True
+        user_id, project_id, "anon (public)", anon_hash, anon_prefix, anon_key, "read", "anon", True
     )
     
-    # Insert service_role key
+    # Insert service_role key with full JWT in encrypted_key column
     await execute_on_main_db(
         """
-        INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, role, key_type, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """,
-        user_id, project_id, "service_role (secret)", service_hash, service_prefix, "admin", "service_role", True
+        user_id, project_id, "service_role (secret)", service_hash, service_prefix, service_key, "admin", "service_role", True
     )
     
     return {
