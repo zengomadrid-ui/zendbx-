@@ -3,7 +3,7 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
-starlette==0.36.3
+# starlette version managed by fastapi (requires <0.36.0)
 
 # Database (PostgreSQL)
 asyncpg==0.29.0
