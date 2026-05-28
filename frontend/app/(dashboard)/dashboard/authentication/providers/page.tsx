@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiFetch } from '@/lib/fetch-utils';
 
 interface Provider {
   id: string;
@@ -9,6 +10,12 @@ interface Provider {
   icon: React.ReactNode;
   enabled: boolean;
   configurable: boolean;
+  configured: boolean;
+}
+
+interface OAuthConfig {
+  client_id: string;
+  client_secret: string;
 }
 
 export default function ProvidersPage() {
@@ -23,7 +30,8 @@ export default function ProvidersPage() {
         </svg>
       ),
       enabled: true,
-      configurable: false
+      configurable: false,
+      configured: true
     },
     {
       id: 'google',
@@ -38,7 +46,8 @@ export default function ProvidersPage() {
         </svg>
       ),
       enabled: false,
-      configurable: true
+      configurable: true,
+      configured: false
     },
     {
       id: 'github',
@@ -50,7 +59,8 @@ export default function ProvidersPage() {
         </svg>
       ),
       enabled: false,
-      configurable: true
+      configurable: true,
+      configured: false
     },
     {
       id: 'magic-link',
@@ -62,22 +72,135 @@ export default function ProvidersPage() {
         </svg>
       ),
       enabled: false,
-      configurable: true
+      configurable: true,
+      configured: false
     }
   ]);
 
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
+  const [oauthConfig, setOauthConfig] = useState<OAuthConfig>({ client_id: '', client_secret: '' });
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
-  const toggleProvider = (providerId: string) => {
-    setProviders(providers.map(p => 
-      p.id === providerId ? { ...p, enabled: !p.enabled } : p
-    ));
+  // Load OAuth provider status on mount
+  useEffect(() => {
+    loadProviderStatus();
+  }, []);
+
+  const loadProviderStatus = async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiFetch('api/auth/oauth/providers');
+      if (response.ok) {
+        const statuses = await response.json();
+        
+        // Update provider status
+        setProviders(prev => prev.map(p => {
+          const status = statuses.find((s: any) => s.provider === p.id);
+          if (status) {
+            return {
+              ...p,
+              enabled: status.enabled,
+              configured: status.configured
+            };
+          }
+          return p;
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to load provider status:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleProvider = async (providerId: string) => {
+    if (providerId === 'email') return; // Can't toggle email
+    
+    try {
+      const response = await apiFetch(`api/auth/oauth/providers/${providerId}/toggle`, {
+        method: 'PATCH'
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        setProviders(providers.map(p => 
+          p.id === providerId ? { ...p, enabled: result.enabled } : p
+        ));
+        setSuccessMessage(`${providerId} ${result.enabled ? 'enabled' : 'disabled'} successfully`);
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        const error = await response.json();
+        setError(error.detail || 'Failed to toggle provider');
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (err) {
+      console.error('Failed to toggle provider:', err);
+      setError('Failed to toggle provider');
+      setTimeout(() => setError(''), 3000);
+    }
   };
 
   const configureProvider = (provider: Provider) => {
     setSelectedProvider(provider);
+    setOauthConfig({ client_id: '', client_secret: '' });
+    setError('');
     setShowConfigDialog(true);
+  };
+
+  const saveConfiguration = async () => {
+    if (!selectedProvider) return;
+    
+    // Validate inputs
+    if (!oauthConfig.client_id || !oauthConfig.client_secret) {
+      setError('Client ID and Client Secret are required');
+      return;
+    }
+
+    setIsSaving(true);
+    setError('');
+
+    try {
+      const response = await apiFetch(`api/auth/oauth/providers/${selectedProvider.id}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: selectedProvider.id,
+          client_id: oauthConfig.client_id,
+          client_secret: oauthConfig.client_secret,
+          is_enabled: true
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        // Update provider status
+        setProviders(providers.map(p => 
+          p.id === selectedProvider.id 
+            ? { ...p, enabled: true, configured: true } 
+            : p
+        ));
+        
+        setSuccessMessage(`${selectedProvider.name} configured successfully!`);
+        setShowConfigDialog(false);
+        setSelectedProvider(null);
+        setOauthConfig({ client_id: '', client_secret: '' });
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => setSuccessMessage(''), 3000);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || 'Failed to save configuration');
+      }
+    } catch (err: any) {
+      console.error('Failed to save OAuth configuration:', err);
+      setError(err.message || 'Failed to save configuration');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const getStatusColor = (enabled: boolean) => {
@@ -95,6 +218,20 @@ export default function ProvidersPage() {
           Configure authentication methods for your application
         </p>
       </div>
+
+      {/* Success Message */}
+      {successMessage && (
+        <div className="bg-green-600/10 border border-green-600/20 text-green-400 px-4 py-3 rounded-lg text-sm">
+          {successMessage}
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-600/10 border border-red-600/20 text-red-400 px-4 py-3 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -223,11 +360,19 @@ export default function ProvidersPage() {
             </p>
 
             <div className="space-y-4 mb-6">
+              {error && (
+                <div className="bg-red-600/10 border border-red-600/20 text-red-400 px-3 py-2 rounded-lg text-xs">
+                  {error}
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs text-[#a1a1a1] mb-2">Client ID</label>
                 <input
                   type="text"
                   placeholder="Enter client ID..."
+                  value={oauthConfig.client_id}
+                  onChange={(e) => setOauthConfig({ ...oauthConfig, client_id: e.target.value })}
                   className="w-full px-3 py-2 bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg text-sm text-white placeholder-[#6b6b6b] focus:outline-none focus:border-purple-600/50"
                 />
               </div>
@@ -237,20 +382,55 @@ export default function ProvidersPage() {
                 <input
                   type="password"
                   placeholder="Enter client secret..."
+                  value={oauthConfig.client_secret}
+                  onChange={(e) => setOauthConfig({ ...oauthConfig, client_secret: e.target.value })}
                   className="w-full px-3 py-2 bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg text-sm text-white placeholder-[#6b6b6b] focus:outline-none focus:border-purple-600/50"
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-[#a1a1a1] mb-2">Redirect URI</label>
-                <input
-                  type="text"
-                  value={`${process.env.NEXT_PUBLIC_APP_URL!}/callback`}
-                  readOnly
-                  className="w-full px-3 py-2 bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg text-sm text-[#6b6b6b] focus:outline-none"
-                />
+                <label className="block text-xs text-[#a1a1a1] mb-2">Backend Redirect URI (Primary)</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={`http://localhost:8000/api/auth/oauth/${selectedProvider.id}/callback`}
+                    readOnly
+                    className="w-full px-3 py-2 pr-20 bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg text-sm text-white focus:outline-none"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(`http://localhost:8000/api/auth/oauth/${selectedProvider.id}/callback`);
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-xs text-white rounded transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
                 <p className="text-xs text-[#6b6b6b] mt-1">
-                  Use this URL in your OAuth app configuration
+                  ⚠️ Add this EXACT URL to your {selectedProvider.name} OAuth app settings
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs text-[#a1a1a1] mb-2">Frontend Redirect URI (Secondary)</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value="http://localhost:3000/callback"
+                    readOnly
+                    className="w-full px-3 py-2 pr-20 bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg text-sm text-white focus:outline-none"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('http://localhost:3000/callback');
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-xs text-white rounded transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-[#6b6b6b] mt-1">
+                  This is where users land after authentication
                 </p>
               </div>
             </div>
@@ -260,20 +440,30 @@ export default function ProvidersPage() {
                 onClick={() => {
                   setShowConfigDialog(false);
                   setSelectedProvider(null);
+                  setOauthConfig({ client_id: '', client_secret: '' });
+                  setError('');
                 }}
-                className="flex-1 px-4 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white rounded-lg text-sm font-medium transition-colors"
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  // Save configuration
-                  setShowConfigDialog(false);
-                  setSelectedProvider(null);
-                }}
-                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
+                onClick={saveConfiguration}
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center"
               >
-                Save Configuration
+                {isSaving ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  'Save Configuration'
+                )}
               </button>
             </div>
           </div>

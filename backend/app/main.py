@@ -63,6 +63,18 @@ app.add_middleware(
     max_age=3600,
 )
 
+# Session middleware for OAuth (must be added after CORS)
+from starlette.middleware.sessions import SessionMiddleware
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    session_cookie="zendbx_session",
+    max_age=3600,  # 1 hour
+    same_site="lax",
+    https_only=settings.ENVIRONMENT == "production"
+)
+print(f"🔐 Session middleware enabled for OAuth")
+
 # Add Project Context Middleware for multi-tenant support
 from app.middleware.project_context import ProjectContextMiddleware
 app.add_middleware(ProjectContextMiddleware)
@@ -90,6 +102,14 @@ async def startup():
         print("   Continuing startup, but database may not be properly initialized")
     
     print(f"Database: Connected")
+    
+    # Load OAuth providers from database
+    try:
+        from app.services.oauth_service import load_oauth_providers_from_db
+        await load_oauth_providers_from_db()
+        print(f"🔐 OAuth providers loaded")
+    except Exception as e:
+        print(f"⚠️  OAuth provider loading failed: {str(e)}")
     
     # Initialize Redis for quota tracking (optional - don't crash if unavailable)
     try:
@@ -174,7 +194,7 @@ async def health_check():
 # Import and include routers
 from app.api import (
     auth, projects, tables, queries, ai, imports as imports_router, 
-    auto_api, api_keys, oauth, project_api, project_keys,
+    auto_api, api_keys, oauth, oauth_settings, project_api, project_keys,
     sessions, admin_users, audit, project_auth, public_auth,
     rest_v1, public_auth_v2,  # New multi-tenant APIs
     db_tables, db_functions, db_triggers, db_schema,  # Database management
@@ -194,6 +214,7 @@ app.include_router(rest_v1.router, tags=["rest-api"])  # Universal REST API
 # Existing APIs
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(oauth.router, prefix="/api/auth", tags=["oauth"])
+app.include_router(oauth_settings.router, prefix="/api/auth", tags=["oauth-settings"])
 app.include_router(sessions.router, tags=["sessions"])
 app.include_router(admin_users.router, tags=["admin"])
 app.include_router(audit.router, tags=["audit"])
