@@ -53,7 +53,8 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
-    OAUTH_REDIRECT_URI: str = "http://localhost:3000/auth/callback"
+    FRONTEND_URL: str = "http://localhost:3000"  # Frontend URL for OAuth redirects
+    OAUTH_REDIRECT_URI: str = "http://localhost:3000/callback"
     
     # File Upload
     MAX_FILE_SIZE_MB: int = 50

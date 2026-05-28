@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from app.models.schemas import Token, UserResponse
 from app.core.security import create_access_token, get_current_user
 from app.core.database import execute_on_main_db
+from app.core.config import settings
 from app.services.oauth_service import (
     get_oauth_client, 
     normalize_oauth_user,
@@ -98,11 +99,11 @@ async def oauth_login(
         
     except ValueError as e:
         # Provider not configured
-        frontend_url = f"http://localhost:3000/login?error=provider_not_configured&message={str(e)}"
+        frontend_url = f"{settings.FRONTEND_URL}/login?error=provider_not_configured&message={str(e)}"
         return RedirectResponse(url=frontend_url)
     except Exception as e:
         print(f"❌ OAuth login error: {str(e)}")
-        frontend_url = f"http://localhost:3000/login?error=oauth_init_failed&message={str(e)}"
+        frontend_url = f"{settings.FRONTEND_URL}/login?error=oauth_init_failed&message={str(e)}"
         return RedirectResponse(url=frontend_url)
 
 
@@ -128,7 +129,7 @@ async def oauth_callback(provider: str, request: Request):
                 ip_address=client_ip,
                 user_agent=user_agent
             )
-            frontend_url = f"http://localhost:3000/login?error={error}&message={error_description}"
+            frontend_url = f"{settings.FRONTEND_URL}/login?error={error}&message={error_description}"
             return RedirectResponse(url=frontend_url)
         
         # Validate state token
@@ -143,7 +144,7 @@ async def oauth_callback(provider: str, request: Request):
                 ip_address=client_ip,
                 user_agent=user_agent
             )
-            frontend_url = "http://localhost:3000/login?error=missing_state"
+            frontend_url = f"{settings.FRONTEND_URL}/login?error=missing_state"
             return RedirectResponse(url=frontend_url)
         
         # Validate and consume state from database
@@ -158,7 +159,7 @@ async def oauth_callback(provider: str, request: Request):
                 ip_address=client_ip,
                 user_agent=user_agent
             )
-            frontend_url = "http://localhost:3000/login?error=invalid_state"
+            frontend_url = f"{settings.FRONTEND_URL}/login?error=invalid_state"
             return RedirectResponse(url=frontend_url)
         
         # Get OAuth client
@@ -203,7 +204,7 @@ async def oauth_callback(provider: str, request: Request):
                 ip_address=client_ip,
                 user_agent=user_agent
             )
-            frontend_url = "http://localhost:3000/login?error=no_email&message=Email not provided by OAuth provider"
+            frontend_url = f"{settings.FRONTEND_URL}/login?error=no_email&message=Email not provided by OAuth provider"
             return RedirectResponse(url=frontend_url)
         
         # Check if user exists
@@ -271,7 +272,7 @@ async def oauth_callback(provider: str, request: Request):
         access_token = create_access_token(user_id)
         
         # Redirect to custom URL or default callback
-        redirect_url = state_data.get('redirect_to') or "http://localhost:3000/callback"
+        redirect_url = state_data.get('redirect_to') or f"{settings.FRONTEND_URL}/callback"
         frontend_url = f"{redirect_url}?token={access_token}"
         return RedirectResponse(url=frontend_url)
         
@@ -288,7 +289,7 @@ async def oauth_callback(provider: str, request: Request):
             ip_address=client_ip,
             user_agent=user_agent
         )
-        frontend_url = f"http://localhost:3000/login?error=oauth_failed&message={str(e)}"
+        frontend_url = f"{settings.FRONTEND_URL}/login?error=oauth_failed&message={str(e)}"
         return RedirectResponse(url=frontend_url)
 
 
@@ -334,7 +335,7 @@ async def link_oauth_account(
             state_token=state,
             provider=provider,
             user_id=user_id,
-            redirect_to="http://localhost:3000/dashboard/profile?linked=true"
+            redirect_to=f"{settings.FRONTEND_URL}/dashboard/profile?linked=true"
         )
         
         # Get OAuth client
