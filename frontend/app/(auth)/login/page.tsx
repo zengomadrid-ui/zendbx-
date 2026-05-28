@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, getOAuthUrl } from '@/lib/fetch-utils';
 
 export default function LoginPage() {
@@ -10,7 +10,32 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Handle mounting to prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Handle OAuth errors from URL params (client-side only)
+  useEffect(() => {
+    if (!mounted) return;
+    
+    const urlError = searchParams.get('error');
+    const urlMessage = searchParams.get('message');
+    
+    if (urlError) {
+      if (urlError === 'provider_not_configured') {
+        setError('OAuth provider not configured. Please contact administrator.');
+      } else if (urlError === 'oauth_init_failed') {
+        setError(urlMessage || 'OAuth initialization failed. Please try again.');
+      } else {
+        setError(urlMessage || 'Authentication failed. Please try again.');
+      }
+    }
+  }, [searchParams, mounted]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +106,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center">
           <Link href="/" className="inline-flex items-center">
-            <img src="/AURIX - 3.png" alt="AURIX" className="h-16 w-auto" />
+            <img src="/logo.png" alt="ZENDBX" className="h-16 w-auto" />
           </Link>
           <h2 className="mt-6 text-3xl font-bold text-white">
             Welcome back
@@ -93,7 +118,7 @@ export default function LoginPage() {
 
         {/* Form */}
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
+          {mounted && error && (
             <div className="bg-red-500/10 border border-red-500/50 text-red-500 px-4 py-3 rounded-lg text-sm">
               {error}
             </div>
@@ -114,6 +139,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 className="appearance-none relative block w-full px-4 py-3 bg-zinc-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 placeholder="you@example.com"
+                suppressHydrationWarning
               />
             </div>
 

@@ -310,7 +310,7 @@ export default function ProjectAuthPage() {
             <p className="text-xs font-semibold text-blue-500 mb-1">Project-Level Authentication</p>
             <p className="text-xs text-[#a1a1a1]">
               This dashboard shows users who authenticated via YOUR app using this project's OAuth. 
-              These are not AURIX platform users.
+              These are not ZENDBX platform users.
             </p>
           </div>
         </div>

@@ -84,7 +84,7 @@ export default function OnboardingPage() {
             <span className="text-white font-bold text-3xl">Z</span>
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">
-            Welcome to Aurix!
+            Welcome to ZENDBX!
           </h1>
           <p className="text-[#a1a1a1] text-lg">
             Let's create your first project and get you started

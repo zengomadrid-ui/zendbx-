@@ -8,7 +8,7 @@ export default function Footer() {
           {/* Logo and description */}
           <div className="col-span-2">
             <Link href="/" className="flex items-center mb-4">
-              <img src="/AURIX - 3.png" alt="AURIX" className="h-10 w-auto" />
+              <img src="/logo.png" alt="ZENDBX" className="h-10 w-auto" />
             </Link>
             <p className="text-gray-500 text-sm max-w-xs">
               Query your data using natural language. Turn questions into insights in under 60 seconds.
@@ -69,7 +69,7 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="pt-8 border-t border-gray-800 flex flex-col md:flex-row justify-between items-center">
           <p className="text-sm text-gray-500">
-            © 2026 AURIX. All rights reserved.
+            © 2026 ZENDBX. All rights reserved.
           </p>
           <div className="flex space-x-6 mt-4 md:mt-0 text-sm">
             <Link href="/privacy" className="hover:text-orange-500 transition-colors">Privacy Policy</Link>

@@ -63,89 +63,127 @@ async def list_tables(
     """List all tables in project schema"""
     
     project = await verify_project_access(project_id, current_user["id"])
-    schema_name = project["database_name"]  # Schema name is same as database_name
+    database_name = project["database_name"]
     
     print(f"\n{'='*60}")
     print(f"📋 LIST TABLES REQUEST")
     print(f"{'='*60}")
     print(f"Project ID: {project_id}")
-    print(f"Schema Name: {schema_name}")
+    print(f"Database Name: {database_name}")
     print(f"User ID: {current_user['id']}")
     
-    # First, check what schemas exist
-    all_schemas = await execute_on_project_db(
-        project["database_name"],
-        "SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog', 'information_schema') ORDER BY schema_name"
-    )
-    print(f"\n📂 Available schemas in database:")
-    for s in all_schemas:
-        print(f"   - {s['schema_name']}")
-    
-    # Check ALL tables in database (for debugging)
-    all_tables = await execute_on_project_db(
-        project["database_name"],
-        """
-        SELECT table_schema, table_name 
-        FROM information_schema.tables 
-        WHERE table_type = 'BASE TABLE'
-        AND table_schema NOT IN ('pg_catalog', 'information_schema')
-        ORDER BY table_schema, table_name
-        """
-    )
-    print(f"\n📊 ALL tables in database:")
-    for t in all_tables:
-        print(f"   - {t['table_schema']}.{t['table_name']}")
-    
-    # Query actual database for tables in the project schema
-    result = await execute_on_project_db(
-        project["database_name"],
-        f"""
-        SELECT 
-            t.table_name,
-            t.table_schema,
-            COUNT(c.column_name) as column_count
-        FROM information_schema.tables t
-        LEFT JOIN information_schema.columns c 
-            ON t.table_name = c.table_name 
-            AND c.table_schema = t.table_schema
-        WHERE t.table_schema = '{schema_name}'
-        AND t.table_type = 'BASE TABLE'
-        AND t.table_name NOT LIKE '_zendbx_%'
-        AND t.table_name NOT LIKE '_nexora_%'
-        GROUP BY t.table_schema, t.table_name
-        ORDER BY t.table_name
-        """
-    )
-    
-    print(f"\n🎯 Tables in target schema '{schema_name}': {len(result)}")
-    for row in result:
-        print(f"   - {row['table_schema']}.{row['table_name']} ({row['column_count']} columns)")
-    print(f"{'='*60}\n")
-    
-    tables = []
-    for row in result:
-        # Get row count for each table (with schema prefix)
-        try:
-            count_result = await execute_on_project_db(
-                project["database_name"],
-                f'SELECT COUNT(*) as count FROM "{schema_name}"."{row["table_name"]}"'
+    try:
+        # First, try to find tables in a schema matching the database name (production)
+        schema_name = database_name
+        result = await execute_on_project_db(
+            database_name,
+            f"""
+            SELECT 
+                t.table_name,
+                t.table_schema,
+                COUNT(c.column_name) as column_count
+            FROM information_schema.tables t
+            LEFT JOIN information_schema.columns c 
+                ON t.table_name = c.table_name 
+                AND c.table_schema = t.table_schema
+            WHERE t.table_schema = '{schema_name}'
+            AND t.table_type = 'BASE TABLE'
+            AND t.table_name NOT LIKE '_zendbx_%'
+            AND t.table_name NOT LIKE '_nexora_%'
+            AND t.table_name NOT IN (
+                'users', 'projects', 'api_keys', 'query_history', 'saved_queries',
+                'user_tables', 'login_attempts', 'password_reset_tokens', 'oauth_apps',
+                'oauth_connections', 'subscription_plans', 'user_subscriptions',
+                'usage_tracking', 'usage_logs', 'backups', 'backup_schedules',
+                'auth_sessions', 'auth_policies', 'auth_hooks', 'security_settings',
+                'project_members', 'project_messages', 'project_quotas', 'project_sessions',
+                'project_users', 'project_auth_logs', 'project_oauth_providers',
+                'audit_logs', 'rate_limit_logs', 'realtime_test', 'file_uploads'
             )
-            row_count = count_result[0]["count"] if count_result else 0
-        except Exception as e:
-            print(f"⚠️ Could not get row count for {row['table_name']}: {str(e)}")
-            row_count = 0
+            GROUP BY t.table_schema, t.table_name
+            ORDER BY t.table_name
+            """
+        )
         
-        tables.append({
-            "table_name": row["table_name"],
-            "columns": [],
-            "row_count": row_count,
-            "column_count": row["column_count"],
-            "size_bytes": 0,
-            "created_at": None
-        })
-    
-    print(f"✅ Returning {len(tables)} tables to frontend")
-    return tables
+        # If no tables found in project schema, try public schema (local dev)
+        if not result or len(result) == 0:
+            print(f"⚠️  No tables found in schema '{schema_name}', trying 'public' schema...")
+            schema_name = "public"
+            result = await execute_on_project_db(
+                database_name,
+                f"""
+                SELECT 
+                    t.table_name,
+                    t.table_schema,
+                    COUNT(c.column_name) as column_count
+                FROM information_schema.tables t
+                LEFT JOIN information_schema.columns c 
+                    ON t.table_name = c.table_name 
+                    AND c.table_schema = t.table_schema
+                WHERE t.table_schema = '{schema_name}'
+                AND t.table_type = 'BASE TABLE'
+                AND t.table_name NOT LIKE '_zendbx_%'
+                AND t.table_name NOT LIKE '_nexora_%'
+                AND t.table_name NOT IN (
+                    'users', 'projects', 'api_keys', 'query_history', 'saved_queries',
+                    'user_tables', 'login_attempts', 'password_reset_tokens', 'oauth_apps',
+                    'oauth_connections', 'subscription_plans', 'user_subscriptions',
+                    'usage_tracking', 'usage_logs', 'backups', 'backup_schedules',
+                    'auth_sessions', 'auth_policies', 'auth_hooks', 'security_settings',
+                    'project_members', 'project_messages', 'project_quotas', 'project_sessions',
+                    'project_users', 'project_auth_logs', 'project_oauth_providers',
+                    'audit_logs', 'rate_limit_logs', 'realtime_test', 'file_uploads'
+                )
+                GROUP BY t.table_schema, t.table_name
+                ORDER BY t.table_name
+                """
+            )
+        
+        print(f"\n🎯 Tables found in schema '{schema_name}': {len(result)}")
+        for row in result:
+            print(f"   - {row['table_schema']}.{row['table_name']} ({row['column_count']} columns)")
+        print(f"{'='*60}\n")
+        
+        tables = []
+        for row in result:
+            # Get row count for each table
+            try:
+                # Try with schema prefix first
+                count_result = await execute_on_project_db(
+                    database_name,
+                    f'SELECT COUNT(*) as count FROM "{row["table_schema"]}"."{row["table_name"]}"'
+                )
+                row_count = count_result[0]["count"] if count_result else 0
+            except Exception as e:
+                # Fallback to without schema prefix
+                try:
+                    count_result = await execute_on_project_db(
+                        database_name,
+                        f'SELECT COUNT(*) as count FROM "{row["table_name"]}"'
+                    )
+                    row_count = count_result[0]["count"] if count_result else 0
+                except Exception as e2:
+                    print(f"⚠️ Could not get row count for {row['table_name']}: {str(e2)}")
+                    row_count = 0
+            
+            tables.append({
+                "table_name": row["table_name"],
+                "columns": [],
+                "row_count": row_count,
+                "column_count": row["column_count"],
+                "size_bytes": 0,
+                "created_at": None
+            })
+        
+        print(f"✅ Returning {len(tables)} tables to frontend")
+        return tables
+        
+    except Exception as e:
+        print(f"❌ Error listing tables: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Return empty list instead of crashing
+        return []
 
 # ============================================
 # CREATE TABLE

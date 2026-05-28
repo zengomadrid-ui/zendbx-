@@ -53,7 +53,7 @@ export default function SecurityPage() {
   const handleEnableMFA = async () => {
     setShowMFASetup(true);
     // Generate QR code
-    setQrCodeUri('otpauth://totp/AURIX:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=AURIX');
+    setQrCodeUri('otpauth://totp/ZENDBX:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=ZENDBX');
   };
 
   const handleVerifyMFA = async () => {

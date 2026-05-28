@@ -21,20 +21,20 @@ export const metadata: Metadata = {
   keywords: ["backend", "AI", "database", "API", "authentication", "multi-tenant", "BaaS"],
   authors: [{ name: "ZENDBX" }],
   icons: {
-    icon: '/AURIX - 3.png',
-    apple: '/AURIX - 3.png',
+    icon: '/logo.png',
+    apple: '/logo.png',
   },
   openGraph: {
     title: "ZENDBX - AI-Native Backend Platform",
     description: "Build production-ready backends in minutes with zero configuration.",
     type: "website",
-    images: ['/AURIX - 3.png'],
+    images: ['/logo.png'],
   },
   twitter: {
     card: "summary_large_image",
     title: "ZENDBX - AI-Native Backend Platform",
     description: "Build production-ready backends in minutes with zero configuration.",
-    images: ['/AURIX - 3.png'],
+    images: ['/logo.png'],
   },
 };
 

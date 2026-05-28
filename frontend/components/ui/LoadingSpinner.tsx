@@ -24,7 +24,7 @@ export function LoadingSpinner({ size = 'md', className = '' }: LoadingSpinnerPr
       {/* Logo with pulse and subtle rotation */}
       <div className="relative animate-pulse">
         <Image
-          src="/AURIX - 3.png"
+          src="/logo.png"
           alt="Loading"
           width={96}
           height={96}

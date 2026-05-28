@@ -74,7 +74,7 @@ export default function SignupPage() {
         {/* Logo */}
         <div className="text-center">
           <Link href="/" className="inline-flex items-center">
-            <img src="/AURIX - 3.png" alt="AURIX" className="h-16 w-auto" />
+            <img src="/logo.png" alt="ZENDBX" className="h-16 w-auto" />
           </Link>
           <h2 className="mt-6 text-3xl font-bold text-white">
             Create your account

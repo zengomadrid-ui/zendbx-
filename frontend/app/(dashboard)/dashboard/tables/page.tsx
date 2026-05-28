@@ -187,6 +187,7 @@ export default function TablesPageEditable() {
       return;
     }
 
+    console.log('Fetching table data for:', tableName, 'Project:', projectId);
     setLoading(true);
     try {
       // Get schema
@@ -201,19 +202,29 @@ export default function TablesPageEditable() {
         ORDER BY ordinal_position
       `;
       
+      console.log('Fetching schema with SQL:', schemaSql);
       const schemaRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: schemaSql });
+      console.log('Schema response:', schemaRes);
       const columns = schemaRes.rows || [];
+      console.log('Columns:', columns);
       
       // Get data
       const dataSql = `SELECT * FROM "${tableName}" LIMIT 100`;
+      console.log('Fetching data with SQL:', dataSql);
       const dataRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: dataSql });
+      console.log('Data response:', dataRes);
+      console.log('Data rows:', dataRes.rows);
+      console.log('Data row_count:', dataRes.row_count);
       
-      setTableData({
+      const tableDataObj = {
         columns: columns.map((c: any) => c.name),
         rows: dataRes.rows || [],
-        row_count: dataRes.row_count || 0,
+        row_count: dataRes.row_count || (dataRes.rows ? dataRes.rows.length : 0),
         schema: columns
-      });
+      };
+      
+      console.log('Setting tableData to:', tableDataObj);
+      setTableData(tableDataObj);
     } catch (err) {
       console.error('Failed to fetch table data:', err);
       setTableData(null);
@@ -577,7 +588,7 @@ export default function TablesPageEditable() {
                 </tr>
               </thead>
               <tbody>
-                {tableData.rows && tableData.rows.map((row: any, rowIndex: number) => (
+                {tableData.rows && Array.isArray(tableData.rows) && tableData.rows.map((row: any, rowIndex: number) => (
                   <tr key={rowIndex} className="border-b border-[#2a2a2a] hover:bg-[#2a2a2a]">
                     {tableData.columns.map((col: string, colIndex: number) => {
                       const value = row[col];
@@ -683,7 +694,7 @@ export default function TablesPageEditable() {
                   </tr>
                 )}
                 
-                {tableData.rows.length === 0 && !isAddingRow && (
+                {tableData.rows && Array.isArray(tableData.rows) && tableData.rows.length === 0 && !isAddingRow && (
                   <tr>
                     <td colSpan={tableData.columns.length + 1} className="px-3 py-8 text-center">
                       <div className="flex flex-col items-center justify-center text-center">

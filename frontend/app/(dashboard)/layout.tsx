@@ -372,7 +372,7 @@ export default function DashboardLayout({
         {/* Logo - More space */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-[#2a2a2a] flex-shrink-0">
           <Link href="/" className="flex items-center">
-            <img src="/AURIX - 3.png" alt="AURIX" className="h-10 w-auto" />
+            <img src="/logo.png" alt="ZENDBX" className="h-10 w-auto" />
           </Link>
         </div>
 
