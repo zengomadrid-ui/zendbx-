@@ -87,7 +87,7 @@ export default function ProvidersPage() {
   const enabledProviders = providers.filter(p => p.enabled).length;
   const configurableProviders = providers.filter(p => p.canDisable).length;
 
-  const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
   useEffect(() => {
     // Load all projects and selected project
@@ -359,7 +359,7 @@ export default function ProvidersPage() {
         
         let errorMessage = 'Failed to save configuration';
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
-          errorMessage = 'Cannot connect to backend server. Make sure the backend is running on http://localhost:8000';
+          errorMessage = 'Cannot connect to backend server. Make sure the backend is running.';
         } else if (error instanceof Error) {
           errorMessage = error.message;
         }
