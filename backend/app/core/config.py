@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str = ""
     FRONTEND_URL: str = "http://localhost:3000"  # Frontend URL for OAuth redirects
     OAUTH_REDIRECT_URI: str = "http://localhost:3000/callback"
+    BACKEND_URL: str = "http://localhost:8000"  # Backend URL for OAuth callbacks
+    OAUTH_ENCRYPTION_KEY: str = ""  # Fernet encryption key for OAuth client secrets
     
     # File Upload
     MAX_FILE_SIZE_MB: int = 50

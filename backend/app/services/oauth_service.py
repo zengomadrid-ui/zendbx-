@@ -142,71 +142,22 @@ async def log_oauth_action(
 # ============================================
 
 async def load_oauth_providers_from_db():
-    """Load OAuth providers from database"""
+    """
+    Load OAuth providers from database
+    NOTE: This is for the OLD OAuth system (user-level OAuth).
+    The NEW OAuth URL Generator system uses oauth_login.py instead.
+    """
     global _providers_loaded
     
     if not OAUTH_AVAILABLE:
-        print("⚠️  OAuth not available - install authlib package")
+        # Silently skip if authlib not available
         return
     
-    try:
-        from app.core.database import execute_on_main_db
-        
-        # Load enabled providers from database
-        result = await execute_on_main_db(
-            """
-            SELECT provider, client_id, client_secret, scopes, redirect_uri
-            FROM oauth_provider_settings
-            WHERE is_enabled = true 
-            AND client_id != '' 
-            AND client_secret != ''
-            """
-        )
-        
-        print(f"🔍 OAuth query returned {len(result) if result else 0} provider(s)")
-        
-        if not result:
-            print("ℹ️  No OAuth providers configured in database")
-            # Fall back to environment variables
-            await load_oauth_providers_from_env()
-            return
-        
-        for row in result:
-            provider = row["provider"]
-            client_id = row["client_id"]
-            client_secret = row["client_secret"]
-            scopes = row["scopes"] or ("openid email profile" if provider == "google" else "user:email")
-            
-            # Register provider
-            if provider == "google":
-                oauth.register(
-                    name='google',
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-                    client_kwargs={'scope': scopes}
-                )
-                print(f"✅ Google OAuth loaded from database")
-            
-            elif provider == "github":
-                oauth.register(
-                    name='github',
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    authorize_url='https://github.com/login/oauth/authorize',
-                    authorize_params=None,
-                    access_token_url='https://github.com/login/oauth/access_token',
-                    access_token_params=None,
-                    client_kwargs={'scope': scopes}
-                )
-                print(f"✅ GitHub OAuth loaded from database")
-        
-        _providers_loaded = True
-        
-    except Exception as e:
-        print(f"⚠️  Failed to load OAuth providers from database: {e}")
-        # Fall back to environment variables
-        await load_oauth_providers_from_env()
+    # Skip database loading - use environment variables only
+    # The new OAuth URL Generator system handles provider configuration differently
+    await load_oauth_providers_from_env()
+    return
+
 
 async def load_oauth_providers_from_env():
     """Load OAuth providers from environment variables (fallback)"""

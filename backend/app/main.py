@@ -44,19 +44,14 @@ if settings.ENVIRONMENT == "production":
     ]
     print(f"🔒 Production CORS enabled for: {allowed_origins}")
 else:
-    # Development: Allow localhost
-    allowed_origins = [
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-    ]
-    print(f"🔓 Development CORS enabled for: {allowed_origins}")
+    # Development: Allow all origins (including file:// for testing)
+    allowed_origins = ["*"]
+    print(f"🔓 Development CORS enabled for: ALL ORIGINS")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_credentials=False,  # Must be False when allow_origins is "*"
     allow_methods=["*"],  # Allow all methods
     allow_headers=["*"],  # Allow all headers
     expose_headers=["*"],
@@ -204,12 +199,18 @@ from app.api import (
     team,  # Team collaboration
     analytics,  # Performance analytics
     billing,  # Billing & Usage Quotas
-    admin_quotas  # Admin quota management
+    admin_quotas,  # Admin quota management
+    oauth_providers, oauth_redirects, oauth_login  # OAuth URL Generator System
 )
 
 # Multi-tenant APIs (new) - These MUST come first to override old endpoints
 app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New multi-tenant auth
 app.include_router(rest_v1.router, tags=["rest-api"])  # Universal REST API
+
+# OAuth URL Generator System (public endpoints - no prefix)
+app.include_router(oauth_login.router)  # Public OAuth login URLs
+app.include_router(oauth_providers.router)  # OAuth provider management
+app.include_router(oauth_redirects.router)  # OAuth redirect URL management
 
 # Existing APIs
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

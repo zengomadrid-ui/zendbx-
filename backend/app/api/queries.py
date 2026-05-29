@@ -184,8 +184,16 @@ async def execute_query(
                 'execution_time_ms': execution_time_ms
             }]
         
-        # Convert to list of dicts
-        rows = [dict(row) for row in rows_data] if rows_data else []
+        # Convert to list of dicts and handle special types
+        rows = []
+        if rows_data:
+            for row in rows_data:
+                row_dict = dict(row)
+                # Convert IPv4Address/IPv6Address to strings for JSON serialization
+                for key, value in row_dict.items():
+                    if hasattr(value, '__class__') and value.__class__.__name__ in ['IPv4Address', 'IPv6Address', 'IPv4Network', 'IPv6Network']:
+                        row_dict[key] = str(value)
+                rows.append(row_dict)
         columns = list(rows[0].keys()) if rows else []
         
         # Log query history
@@ -289,7 +297,16 @@ async def execute_query(
                                 rows_data = result
                                 logs = []
                             
-                            rows = [dict(row) for row in rows_data] if rows_data else []
+                            # Convert to list of dicts and handle special types
+                            rows = []
+                            if rows_data:
+                                for row in rows_data:
+                                    row_dict = dict(row)
+                                    # Convert IPv4Address/IPv6Address to strings for JSON serialization
+                                    for key, value in row_dict.items():
+                                        if hasattr(value, '__class__') and value.__class__.__name__ in ['IPv4Address', 'IPv6Address', 'IPv4Network', 'IPv6Network']:
+                                            row_dict[key] = str(value)
+                                    rows.append(row_dict)
                             columns = list(rows[0].keys()) if rows else []
                             
                             # Add auto-fix success log

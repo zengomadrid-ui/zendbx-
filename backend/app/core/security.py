@@ -2,9 +2,31 @@ from datetime import datetime, timedelta
 from typing import Optional, Union
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from cryptography.fernet import Fernet
+import secrets
+import base64
 from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Initialize encryption for OAuth client secrets
+def get_encryption_key() -> bytes:
+    """Get or generate encryption key for OAuth secrets"""
+    key = getattr(settings, 'OAUTH_ENCRYPTION_KEY', None)
+    if not key:
+        # Generate a key if not set (for development only)
+        key = Fernet.generate_key().decode()
+        print(f"WARNING: Using generated encryption key. Set OAUTH_ENCRYPTION_KEY in production: {key}")
+    return key.encode() if isinstance(key, str) else key
+
+_fernet = None
+
+def get_fernet() -> Fernet:
+    """Get Fernet instance for encryption/decryption"""
+    global _fernet
+    if _fernet is None:
+        _fernet = Fernet(get_encryption_key())
+    return _fernet
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against a hash"""
@@ -13,6 +35,67 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def get_password_hash(password: str) -> str:
     """Hash a password"""
     return pwd_context.hash(password)
+
+# ============================================
+# OAUTH ENCRYPTION & SECURITY
+# ============================================
+
+def encrypt_client_secret(secret: str) -> str:
+    """Encrypt OAuth client secret for storage"""
+    fernet = get_fernet()
+    encrypted = fernet.encrypt(secret.encode())
+    return base64.urlsafe_b64encode(encrypted).decode()
+
+def decrypt_client_secret(encrypted_secret: str) -> str:
+    """Decrypt OAuth client secret"""
+    fernet = get_fernet()
+    encrypted_bytes = base64.urlsafe_b64decode(encrypted_secret.encode())
+    decrypted = fernet.decrypt(encrypted_bytes)
+    return decrypted.decode()
+
+def generate_oauth_state() -> str:
+    """Generate cryptographically secure state token for OAuth CSRF protection"""
+    return secrets.token_urlsafe(32)
+
+def validate_redirect_url(url: str, allowed_urls: list[str]) -> bool:
+    """
+    Validate redirect URL against whitelist
+    Returns True if URL is in allowed list (exact match required)
+    """
+    if not url:
+        return False
+    
+    # Exact match required - no wildcards
+    return url in allowed_urls
+
+def is_valid_https_url(url: str, allow_localhost: bool = True) -> bool:
+    """
+    Validate that URL is properly formatted and uses HTTPS
+    Allow localhost for development if specified
+    """
+    from urllib.parse import urlparse
+    
+    try:
+        parsed = urlparse(url)
+        
+        # Check scheme
+        if parsed.scheme not in ['https', 'http']:
+            return False
+        
+        # In production, require HTTPS unless localhost
+        if parsed.scheme == 'http':
+            if not allow_localhost:
+                return False
+            if not (parsed.hostname in ['localhost', '127.0.0.1'] or parsed.hostname.startswith('192.168.')):
+                return False
+        
+        # Must have a valid hostname
+        if not parsed.hostname:
+            return False
+        
+        return True
+    except Exception:
+        return False
 
 def hash_password(password: str) -> str:
     """Alias for get_password_hash"""

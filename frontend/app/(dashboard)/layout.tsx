@@ -167,8 +167,6 @@ export default function DashboardLayout({
         { name: 'Sessions', href: '/dashboard/authentication/sessions' },
         { name: 'Security', href: '/dashboard/authentication/security' },
         { name: 'Policies', href: '/dashboard/authentication/policies' },
-        { name: 'OAuth Apps', href: '/dashboard/authentication/oauth-apps' },
-        { name: 'Hooks', href: '/dashboard/authentication/hooks' },
         { name: 'Logs', href: '/dashboard/authentication/logs' },
         { name: 'Settings', href: '/dashboard/authentication/settings' },
       ] : [
