@@ -144,17 +144,20 @@ async def oauth_login(
         
         auth_url = f"{oauth_config['auth_url']}?{urlencode(params)}"
         
-        # Log OAuth initiation
-        await conn.execute(
-            """
-            INSERT INTO oauth_audit_logs (project_id, provider, action, ip_address, user_agent, success)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            """,
-            project_id, provider, 'oauth_initiated',
-            request.client.host if request.client else None,
-            request.headers.get('user-agent'),
-            True
-        )
+        # Log OAuth initiation (non-fatal)
+        try:
+            await conn.execute(
+                """
+                INSERT INTO oauth_audit_logs (project_id, provider, action, ip_address, user_agent, success)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                project_id, provider, 'oauth_initiated',
+                request.client.host if request.client else None,
+                request.headers.get('user-agent'),
+                True
+            )
+        except Exception as log_err:
+            print(f"⚠️ Audit log failed (non-fatal): {log_err}")
         
         # Redirect to OAuth provider
         return RedirectResponse(url=auth_url)
@@ -265,13 +268,16 @@ async def oauth_callback(
                 user_data = user_response.json()
                 
         except httpx.HTTPError as e:
-            await conn.execute(
-                """
-                INSERT INTO oauth_audit_logs (project_id, provider, action, success, error_message)
-                VALUES ($1, $2, $3, $4, $5)
-                """,
-                project_id, provider, 'token_exchange_failed', False, str(e)
-            )
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO oauth_audit_logs (project_id, provider, action, success, error_message)
+                    VALUES ($1, $2, $3, $4, $5)
+                    """,
+                    project_id, provider, 'token_exchange_failed', False, str(e)
+                )
+            except Exception as log_err:
+                print(f"⚠️ Audit log failed (non-fatal): {log_err}")
             raise HTTPException(status_code=500, detail=f"OAuth provider error: {str(e)}")
         
         # Extract user info based on provider
@@ -353,17 +359,20 @@ async def oauth_callback(
         jwt_token = create_access_token(jwt_payload, expires_delta=timedelta(days=7))
         refresh_token = create_access_token(jwt_payload, expires_delta=timedelta(days=30))
         
-        # Log successful authentication
-        await conn.execute(
-            """
-            INSERT INTO oauth_audit_logs (project_id, provider, action, user_id, ip_address, user_agent, success)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            """,
-            project_id, provider, 'oauth_success', user_id,
-            request.client.host if request.client else None,
-            request.headers.get('user-agent'),
-            True
-        )
+        # Log successful authentication (non-fatal)
+        try:
+            await conn.execute(
+                """
+                INSERT INTO oauth_audit_logs (project_id, provider, action, user_id, ip_address, user_agent, success)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                """,
+                project_id, provider, 'oauth_success', user_id,
+                request.client.host if request.client else None,
+                request.headers.get('user-agent'),
+                True
+            )
+        except Exception as log_err:
+            print(f"⚠️ Audit log failed (non-fatal): {log_err}")
         
         # Redirect back to application with tokens
         if redirect_url:
