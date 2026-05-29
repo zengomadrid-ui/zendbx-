@@ -6,7 +6,7 @@ from app.models.schemas import (
 )
 from app.api.auth import get_current_user
 from app.core.database import execute_on_main_db, execute_on_project_db
-from app.services.sql_autofix_service import sql_autofix
+from app.services.sql_autofix_service_v2 import sql_autofix_v2 as sql_autofix
 from typing import List
 from uuid import UUID
 import time
