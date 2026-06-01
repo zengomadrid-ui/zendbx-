@@ -238,11 +238,10 @@ class MinIOStorageProvider(StorageProvider):
 
 def _initialize_storage_provider() -> StorageProvider:
     """
-    Initialize storage provider with fallback logic.
-    Tries MinIO first, falls back to local filesystem if MinIO unavailable.
+    Initialize MinIO storage provider.
+    MinIO must be running for storage to work.
     """
     try:
-        # Try to connect to MinIO
         from minio import Minio
         endpoint = settings.MINIO_ENDPOINT.replace("http://", "").replace("https://", "")
         client = Minio(
@@ -256,9 +255,9 @@ def _initialize_storage_provider() -> StorageProvider:
         print("[Storage] ✓ MinIO connected successfully")
         return MinIOStorageProvider()
     except Exception as e:
-        print(f"[Storage] ⚠ MinIO unavailable ({e}), using local filesystem storage")
-        from app.services.local_storage import LocalStorageProvider
-        return LocalStorageProvider()
+        print(f"[Storage] ✗ MinIO connection failed: {e}")
+        print("[Storage] Please ensure MinIO is running: docker-compose up -d")
+        raise RuntimeError(f"MinIO storage is required but unavailable: {e}")
 
 
 storage_provider: StorageProvider = _initialize_storage_provider()
