@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/fetch-utils';
 
+// Prevent static generation for all dashboard pages - they need client-side rendering
+export const dynamic = 'force-dynamic';
+
 interface User {
   id: string;
   email: string;

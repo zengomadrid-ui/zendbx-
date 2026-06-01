@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api';
 import { useToast } from '@/lib/toast';
 
+// Prevent static generation - this page needs client-side rendering
+export const dynamic = 'force-dynamic';
+
 interface GenerationResult {
   success: boolean;
   description: string;
