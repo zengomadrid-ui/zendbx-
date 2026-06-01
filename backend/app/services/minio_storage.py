@@ -236,28 +236,38 @@ class MinIOStorageProvider(StorageProvider):
 # when migrating providers                                            #
 # ------------------------------------------------------------------ #
 
-def _initialize_storage_provider() -> StorageProvider:
-    """
-    Initialize MinIO storage provider.
-    MinIO must be running for storage to work.
-    """
-    try:
-        from minio import Minio
-        endpoint = settings.MINIO_ENDPOINT.replace("http://", "").replace("https://", "")
-        client = Minio(
-            endpoint,
-            access_key=settings.MINIO_ACCESS_KEY,
-            secret_key=settings.MINIO_SECRET_KEY,
-            secure=settings.MINIO_SECURE,
-        )
-        # Test connection
-        client.list_buckets()
-        print("[Storage] ✓ MinIO connected successfully")
-        return MinIOStorageProvider()
-    except Exception as e:
-        print(f"[Storage] ✗ MinIO connection failed: {e}")
-        print("[Storage] Please ensure MinIO is running: docker-compose up -d")
-        raise RuntimeError(f"MinIO storage is required but unavailable: {e}")
+_storage_provider_instance: Optional[StorageProvider] = None
 
 
-storage_provider: StorageProvider = _initialize_storage_provider()
+def get_storage_provider() -> StorageProvider:
+    """
+    Get or initialize MinIO storage provider (lazy initialization).
+    This allows the app to start even if MinIO is not available.
+    Storage endpoints will fail with proper error messages if MinIO is down.
+    """
+    global _storage_provider_instance
+    
+    if _storage_provider_instance is None:
+        try:
+            from minio import Minio
+            endpoint = settings.MINIO_ENDPOINT.replace("http://", "").replace("https://", "")
+            client = Minio(
+                endpoint,
+                access_key=settings.MINIO_ACCESS_KEY,
+                secret_key=settings.MINIO_SECRET_KEY,
+                secure=settings.MINIO_SECURE,
+            )
+            # Test connection
+            client.list_buckets()
+            print("[Storage] ✓ MinIO connected successfully")
+            _storage_provider_instance = MinIOStorageProvider()
+        except Exception as e:
+            print(f"[Storage] ⚠ MinIO connection failed: {e}")
+            print("[Storage] Storage endpoints will not work until MinIO is available")
+            raise RuntimeError(f"MinIO storage is required but unavailable: {e}")
+    
+    return _storage_provider_instance
+
+
+# For backward compatibility - but this will only be called when actually used
+storage_provider: Optional[StorageProvider] = None

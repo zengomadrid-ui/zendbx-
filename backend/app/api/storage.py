@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from app.core.security import get_current_user
 from app.core.database import get_main_db_pool
-from app.services.minio_storage import storage_provider
+from app.services.minio_storage import get_storage_provider
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
@@ -173,7 +173,7 @@ async def create_bucket(
         )
 
         # Ensure top-level MinIO bucket exists
-        await storage_provider.create_bucket(MINIO_BUCKET)
+        await get_storage_provider().create_bucket(MINIO_BUCKET)
 
         return {"id": str(bucket_id), "name": body.name, "slug": slug, "is_public": body.is_public}
 
@@ -246,7 +246,7 @@ async def delete_bucket(
             uuid.UUID(bucket_id),
         )
         for f in files:
-            await storage_provider.delete_file(f["storage_key"], MINIO_BUCKET)
+            await get_storage_provider().delete_file(f["storage_key"], MINIO_BUCKET)
 
         await conn.execute(
             "UPDATE storage_objects SET deleted_at = NOW() WHERE bucket_id = $1 AND deleted_at IS NULL",
@@ -348,7 +348,7 @@ async def upload_file(
         storage_key = f"{project_id}/{bucket['slug']}/{file_uuid}/{safe_name}"
 
         # Upload to MinIO
-        success = await storage_provider.upload_file(storage_key, file_data, mime_type, MINIO_BUCKET)
+        success = await get_storage_provider().upload_file(storage_key, file_data, mime_type, MINIO_BUCKET)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to upload file to storage")
 
@@ -473,7 +473,7 @@ async def rename_file(
         parts = old_key.rsplit("/", 1)
         new_key = parts[0] + "/" + safe_name if len(parts) == 2 else old_key
 
-        success = await storage_provider.rename_file(old_key, new_key, MINIO_BUCKET)
+        success = await get_storage_provider().rename_file(old_key, new_key, MINIO_BUCKET)
         if not success:
             raise HTTPException(status_code=500, detail="Failed to rename file in storage")
 
@@ -497,7 +497,7 @@ async def delete_file(
         file_row = await _get_file(file_id, project_id, conn)
 
         # Delete from MinIO immediately
-        await storage_provider.delete_file(file_row["storage_key"], MINIO_BUCKET)
+        await get_storage_provider().delete_file(file_row["storage_key"], MINIO_BUCKET)
 
         # Soft-delete metadata
         await conn.execute(
@@ -536,7 +536,7 @@ async def bulk_delete_files(
         for file_id in body.file_ids:
             try:
                 file_row = await _get_file(file_id, project_id, conn)
-                await storage_provider.delete_file(file_row["storage_key"], MINIO_BUCKET)
+                await get_storage_provider().delete_file(file_row["storage_key"], MINIO_BUCKET)
                 await conn.execute(
                     "UPDATE storage_objects SET deleted_at = NOW() WHERE id = $1",
                     uuid.UUID(file_id),
@@ -576,7 +576,7 @@ async def download_file(
         await _get_project_for_user(project_id, user_id, conn)
         file_row = await _get_file(file_id, project_id, conn)
 
-        data = await storage_provider.get_file(file_row["storage_key"], MINIO_BUCKET)
+        data = await get_storage_provider().get_file(file_row["storage_key"], MINIO_BUCKET)
         if data is None:
             raise HTTPException(status_code=404, detail="File not found in storage")
 
@@ -617,11 +617,11 @@ async def preview_file(
         )
 
     if bucket_row and bucket_row["is_public"]:
-        url = await storage_provider.get_file_url(file_row["storage_key"], MINIO_BUCKET)
+        url = await get_storage_provider().get_file_url(file_row["storage_key"], MINIO_BUCKET)
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url=url)
 
-    data = await storage_provider.get_file(file_row["storage_key"], MINIO_BUCKET)
+    data = await get_storage_provider().get_file(file_row["storage_key"], MINIO_BUCKET)
     if data is None:
         raise HTTPException(status_code=404, detail="File not found in storage")
 
@@ -651,7 +651,7 @@ async def generate_signed_url(
         await _get_project_for_user(project_id, user_id, conn)
         file_row = await _get_file(file_id, project_id, conn)
 
-    url = await storage_provider.generate_signed_url(
+    url = await get_storage_provider().generate_signed_url(
         file_row["storage_key"], expires_seconds, MINIO_BUCKET
     )
     if not url:

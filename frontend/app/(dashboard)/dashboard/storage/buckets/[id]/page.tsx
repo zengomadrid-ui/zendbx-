@@ -31,7 +31,7 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
-function getMimeIcon(mime: string): JSX.Element {
+function getMimeIcon(mime: string): React.ReactElement {
   const iconClass = "w-4 h-4";
   
   if (mime?.startsWith('image/')) {
