@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/fetch-utils';
 
+// Force dynamic rendering - prevent static generation
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 interface User {
   id: string;
   email: string;
@@ -27,6 +31,7 @@ export default function DashboardLayout({
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>(['Authentication', 'Database']); // Track expanded menus
   const [isLoading, setIsLoading] = useState(true);
+  const [currentProjectId, setCurrentProjectId] = useState<string>('');
   const pathname = usePathname();
   const router = useRouter();
 
@@ -103,7 +108,7 @@ export default function DashboardLayout({
       ),
       children: [
         { name: 'All Projects', href: '/dashboard/projects' },
-        { name: 'Settings', href: `/dashboard/projects/${localStorage.getItem('current_project_id')}/settings` },
+        { name: 'Settings', href: `/dashboard/projects/${currentProjectId || 'default'}/settings` },
       ]
     },
     // Authentication menu - different items based on role
@@ -301,6 +306,7 @@ export default function DashboardLayout({
               
               // Store current project ID in localStorage for quick access
               localStorage.setItem('current_project_id', currentProject.id);
+              setCurrentProjectId(currentProject.id);
               
               // Update last_selected_project_id in database if it changed
               if (userData.last_selected_project_id !== currentProject.id) {

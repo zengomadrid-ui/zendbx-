@@ -1,6 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+// Force dynamic rendering - prevent static generation
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { apiFetch } from '@/lib/fetch-utils';
 
