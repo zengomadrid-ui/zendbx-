@@ -200,7 +200,8 @@ from app.api import (
     analytics,  # Performance analytics
     billing,  # Billing & Usage Quotas
     admin_quotas,  # Admin quota management
-    oauth_providers, oauth_redirects, oauth_login  # OAuth URL Generator System
+    oauth_providers, oauth_redirects, oauth_login,  # OAuth URL Generator System
+    storage,  # Object Storage
 )
 
 # Multi-tenant APIs (new) - These MUST come first to override old endpoints
@@ -258,3 +259,6 @@ app.include_router(billing.router, tags=["billing"])
 
 # Admin Quota Management API
 app.include_router(admin_quotas.router, tags=["admin-quotas"])
+
+# Object Storage API
+app.include_router(storage.router, tags=["storage"])

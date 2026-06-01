@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     # WebSocket Server
     WEBSOCKET_SERVER_URL: str = "http://localhost:3002"
     ENABLE_REALTIME: bool = False  # Disabled by default for production safety
+
+    # MinIO / Object Storage
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_SECURE: bool = False
+    MINIO_PUBLIC_URL: str = "http://localhost:9000"
     
     # Domain Configuration for Wildcard Subdomains
     BASE_DOMAIN: str = "zendbx.in"  # Production domain

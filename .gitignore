@@ -37,3 +37,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local storage
+storage_data/
+backend/storage_data/
