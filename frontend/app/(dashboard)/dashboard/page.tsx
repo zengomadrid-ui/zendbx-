@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 
+// Prevent static generation - this page needs client-side rendering
+export const dynamic = 'force-dynamic';
+
 interface ProjectStats {
   project: {
     id: string;

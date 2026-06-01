@@ -1,5 +1,8 @@
 'use client';
 
+// Prevent static generation - this page needs client-side rendering
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/fetch-utils';

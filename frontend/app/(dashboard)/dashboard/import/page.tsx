@@ -1,4 +1,8 @@
 'use client';
+
+// Prevent static generation - this page needs client-side rendering
+export const dynamic = 'force-dynamic';
+
 import { useState } from 'react';
 interface CSVPreview { headers: string[]; rows: any[][]; totalRows: number; duplicateCount: number; emptyRowCount: number; }
 export default function ImportPage() {

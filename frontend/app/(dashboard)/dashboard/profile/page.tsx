@@ -1,5 +1,8 @@
 'use client';
 
+// Prevent static generation - this page needs client-side rendering
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;

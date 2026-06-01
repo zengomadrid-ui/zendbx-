@@ -1,5 +1,8 @@
 'use client';
 
+// Prevent static generation - this page needs client-side rendering
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api';
 import { useToast } from '@/lib/toast';

@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import { config } from "@/lib/config";
 
+// Prevent static generation - this page needs client-side rendering
+export const dynamic = 'force-dynamic';
+
 const API_BASE_URL = config.api.baseUrl;
 
 interface PerformanceMetrics {
