@@ -6,8 +6,6 @@ const nextConfig = {
   },
   // Production optimizations
   compress: true,
-  // Disable static page generation for dashboard routes
-  output: 'standalone',
   // Environment variables validation
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
