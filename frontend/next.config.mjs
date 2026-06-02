@@ -14,10 +14,6 @@ const nextConfig = {
   },
   // NUCLEAR OPTION: Completely disable static generation
   output: 'standalone',
-  // Disable all static optimization
-  experimental: {
-    isrMemoryCacheSize: 0,
-  },
   // Skip static page generation during build
   generateBuildId: async () => {
     return 'build-' + Date.now()

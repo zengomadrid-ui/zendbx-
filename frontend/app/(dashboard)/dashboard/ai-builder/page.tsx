@@ -1,9 +1,5 @@
 import dynamic from 'next/dynamic';
 
-// Force dynamic rendering - prevent static generation
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 // Dynamic import with no SSR - this is the ONLY way to prevent localStorage errors
 const AIBuilderClientPage = dynamic(() => import('./client-page'), {
   ssr: false,
