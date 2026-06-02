@@ -16,6 +16,12 @@ async def run_storage_migration(pool = Depends(get_main_db_pool)):
     """
     try:
         async with pool.acquire() as conn:
+            # Add slug column to projects table
+            await conn.execute("""
+                ALTER TABLE projects 
+                ADD COLUMN IF NOT EXISTS slug VARCHAR(255) UNIQUE
+            """)
+            
             # Add storage columns to projects table
             await conn.execute("""
                 ALTER TABLE projects 

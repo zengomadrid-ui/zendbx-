@@ -98,7 +98,11 @@ async def list_tables(
                 'auth_sessions', 'auth_policies', 'auth_hooks', 'security_settings',
                 'project_members', 'project_messages', 'project_quotas', 'project_sessions',
                 'project_users', 'project_auth_logs', 'project_oauth_providers',
-                'audit_logs', 'rate_limit_logs', 'realtime_test', 'file_uploads'
+                'audit_logs', 'rate_limit_logs', 'realtime_test', 'file_uploads',
+                'backup_history', 'oauth_audit_log', 'oauth_audit_logs', 'oauth_provider_settings',
+                'oauth_providers', 'oauth_redirect_urls', 'oauth_state_sessions', 'oauth_states',
+                'project_api_keys', 'quota_overrides', 'storage_buckets', 'storage_objects',
+                'usage_records', 'user_sessions'
             )
             GROUP BY t.table_schema, t.table_name
             ORDER BY t.table_name
@@ -132,7 +136,11 @@ async def list_tables(
                     'auth_sessions', 'auth_policies', 'auth_hooks', 'security_settings',
                     'project_members', 'project_messages', 'project_quotas', 'project_sessions',
                     'project_users', 'project_auth_logs', 'project_oauth_providers',
-                    'audit_logs', 'rate_limit_logs', 'realtime_test', 'file_uploads'
+                    'audit_logs', 'rate_limit_logs', 'realtime_test', 'file_uploads',
+                    'backup_history', 'oauth_audit_log', 'oauth_audit_logs', 'oauth_provider_settings',
+                    'oauth_providers', 'oauth_redirect_urls', 'oauth_state_sessions', 'oauth_states',
+                    'project_api_keys', 'quota_overrides', 'storage_buckets', 'storage_objects',
+                    'usage_records', 'user_sessions'
                 )
                 GROUP BY t.table_schema, t.table_name
                 ORDER BY t.table_name
