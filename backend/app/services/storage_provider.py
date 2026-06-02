@@ -1,6 +1,6 @@
 """
 Abstract Storage Provider Interface
-Allows swapping MinIO → Cloudflare R2 → AWS S3 → Backblaze B2 without changing API or business logic.
+Allows swapping between storage providers (Backblaze B2, AWS S3, MinIO, etc.) without changing API or business logic.
 """
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any, BinaryIO

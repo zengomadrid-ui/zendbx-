@@ -77,12 +77,36 @@ class Settings(BaseSettings):
     WEBSOCKET_SERVER_URL: str = "http://localhost:3002"
     ENABLE_REALTIME: bool = False  # Disabled by default for production safety
 
-    # MinIO / Object Storage
-    MINIO_ENDPOINT: str = "localhost:9000"
+    # MinIO / Object Storage (kept for local dev reference only)
+    MINIO_ENDPOINT: str = ""
     MINIO_ACCESS_KEY: str = ""
     MINIO_SECRET_KEY: str = ""
     MINIO_SECURE: bool = False
-    MINIO_PUBLIC_URL: str = "http://localhost:9000"
+    MINIO_PUBLIC_URL: str = ""
+
+    # Backblaze B2 (production object storage)
+    B2_KEY_ID: str = ""               # Backblaze Application Key ID
+    B2_APPLICATION_KEY: str = ""      # Backblaze Application Key
+    B2_BUCKET_NAME: str = "zendbx-storage"
+    B2_REGION: str = "us-east-005"
+    B2_ENDPOINT: str = ""            # e.g. https://s3.us-east-005.backblazeb2.com
+    B2_ENDPOINT_URL: str = ""        # alias — set automatically from B2_ENDPOINT if blank
+    B2_PUBLIC_URL: str = ""          # e.g. https://f005.backblazeb2.com/file/zendbx
+
+    @property
+    def b2_endpoint_url(self) -> str:
+        """Return B2_ENDPOINT_URL, falling back to B2_ENDPOINT."""
+        return self.B2_ENDPOINT_URL or self.B2_ENDPOINT
+
+    @property
+    def b2_public_url(self) -> str:
+        """Derive public URL from endpoint if not explicitly set."""
+        if self.B2_PUBLIC_URL:
+            return self.B2_PUBLIC_URL
+        # Convert https://s3.us-east-005.backblazeb2.com → https://f005.backblazeb2.com/file/<bucket>
+        region = self.B2_REGION or "us-east-005"
+        region_num = region.split("-")[-1]  # "005"
+        return f"https://f{region_num}.backblazeb2.com/file/{self.B2_BUCKET_NAME}"
     
     # Domain Configuration for Wildcard Subdomains
     BASE_DOMAIN: str = "zendbx.in"  # Production domain
