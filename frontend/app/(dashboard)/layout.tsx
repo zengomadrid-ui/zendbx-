@@ -5,10 +5,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/fetch-utils';
 
-// Force dynamic rendering - prevent static generation
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 interface User {
   id: string;
   email: string;
