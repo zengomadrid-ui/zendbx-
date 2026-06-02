@@ -12,8 +12,9 @@ const nextConfig = {
     NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   },
-  // PERMANENT FIX: Disable all static optimization
-  // This prevents localStorage SSR errors during build
+  // NUCLEAR OPTION: Completely disable static generation
+  output: 'standalone',
+  // Disable all static optimization
   experimental: {
     isrMemoryCacheSize: 0,
   },
