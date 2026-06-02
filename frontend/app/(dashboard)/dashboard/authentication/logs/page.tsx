@@ -1,7 +1,5 @@
 'use client';
 
-// Prevent static generation - this page needs client-side rendering
-export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';

@@ -1,7 +1,5 @@
 'use client';
 
-// Prevent static generation - this page needs client-side rendering
-export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
