@@ -202,6 +202,7 @@ from app.api import (
     admin_quotas,  # Admin quota management
     oauth_providers, oauth_redirects, oauth_login,  # OAuth URL Generator System
     storage,  # Object Storage
+    run_migration,  # One-time database migrations
 )
 
 # Multi-tenant APIs (new) - These MUST come first to override old endpoints
@@ -262,3 +263,6 @@ app.include_router(admin_quotas.router, tags=["admin-quotas"])
 
 # Object Storage API
 app.include_router(storage.router, tags=["storage"])
+
+# Database Migration API (one-time use)
+app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])
