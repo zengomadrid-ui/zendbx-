@@ -1,0 +1,48 @@
+{
+  "name": "@zendbx/sdk",
+  "version": "1.0.0",
+  "description": "Official JavaScript/TypeScript SDK for ZENDBX — PostgreSQL Backend-as-a-Service",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "tsc"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "zendbx",
+    "baas",
+    "postgresql",
+    "sdk",
+    "database",
+    "realtime",
+    "auth",
+    "storage",
+    "supabase-alternative"
+  ],
+  "license": "MIT",
+  "author": "ZENDBX <support@zendbx.in>",
+  "homepage": "https://zendbx.in",
+  "bugs": {
+    "url": "https://github.com/zendbx/sdk/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zendbx/sdk.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5"
+  }
+}

@@ -71,6 +71,63 @@ async def create_users_table(conn: asyncpg.Connection):
     """)
     logger.info("Created users table with indexes")
 
+    # Install auth.users compatibility view now that the table exists
+    await _install_auth_users_view(conn)
+
+
+async def _install_auth_users_view(conn: asyncpg.Connection):
+    """
+    Install auth.users Supabase-compatible view.
+    Called after users table is created so the view can reference it.
+    Safe to call multiple times (uses CREATE OR REPLACE).
+    """
+    try:
+        # Ensure auth schema exists first
+        await conn.execute("CREATE SCHEMA IF NOT EXISTS auth")
+        # Call the installer function if it exists, otherwise create the view directly
+        fn_exists = await conn.fetchval("""
+            SELECT EXISTS(
+                SELECT 1 FROM pg_proc p
+                JOIN pg_namespace n ON p.pronamespace = n.oid
+                WHERE n.nspname = 'auth' AND p.proname = '_install_users_view'
+            )
+        """)
+        if fn_exists:
+            await conn.execute("SELECT auth._install_users_view()")
+        else:
+            # Fallback: create view directly (functions not yet installed)
+            await conn.execute("""
+                CREATE OR REPLACE VIEW auth.users AS
+                SELECT
+                    id,
+                    email,
+                    name,
+                    name                                        AS full_name,
+                    provider,
+                    provider                                    AS oauth_provider,
+                    (metadata ->> 'oauth_id')                  AS oauth_id,
+                    avatar_url,
+                    is_active,
+                    CASE
+                        WHEN provider = 'email'
+                        THEN COALESCE((metadata ->> 'is_verified')::BOOLEAN, FALSE)
+                        ELSE TRUE
+                    END                                         AS is_verified,
+                    COALESCE(metadata ->> 'plan', 'free')          AS plan,
+                    COALESCE(metadata ->> 'role', 'authenticated') AS role,
+                    metadata,
+                    created_at,
+                    updated_at,
+                    last_login_at,
+                    email       AS email_confirmed_at,
+                    last_login_at AS last_sign_in_at
+                FROM users
+            """)
+        logger.info("auth.users compatibility view installed")
+    except Exception as e:
+        # Non-fatal — view will be created on next migration run
+        logger.warning(f"Could not install auth.users view: {e}")
+
 
 async def create_generic_table(
     conn: asyncpg.Connection,

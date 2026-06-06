@@ -116,12 +116,13 @@ class ZendbxAuth {
   
   /**
    * Sign up a new user
-   * 
+   * Returns Supabase-compatible shape: { data: { user, session }, error }
+   *
    * @param {Object} credentials
-   * @param {string} credentials.email - User email
-   * @param {string} credentials.password - User password
-   * @param {string} [credentials.name] - User name
-   * @returns {Promise<{data: Object|null, error: Object|null}>}
+   * @param {string} credentials.email
+   * @param {string} credentials.password
+   * @param {string} [credentials.name]
+   * @returns {Promise<{data: {user: Object, session: Object}|null, error: Object|null}>}
    */
   async signUp({ email, password, name }) {
     const endpoint = `/v1/auth/${this.client.projectId}/signup`;
@@ -135,20 +136,30 @@ class ZendbxAuth {
       })
     });
     
-    if (result.data && result.data.access_token) {
-      this.client.setToken(result.data.access_token);
-    }
-    
-    return result;
+    if (result.error) return result;
+
+    const { access_token, user } = result.data;
+    if (access_token) this.client.setToken(access_token);
+
+    return {
+      data: {
+        user,
+        session: access_token
+          ? { access_token, token_type: 'bearer', user, expires_in: 604800 }
+          : null
+      },
+      error: null
+    };
   }
   
   /**
    * Sign in with email and password
-   * 
+   * Returns Supabase-compatible shape: { data: { user, session }, error }
+   *
    * @param {Object} credentials
-   * @param {string} credentials.email - User email
-   * @param {string} credentials.password - User password
-   * @returns {Promise<{data: Object|null, error: Object|null}>}
+   * @param {string} credentials.email
+   * @param {string} credentials.password
+   * @returns {Promise<{data: {user: Object, session: Object}|null, error: Object|null}>}
    */
   async signIn({ email, password }) {
     const endpoint = `/v1/auth/${this.client.projectId}/login`;
@@ -158,11 +169,20 @@ class ZendbxAuth {
       body: JSON.stringify({ email, password })
     });
     
-    if (result.data && result.data.access_token) {
-      this.client.setToken(result.data.access_token);
-    }
-    
-    return result;
+    if (result.error) return result;
+
+    const { access_token, user } = result.data;
+    if (access_token) this.client.setToken(access_token);
+
+    return {
+      data: {
+        user,
+        session: access_token
+          ? { access_token, token_type: 'bearer', user, expires_in: 604800 }
+          : null
+      },
+      error: null
+    };
   }
   
   /**
@@ -174,21 +194,25 @@ class ZendbxAuth {
   
   /**
    * Get the current user
-   * 
-   * @returns {Promise<{data: Object|null, error: Object|null}>}
+   * Returns Supabase-compatible shape: { data: { user }, error }
+   *
+   * @returns {Promise<{data: {user: Object}|null, error: Object|null}>}
    */
   async getUser() {
     if (!this.client.token) {
-      return {
-        data: null,
-        error: { message: 'Not authenticated' }
-      };
+      return { data: { user: null }, error: null };
     }
-    
+
     const endpoint = `/v1/auth/${this.client.projectId}/user`;
-    return this.client.request(endpoint, { method: 'GET' });
+    const result = await this.client.request(endpoint, { method: 'GET' });
+
+    if (result.error) {
+      return { data: { user: null }, error: result.error };
+    }
+
+    return { data: { user: result.data }, error: null };
   }
-  
+
   /**
    * Sign out the current user
    */
@@ -196,26 +220,34 @@ class ZendbxAuth {
     this.client.clearToken();
     return { data: null, error: null };
   }
-  
+
   /**
    * Get the current session
+   * Returns Supabase-compatible shape: { data: { session }, error }
+   *
+   * @returns {Promise<{data: {session: Object|null}, error: Object|null}>}
    */
   async getSession() {
     if (!this.client.token) {
       return { data: { session: null }, error: null };
     }
-    
-    const userResult = await this.getUser();
-    
-    if (userResult.error) {
-      return { data: { session: null }, error: userResult.error };
+
+    const { data, error } = await this.getUser();
+
+    if (error || !data.user) {
+      // Token likely expired — clear it
+      this.client.clearToken();
+      return { data: { session: null }, error: error || null };
     }
-    
+
     return {
       data: {
         session: {
           access_token: this.client.token,
-          user: userResult.data
+          token_type: 'bearer',
+          user: data.user,
+          // Supabase includes expires_in; ZendBX tokens are 7-day JWTs
+          expires_in: 604800
         }
       },
       error: null
