@@ -113,7 +113,7 @@ async def execute_on_main_db(query: str, *args):
     async with pool.acquire() as conn:
         return await conn.fetch(query, *args)
 
-async def execute_on_project_db(database_name: str, query: str, *args):
+async def execute_on_project_db(database_name: str, query: str, *args, rls_user_id: str = None, rls_role: str = None):
     """
     Execute query on project database - properly handles PostgreSQL functions and dollar-quoted strings
     
@@ -122,13 +122,21 @@ async def execute_on_project_db(database_name: str, query: str, *args):
     - Preserves function definitions
     - Only splits on semicolons OUTSIDE of quoted strings and function bodies
     """
+    from app.middleware.rls_context import set_rls_context as _set_rls_ctx
+
+    async def _inject_rls(conn):
+        """Inject RLS session variables if context provided."""
+        if rls_user_id is not None or rls_role is not None:
+            await _set_rls_ctx(conn, user_id=rls_user_id, role=rls_role or 'anon')
+
     pool = await get_project_db_pool(database_name)
-    
+
     # If there are parameters, this must be a single parameterized statement
     if args:
         async with pool.acquire() as conn:
             # Set search_path to the project schema
             await conn.execute(f'SET search_path TO "{database_name}", public')
+            await _inject_rls(conn)
             return await conn.fetch(query, *args)
     
     # For queries without parameters, we need to handle multi-statement execution
@@ -143,6 +151,7 @@ async def execute_on_project_db(database_name: str, query: str, *args):
         async with pool.acquire() as conn:
             # Set search_path to the project schema
             await conn.execute(f'SET search_path TO "{database_name}", public')
+            await _inject_rls(conn)
             try:
                 result = await conn.fetch(query)
                 return result
@@ -163,6 +172,7 @@ async def execute_on_project_db(database_name: str, query: str, *args):
         async with pool.acquire() as conn:
             # Set search_path to the project schema
             await conn.execute(f'SET search_path TO "{database_name}", public')
+            await _inject_rls(conn)
             try:
                 return await conn.fetch(statements[0])
             except:
@@ -179,6 +189,7 @@ async def execute_on_project_db(database_name: str, query: str, *args):
         async with pool.acquire() as conn:
             # CRITICAL: Set search_path for EACH statement in multi-statement queries
             await conn.execute(f'SET search_path TO "{database_name}", public')
+            await _inject_rls(conn)
             
             try:
                 result = await conn.fetch(stmt)

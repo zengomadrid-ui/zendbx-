@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/fetch-utils';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 interface User {
   id: string;
@@ -345,13 +346,8 @@ export default function DashboardLayout({
   // Show loading state while checking auth
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#1c1c1c] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 bg-gradient-to-br from-orange-600 to-orange-500 rounded-lg flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <span className="text-white font-bold text-2xl">N</span>
-          </div>
-          <p className="text-sm text-[#a1a1a1]">Loading...</p>
-        </div>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <LoadingSpinner size="xl" text="Loading..." />
       </div>
     );
   }

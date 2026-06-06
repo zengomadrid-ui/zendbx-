@@ -12,6 +12,7 @@ import logging
 
 from ..core.db_router import get_main_db_pool, get_project_db
 from ..services.auto_table import auto_sync_user
+from ..middleware.rls_context import set_rls_context
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,10 @@ async def signup(
         # Ensure users table exists
         from ..services.auto_table import ensure_table_exists
         await ensure_table_exists(project_db, "users")
-        
+
+        # Service role context — signup bypasses user-level RLS
+        await set_rls_context(conn, user_id=None, role='service_role')
+
         existing = await conn.fetchrow("""
             SELECT id FROM users WHERE email = $1
         """, request_data.email)
@@ -183,6 +187,9 @@ async def login(
     
     # Find user and verify password
     async with project_db.acquire() as conn:
+        # service_role to read user record regardless of RLS on users table
+        await set_rls_context(conn, user_id=None, role='service_role')
+
         user = await conn.fetchrow("""
             SELECT id, email, name, provider, metadata, created_at
             FROM users
@@ -202,6 +209,9 @@ async def login(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
+
+        # Set authenticated context for the update
+        await set_rls_context(conn, user_id=str(user['id']), role='authenticated')
         
         # Update last_login_at
         await conn.execute("""
@@ -274,8 +284,10 @@ async def get_user(
         from ..core.db_router import get_project_db_direct
         project_db = await get_project_db_direct(str(project_id))
         
-        # Get user
+        # Get user — inject authenticated context so auth.uid() resolves correctly
         async with project_db.acquire() as conn:
+            await set_rls_context(conn, user_id=str(user_id), role='authenticated')
+
             user = await conn.fetchrow("""
                 SELECT id, email, name, provider, avatar_url, is_active, created_at, last_login_at
                 FROM users

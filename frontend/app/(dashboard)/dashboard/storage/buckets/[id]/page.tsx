@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { apiFetch } from '@/lib/fetch-utils';
+import LoadingSpinner, { LoadingSpinnerInline } from '@/components/ui/LoadingSpinner';
 
 interface StorageFile {
   id: string;
@@ -282,7 +283,7 @@ export default function BucketDetailPage() {
       {/* File Table */}
       {loading ? (
         <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+          <LoadingSpinner size="md" text="Loading files..." />
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl p-12 text-center">
@@ -454,7 +455,7 @@ export default function BucketDetailPage() {
             {previewUrl && previewFile.mime_type === 'application/pdf' && (
               <iframe src={previewUrl} className="w-full h-96 rounded-lg" />
             )}
-            {!previewUrl && <div className="flex items-center justify-center h-32"><div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" /></div>}
+            {!previewUrl && <div className="flex items-center justify-center h-32"><LoadingSpinnerInline size="md" /></div>}
           </div>
         </div>
       )}

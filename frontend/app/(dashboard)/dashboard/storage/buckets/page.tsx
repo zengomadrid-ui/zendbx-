@@ -1,9 +1,9 @@
 'use client';
 
-
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/fetch-utils';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 interface Bucket {
   id: string;
@@ -126,7 +126,7 @@ export default function BucketsPage() {
       {/* Bucket List */}
       {loading ? (
         <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+          <LoadingSpinner size="md" text="Loading buckets..." />
         </div>
       ) : buckets.length === 0 ? (
         <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl p-12 text-center">

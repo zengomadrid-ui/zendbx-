@@ -92,6 +92,58 @@ END;
 
 COMMENT ON FUNCTION auth.is_service_role() IS 'Returns true if user has service_role privileges (bypasses RLS)';
 
+-- ============================================
+-- SUPABASE COMPATIBILITY FUNCTIONS
+-- ============================================
+
+-- auth.uid() — Supabase-compatible alias for auth.current_user_id()
+-- Usage in RLS: USING (auth.uid() = user_id)
+CREATE OR REPLACE FUNCTION auth.uid()
+RETURNS UUID
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+AS '
+DECLARE
+    uid_text TEXT;
+BEGIN
+    uid_text := current_setting(''app.current_user_id'', true);
+    IF uid_text IS NULL OR uid_text = '''' THEN
+        RETURN NULL;
+    END IF;
+    RETURN uid_text::UUID;
+EXCEPTION
+    WHEN invalid_text_representation THEN
+        RETURN NULL;
+    WHEN OTHERS THEN
+        RETURN NULL;
+END;
+';
+
+COMMENT ON FUNCTION auth.uid() IS
+'Supabase-compatible: returns authenticated user UUID from session context.
+Use in RLS policies: USING (auth.uid() = user_id)';
+
+-- auth.role() — Supabase-compatible alias for auth.current_role()
+-- Usage in RLS: USING (auth.role() = 'authenticated')
+CREATE OR REPLACE FUNCTION auth.role()
+RETURNS TEXT
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+AS '
+BEGIN
+    RETURN COALESCE(current_setting(''app.current_role'', true), ''anon'');
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN ''anon'';
+END;
+';
+
+COMMENT ON FUNCTION auth.role() IS
+'Supabase-compatible: returns current session role.
+Values: anon | authenticated | service_role | owner | admin | developer | viewer';
+
 -- Check if current user owns a record
 CREATE OR REPLACE FUNCTION auth.owns_record(record_user_id UUID)
 RETURNS BOOLEAN
@@ -163,6 +215,13 @@ END;
 ';
 
 COMMENT ON FUNCTION auth.is_rls_enabled(TEXT) IS 'Check if RLS is enabled on a table';
+
+-- ============================================
+-- auth.users COMPATIBILITY VIEW
+-- Backed by the users table once it is created.
+-- Deferred: created after users table exists (see auto_table.py / migration).
+-- The view is installed by add_supabase_compat.sql after users table creation.
+-- ============================================
 
 -- ============================================
 -- METADATA TABLE (Track tables in this database)
