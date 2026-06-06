@@ -21,64 +21,91 @@ class SchemaParser:
             "relationships": relationships
         }
     
+    # System/infrastructure tables that should never be shown to users
+    SYSTEM_TABLES = frozenset({
+        'users', 'projects', 'api_keys', 'query_history', 'saved_queries',
+        'user_tables', 'login_attempts', 'password_reset_tokens', 'oauth_apps',
+        'oauth_connections', 'subscription_plans', 'user_subscriptions',
+        'usage_tracking', 'usage_logs', 'backups', 'backup_schedules',
+        'auth_sessions', 'auth_policies', 'auth_hooks', 'security_settings',
+        'project_members', 'project_messages', 'project_quotas', 'project_sessions',
+        'project_users', 'project_auth_logs', 'project_oauth_providers',
+        'audit_logs', 'rate_limit_logs', 'realtime_test', 'file_uploads',
+        'backup_history', 'oauth_audit_log', 'oauth_audit_logs', 'oauth_provider_settings',
+        'oauth_providers', 'oauth_redirect_urls', 'oauth_state_sessions', 'oauth_states',
+        'project_api_keys', 'quota_overrides', 'storage_buckets', 'storage_objects',
+        'usage_records', 'user_sessions', 'realtime_subscriptions', 'schema_migrations',
+    })
+
     @staticmethod
     async def get_tables(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
         """
-        Get all tables with their columns
-        If schema_name is provided, only get tables from that schema
-        Otherwise, get from public schema
+        Get all user-created tables with their columns.
+        Excludes system schemas (auth, information_schema, pg_catalog) and
+        all internal platform tables regardless of which schema they live in.
         """
-        # Determine which schema to query
-        if schema_name is None:
-            schema_filter = "t.table_schema = 'public'"
-        else:
-            schema_filter = f"t.table_schema = '{schema_name}'"
-        
-        query = f"""
-        SELECT 
-            t.table_schema,
-            t.table_name,
-            t.table_schema || '.' || t.table_name as full_name,
-            json_agg(
-                json_build_object(
-                    'name', c.column_name,
-                    'type', c.data_type,
-                    'nullable', c.is_nullable = 'YES',
-                    'default', c.column_default,
-                    'primary_key', (
-                        SELECT COUNT(*) > 0
-                        FROM information_schema.table_constraints tc
-                        JOIN information_schema.key_column_usage kcu 
-                            ON tc.constraint_name = kcu.constraint_name
-                        WHERE tc.table_schema = t.table_schema
-                        AND tc.table_name = t.table_name
-                        AND tc.constraint_type = 'PRIMARY KEY'
-                        AND kcu.column_name = c.column_name
-                    )
-                ) ORDER BY c.ordinal_position
-            ) as columns
-        FROM information_schema.tables t
-        JOIN information_schema.columns c 
-            ON t.table_name = c.table_name 
-            AND t.table_schema = c.table_schema
-        WHERE {schema_filter}
-        AND t.table_type = 'BASE TABLE'
-        AND t.table_name NOT LIKE '_zendbx_%'
-        AND t.table_name NOT LIKE '_nexora_%'
-        GROUP BY t.table_schema, t.table_name
-        ORDER BY t.table_schema, t.table_name
-        """
-        return await DBManager.fetch_all(db, query)
+        # Always query the public schema — that's where user tables live.
+        # If a dedicated schema matching db_name exists and has tables, prefer it.
+        # Either way we NEVER expose auth/system schemas or internal tables.
+        schemas_to_try = ['public']
+        if schema_name and schema_name != 'public':
+            schemas_to_try.insert(0, schema_name)
+
+        excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
+
+        for schema in schemas_to_try:
+            query = f"""
+            SELECT 
+                t.table_schema,
+                t.table_name,
+                t.table_schema || '.' || t.table_name as full_name,
+                json_agg(
+                    json_build_object(
+                        'name', c.column_name,
+                        'type', c.data_type,
+                        'nullable', c.is_nullable = 'YES',
+                        'default', c.column_default,
+                        'primary_key', (
+                            SELECT COUNT(*) > 0
+                            FROM information_schema.table_constraints tc
+                            JOIN information_schema.key_column_usage kcu 
+                                ON tc.constraint_name = kcu.constraint_name
+                            WHERE tc.table_schema = t.table_schema
+                            AND tc.table_name = t.table_name
+                            AND tc.constraint_type = 'PRIMARY KEY'
+                            AND kcu.column_name = c.column_name
+                        )
+                    ) ORDER BY c.ordinal_position
+                ) as columns
+            FROM information_schema.tables t
+            JOIN information_schema.columns c 
+                ON t.table_name = c.table_name 
+                AND t.table_schema = c.table_schema
+            WHERE t.table_schema = '{schema}'
+            AND t.table_type = 'BASE TABLE'
+            AND t.table_schema NOT IN ('auth', 'information_schema', 'pg_catalog', 'pg_toast')
+            AND t.table_name NOT LIKE '_zendbx_%'
+            AND t.table_name NOT LIKE '_nexora_%'
+            AND t.table_name NOT IN ({excluded_tables})
+            GROUP BY t.table_schema, t.table_name
+            ORDER BY t.table_schema, t.table_name
+            """
+            result = await DBManager.fetch_all(db, query)
+            if result:
+                return result
+
+        return []
     
     @staticmethod
     async def get_relationships(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
-        """Get foreign key relationships between tables"""
-        # Determine which schema to query
-        if schema_name is None:
-            schema_filter = "tc.table_schema = 'public'"
-        else:
-            schema_filter = f"tc.table_schema = '{schema_name}'"
-        
+        """Get foreign key relationships between user-created tables"""
+        schema = schema_name if schema_name else 'public'
+        # Exclude system schemas
+        if schema in ('auth', 'information_schema', 'pg_catalog', 'pg_toast'):
+            schema = 'public'
+
+        excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
+
         query = f"""
         SELECT
             tc.table_name as from_table,
@@ -92,7 +119,10 @@ class SchemaParser:
         JOIN information_schema.constraint_column_usage ccu
             ON ccu.constraint_name = tc.constraint_name
         WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND {schema_filter}
+        AND tc.table_schema = '{schema}'
+        AND tc.table_name NOT IN ({excluded_tables})
+        AND tc.table_name NOT LIKE '_zendbx_%'
+        AND tc.table_name NOT LIKE '_nexora_%'
         ORDER BY tc.table_name
         """
         return await DBManager.fetch_all(db, query)
