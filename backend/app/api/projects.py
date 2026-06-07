@@ -427,9 +427,10 @@ async def get_project_api_urls(
 @router.get("/{project_id}/keys", response_model=dict)
 async def get_project_keys(
     project_id: UUID,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    reveal: bool = False  # Query parameter to reveal full keys
 ):
-    """Get project API keys (anon and service_role) - keys are masked"""
+    """Get project API keys (anon and service_role) - keys are masked by default"""
     
     # Verify ownership
     result = await execute_on_main_db(
@@ -460,11 +461,22 @@ async def get_project_keys(
         # Use encrypted_key (full JWT) if available, otherwise use key_prefix
         full_key = key["encrypted_key"] if key["encrypted_key"] else key["key_prefix"]
         
+        # Mask the key for security unless explicitly requested
+        if reveal:
+            display_key = full_key
+        else:
+            # Show first 12 and last 4 characters, mask the rest
+            if full_key and len(full_key) > 16:
+                display_key = f"{full_key[:12]}...{full_key[-4:]}"
+            else:
+                display_key = key["key_prefix"]
+        
         key_data = {
             "id": str(key["id"]),
             "name": key["name"],
             "key_prefix": key["key_prefix"],
-            "full_key": full_key,
+            "full_key": display_key,  # Masked or full based on reveal parameter
+            "masked": not reveal,  # Indicate if key is masked
             "role": key["role"],
             "is_active": key["is_active"],
             "created_at": key["created_at"].isoformat()
@@ -477,5 +489,6 @@ async def get_project_keys(
     
     return {
         "project_id": str(project_id),
-        "keys": keys
+        "keys": keys,
+        "masked": not reveal
     }
