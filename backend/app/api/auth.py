@@ -115,7 +115,7 @@ async def signup(user_data: UserCreate):
                 """
                 INSERT INTO users (email, password_hash, full_name)
                 VALUES ($1, $2, $3)
-                RETURNING id, email, full_name, avatar_url, is_active, is_verified, plan, role, created_at
+                RETURNING id, email, full_name, avatar_url, is_active, is_verified, plan, created_at
                 """,
                 user_data.email,
                 password_hash,

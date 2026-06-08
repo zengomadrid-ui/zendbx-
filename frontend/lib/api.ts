@@ -86,8 +86,17 @@ export const apiClient = {
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
+        // Better error message extraction
+        const errorMessage = typeof data?.detail === 'string' 
+          ? data.detail 
+          : typeof data?.message === 'string'
+          ? data.message
+          : JSON.stringify(data) || 'Request failed';
+        
+        console.error('API Error:', errorMessage, 'Status:', response.status, 'Data:', data);
+        
         throw new ApiError(
-          data?.detail || data?.message || 'Request failed',
+          errorMessage,
           response.status,
           data
         );

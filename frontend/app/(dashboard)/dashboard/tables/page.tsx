@@ -161,7 +161,11 @@ export default function TablesPageEditable() {
     }
 
     try {
-      const data = await apiClient.get(`/api/projects/${projectId}/db/tables/`);
+      const data = await apiClient.get(`/api/projects/${projectId}/db/tables/`, {
+        headers: {
+          'x-project-id': projectId
+        }
+      });
       // Extract tables array from response
       const tablesArray = data.tables || data;
       setTables(tablesArray);

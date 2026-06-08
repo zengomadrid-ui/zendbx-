@@ -4,7 +4,10 @@ Parses database schema for visualization
 """
 from typing import List, Dict, Any
 import asyncpg
+import logging
 from app.services.db_manager import DBManager
+
+logger = logging.getLogger(__name__)
 
 
 class SchemaParser:
@@ -40,20 +43,14 @@ class SchemaParser:
     @staticmethod
     async def get_tables(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
         """
-        Get all user-created tables with their columns.
+        Get all user-created tables with their columns from ALL user schemas.
         Excludes system schemas (auth, information_schema, pg_catalog) and
         all internal platform tables regardless of which schema they live in.
         """
-        # Always query the public schema — that's where user tables live.
-        # If a dedicated schema matching db_name exists and has tables, prefer it.
-        # Either way we NEVER expose auth/system schemas or internal tables.
-        schemas_to_try = ['public']
-        if schema_name and schema_name != 'public':
-            schemas_to_try.insert(0, schema_name)
+        try:
+            excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
 
-        excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
-
-        for schema in schemas_to_try:
+            # Query ALL user schemas, not just public or project schema
             query = f"""
             SELECT 
                 t.table_schema,
@@ -81,8 +78,7 @@ class SchemaParser:
             JOIN information_schema.columns c 
                 ON t.table_name = c.table_name 
                 AND t.table_schema = c.table_schema
-            WHERE t.table_schema = '{schema}'
-            AND t.table_type = 'BASE TABLE'
+            WHERE t.table_type = 'BASE TABLE'
             AND t.table_schema NOT IN ('auth', 'information_schema', 'pg_catalog', 'pg_toast')
             AND t.table_name NOT LIKE '_zendbx_%'
             AND t.table_name NOT LIKE '_nexora_%'
@@ -90,27 +86,26 @@ class SchemaParser:
             GROUP BY t.table_schema, t.table_name
             ORDER BY t.table_schema, t.table_name
             """
+            
+            logger.info(f"Executing get_tables query for schema: {schema_name}")
             result = await DBManager.fetch_all(db, query)
-            if result:
-                return result
-
-        return []
+            logger.info(f"Found {len(result) if result else 0} tables")
+            return result if result else []
+        except Exception as e:
+            logger.error(f"Error in get_tables: {str(e)}")
+            raise
     
     @staticmethod
     async def get_relationships(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
-        """Get foreign key relationships between user-created tables"""
-        schema = schema_name if schema_name else 'public'
-        # Exclude system schemas
-        if schema in ('auth', 'information_schema', 'pg_catalog', 'pg_toast'):
-            schema = 'public'
-
+        """Get foreign key relationships between user-created tables across ALL user schemas"""
         excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
 
+        # Query ALL user schemas for relationships
         query = f"""
         SELECT
-            tc.table_name as from_table,
+            tc.table_schema || '.' || tc.table_name as from_table,
             kcu.column_name as from_column,
-            ccu.table_name as to_table,
+            ccu.table_schema || '.' || ccu.table_name as to_table,
             ccu.column_name as to_column,
             tc.constraint_name
         FROM information_schema.table_constraints tc
@@ -119,13 +114,14 @@ class SchemaParser:
         JOIN information_schema.constraint_column_usage ccu
             ON ccu.constraint_name = tc.constraint_name
         WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND tc.table_schema = '{schema}'
+        AND tc.table_schema NOT IN ('auth', 'information_schema', 'pg_catalog', 'pg_toast')
         AND tc.table_name NOT IN ({excluded_tables})
         AND tc.table_name NOT LIKE '_zendbx_%'
         AND tc.table_name NOT LIKE '_nexora_%'
-        ORDER BY tc.table_name
+        ORDER BY tc.table_schema, tc.table_name
         """
-        return await DBManager.fetch_all(db, query)
+        result = await DBManager.fetch_all(db, query)
+        return result if result else []
     
     @staticmethod
     async def get_table_details(db: asyncpg.Pool, table_name: str) -> Dict:
