@@ -226,6 +226,7 @@ from app.api import (
     oauth_providers, oauth_redirects, oauth_login,  # OAuth URL Generator System
     storage,  # Object Storage
     run_migration,  # One-time database migrations
+    setup_project,  # Temporary setup endpoint
 )
 
 # Multi-tenant APIs (new) - These MUST come first to override old endpoints
@@ -289,3 +290,6 @@ app.include_router(storage.router, tags=["storage"])
 
 # Database Migration API (one-time use)
 app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])
+
+# Temporary Setup Endpoint (remove after initial setup)
+app.include_router(setup_project.router, tags=["setup"])
