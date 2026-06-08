@@ -92,7 +92,10 @@ class SchemaParser:
             logger.info(f"Found {len(result) if result else 0} tables")
             return result if result else []
         except Exception as e:
+            import traceback
             logger.error(f"Error in get_tables: {str(e)}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            logger.error(f"Query was: {query}")
             raise
     
     @staticmethod
