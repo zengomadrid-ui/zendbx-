@@ -21,18 +21,46 @@ async def get_main_db_pool() -> asyncpg.Pool:
     global _main_pool
     
     if _main_pool is None:
-        _main_pool = await asyncpg.create_pool(
-            host="localhost",
-            port=5432,
-            database="nexora_main",
-            user="postgres",
-            password="Pawan@121",
-            min_size=5,
-            max_size=20
-        )
-        logger.info("Main database pool created")
+        from .config import settings
+        
+        if not settings.DATABASE_URL:
+            logger.error("DATABASE_URL is not configured!")
+            raise ValueError("DATABASE_URL environment variable is required")
+        
+        logger.info(f"🔄 Creating main database pool from DATABASE_URL")
+        logger.info(f"   DATABASE_URL length: {len(settings.DATABASE_URL)}")
+        logger.info(f"   DATABASE_URL starts with: {settings.DATABASE_URL[:30]}...")
+        
+        try:
+            _main_pool = await asyncpg.create_pool(
+                dsn=settings.DATABASE_URL,
+                min_size=5,
+                max_size=20,
+                command_timeout=60,
+                timeout=30  # Add explicit connection timeout
+            )
+            logger.info("✅ Main database pool created successfully")
+            logger.info(f"   Pool size: {_main_pool.get_size()}, Available: {_main_pool.get_idle_size()}")
+        except Exception as e:
+            logger.error(f"❌ Failed to create database pool: {type(e).__name__}: {str(e)}")
+            logger.error(f"   DATABASE_URL (first 100 chars): {settings.DATABASE_URL[:100]}")
+            raise
     
     return _main_pool
+
+
+async def initialize_main_pool():
+    """Initialize the main database pool at application startup"""
+    global _main_pool
+    
+    if _main_pool is not None:
+        logger.info("Main database pool already initialized")
+        return _main_pool
+    
+    logger.info("🚀 Initializing main database pool at startup...")
+    pool = await get_main_db_pool()
+    logger.info(f"✅ Main pool initialized: size={pool.get_size()}, idle={pool.get_idle_size()}")
+    return pool
 
 
 async def get_project_db(project_id: str, api_key: str) -> asyncpg.Pool:
@@ -108,12 +136,25 @@ async def get_project_db(project_id: str, api_key: str) -> asyncpg.Pool:
         
         # Create connection pool for project DB
         try:
+            from .config import settings
+            
+            # Parse main DATABASE_URL to extract connection params
+            import re
+            match = re.match(r'postgresql://([^:]+):([^@]+)@([^:/]+)(?::(\d+))?/(.+)', settings.DATABASE_URL)
+            if not match:
+                raise ValueError(f"Invalid DATABASE_URL format: {settings.DATABASE_URL}")
+            
+            db_user, db_password, db_host, db_port, _ = match.groups()
+            db_port = db_port or "5432"
+            
+            logger.info(f"Creating pool for project DB '{db_name}' on {db_host}:{db_port}")
+            
             pool = await asyncpg.create_pool(
-                host="localhost",
-                port=5432,
+                host=db_host,
+                port=int(db_port),
                 database=db_name,
-                user="postgres",
-                password="Pawan@121",
+                user=db_user,
+                password=db_password,
                 min_size=2,
                 max_size=10,
                 command_timeout=60
@@ -174,13 +215,23 @@ async def get_project_db_direct(project_id: str) -> asyncpg.Pool:
         if cache_key in _connection_pools:
             return _connection_pools[cache_key]
         
+        # Parse DATABASE_URL for connection params
+        from .config import settings
+        import re
+        match = re.match(r'postgresql://([^:]+):([^@]+)@([^:/]+)(?::(\d+))?/(.+)', settings.DATABASE_URL)
+        if not match:
+            raise ValueError(f"Invalid DATABASE_URL format")
+        
+        db_user, db_password, db_host, db_port, _ = match.groups()
+        db_port = db_port or "5432"
+        
         # Create pool
         pool = await asyncpg.create_pool(
-            host="localhost",
-            port=5432,
+            host=db_host,
+            port=int(db_port),
             database=db_name,
-            user="postgres",
-            password="Pawan@121",
+            user=db_user,
+            password=db_password,
             min_size=2,
             max_size=10
         )

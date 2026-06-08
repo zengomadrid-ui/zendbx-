@@ -96,6 +96,16 @@ async def startup():
     print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}...")
     print(f"Environment: {settings.ENVIRONMENT}")
     
+    # Initialize database connection pool FIRST
+    try:
+        from app.core.db_router import initialize_main_pool
+        pool = await initialize_main_pool()
+        print(f"✅ Database pool initialized: {pool.get_size()} connections")
+    except Exception as e:
+        print(f"❌ CRITICAL: Database pool initialization failed: {str(e)}")
+        print(f"   This will cause all database operations to fail!")
+        raise  # Fail fast if we can't connect to database
+    
     # Initialize database schema if needed
     try:
         from app.services.db_initializer import initialize_database_on_startup
