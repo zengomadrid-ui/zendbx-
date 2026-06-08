@@ -48,14 +48,26 @@ class SchemaParser:
         all internal platform tables regardless of which schema they live in.
         """
         try:
-            excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
-
             # If schema_name is provided, ONLY search that schema
             # Otherwise search all non-system schemas (for backwards compatibility)
             if schema_name:
                 schema_filter = f"AND t.table_schema = '{schema_name}'"
+                # Only exclude system tables if we're NOT in a project-specific schema
+                # Project schemas (proj_*, custom names like 'zenhire') can have 'users' tables
+                is_project_schema = schema_name.startswith('proj_') or schema_name not in ['public', 'auth']
+                if is_project_schema:
+                    # For project schemas, don't exclude common table names like 'users'
+                    # Only exclude internal ZenDBX tables
+                    exclude_filter = ""
+                else:
+                    # For public/auth schemas, exclude system tables
+                    excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
+                    exclude_filter = f"AND t.table_name NOT IN ({excluded_tables})"
             else:
                 schema_filter = "AND t.table_schema NOT IN ('auth', 'information_schema', 'pg_catalog', 'pg_toast', 'public')"
+                # When no schema specified, exclude system tables
+                excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
+                exclude_filter = f"AND t.table_name NOT IN ({excluded_tables})"
 
             # Query only the project's schema
             query = f"""
@@ -89,7 +101,7 @@ class SchemaParser:
             {schema_filter}
             AND t.table_name NOT LIKE '_zendbx_%'
             AND t.table_name NOT LIKE '_nexora_%'
-            AND t.table_name NOT IN ({excluded_tables})
+            {exclude_filter}
             GROUP BY t.table_schema, t.table_name
             ORDER BY t.table_schema, t.table_name
             """
