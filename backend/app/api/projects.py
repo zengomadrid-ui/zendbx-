@@ -205,12 +205,50 @@ async def create_project(
             project_id
         )
         
-        # Create default API keys (anon and service_role)
-        keys = await create_default_project_keys(project_id, current_user["id"])
+        # Generate Supabase-style JWT keys (self-validating, no DB lookup needed)
+        import jwt as pyjwt
+        from datetime import datetime
+        
+        anon_payload = {
+            "role": "anon",
+            "iss": "zendbx",
+            "project_id": str(project_id),
+            "iat": int(datetime.utcnow().timestamp()),
+        }
+        service_payload = {
+            "role": "service_role",
+            "iss": "zendbx",
+            "project_id": str(project_id),
+            "iat": int(datetime.utcnow().timestamp()),
+        }
+        
+        anon_key = pyjwt.encode(anon_payload, jwt_secret, algorithm="HS256")
+        service_key = pyjwt.encode(service_payload, jwt_secret, algorithm="HS256")
+        
+        # Store keys in api_keys table for display in dashboard
+        anon_hash = hashlib.sha256(anon_key.encode()).hexdigest()
+        service_hash = hashlib.sha256(service_key.encode()).hexdigest()
+        
+        await execute_on_main_db(
+            """
+            INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            """,
+            current_user["id"], project_id, "anon (public)",
+            anon_hash, anon_key[:17] + "...", anon_key, "read", "anon", True
+        )
+        await execute_on_main_db(
+            """
+            INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            """,
+            current_user["id"], project_id, "service_role (secret)",
+            service_hash, service_key[:17] + "...", service_key, "admin", "service_role", True
+        )
         
         # Add keys to response (only shown once!)
-        project["anon_key"] = keys["anon_key"]
-        project["service_role_key"] = keys["service_role_key"]
+        project["anon_key"] = anon_key
+        project["service_role_key"] = service_key
         
         return ProjectResponse(**project)
         

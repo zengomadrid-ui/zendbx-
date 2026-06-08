@@ -189,55 +189,31 @@ async def setup_project(request: ProjectSetupRequest):
                     for key in existing_keys
                 }
             else:
-                # Generate new keys
-                import secrets
-                import base64
+                import jwt as pyjwt
+                from datetime import datetime
                 
-                # Generate anon key
-                anon_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + base64.b64encode(secrets.token_bytes(32)).decode()
+                anon_payload = {"role": "anon", "iss": "zendbx", "project_id": str(project_id), "iat": int(datetime.utcnow().timestamp())}
+                service_payload = {"role": "service_role", "iss": "zendbx", "project_id": str(project_id), "iat": int(datetime.utcnow().timestamp())}
+                
+                anon_key = pyjwt.encode(anon_payload, jwt_secret_val, algorithm="HS256")
+                service_key = pyjwt.encode(service_payload, jwt_secret_val, algorithm="HS256")
+                
+                import hashlib
                 anon_hash = hashlib.sha256(anon_key.encode()).hexdigest()
-                
-                # Generate service_role key
-                service_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + base64.b64encode(secrets.token_bytes(32)).decode()
                 service_hash = hashlib.sha256(service_key.encode()).hexdigest()
                 
-                # Insert anon key
                 await conn.execute("""
                     INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """, 
-                    project['user_id'], 
-                    project_id, 
-                    'anon (public)', 
-                    anon_hash, 
-                    anon_key[:20] + '...', 
-                    anon_key, 
-                    'read', 
-                    'anon', 
-                    True
-                )
+                """, project['user_id'], project_id, 'anon (public)', anon_hash, anon_key[:17] + '...', anon_key, 'read', 'anon', True)
                 
-                # Insert service_role key
                 await conn.execute("""
                     INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """, 
-                    project['user_id'], 
-                    project_id, 
-                    'service_role (secret)', 
-                    service_hash, 
-                    service_key[:20] + '...', 
-                    service_key, 
-                    'admin', 
-                    'service_role', 
-                    True
-                )
+                """, project['user_id'], project_id, 'service_role (secret)', service_hash, service_key[:17] + '...', service_key, 'admin', 'service_role', True)
                 
-                results["steps"].append("✅ API keys generated")
-                results["keys"] = {
-                    "anon": anon_key,
-                    "service_role": service_key
-                }
+                results["steps"].append("✅ JWT-based API keys generated")
+                results["keys"] = {"anon": anon_key, "service_role": service_key}
         
         results["status"] = "success"
         results["message"] = "Project setup completed successfully!"

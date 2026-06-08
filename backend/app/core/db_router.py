@@ -102,36 +102,33 @@ async def get_project_db(project_id: str, api_key: str) -> asyncpg.Pool:
             logger.error(f"Project not found: {project_id}")
             raise HTTPException(status_code=404, detail="Project not found")
         
-        # Check if the provided key matches either anon or service_role key
-        api_keys = await conn.fetch("""
-            SELECT encrypted_key, key_type, role
-            FROM api_keys
-            WHERE project_id = $1 AND is_active = true
-        """, project_id)
+        # Validate API key — decode it as a JWT signed with the project's jwt_secret
+        # This is Supabase-style: keys are JWTs, no DB lookup needed
+        project_jwt_secret = project['jwt_secret']
         
-        if not api_keys:
-            logger.error(f"No API keys configured for project {project_id}")
-            raise HTTPException(status_code=500, detail="Project not configured with API keys")
+        if not project_jwt_secret:
+            logger.error(f"Project {project_id} has no jwt_secret configured")
+            raise HTTPException(status_code=500, detail="Project not configured with JWT secret")
         
-        # Validate the provided key
-        key_valid = False
-        api_key_stripped = api_key.strip()
-        for key_record in api_keys:
-            stored_key = (key_record['encrypted_key'] or '').strip()
-            if stored_key == api_key_stripped:
-                key_valid = True
-                logger.info(f"Valid {key_record['key_type']} key ({key_record['role']}) for project {project_id}")
-                break
-        
-        if not key_valid:
-            logger.error(f"Invalid API key for project {project_id}")
-            logger.error(f"  Provided key length: {len(api_key_stripped)}")
-            logger.error(f"  Provided key prefix: {api_key_stripped[:30]}...")
-            logger.error(f"  Stored keys count: {len(api_keys)}")
-            for k in api_keys:
-                stored = (k['encrypted_key'] or '').strip()
-                logger.error(f"  Stored [{k['key_type']}] length: {len(stored)}, prefix: {stored[:30]}...")
-            raise HTTPException(status_code=403, detail="Invalid API key")
+        try:
+            import jwt as pyjwt
+            key_payload = pyjwt.decode(api_key, project_jwt_secret, algorithms=["HS256"])
+            key_role = key_payload.get("role", "unknown")
+            logger.info(f"✅ Valid {key_role} key for project {project_id}")
+        except Exception as e:
+            # Fall back to legacy DB lookup for old-style keys
+            logger.warning(f"JWT decode failed for key, trying legacy DB lookup: {e}")
+            api_keys = await conn.fetch("""
+                SELECT encrypted_key, key_type, role
+                FROM api_keys
+                WHERE project_id = $1 AND is_active = true
+            """, project_id)
+            
+            key_valid = any((k['encrypted_key'] or '').strip() == api_key.strip() for k in api_keys)
+            
+            if not key_valid:
+                logger.error(f"Invalid API key for project {project_id}")
+                raise HTTPException(status_code=403, detail="Invalid API key")
         
         # Get database name
         db_name = project['database_name']
