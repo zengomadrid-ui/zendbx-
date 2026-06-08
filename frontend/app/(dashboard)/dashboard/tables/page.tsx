@@ -7,9 +7,12 @@ import { useToast } from '@/lib/toast';
 import { io, Socket } from 'socket.io-client';
 
 interface Table {
+  table_schema: string;
   table_name: string;
-  row_count: number;
-  column_count: number;
+  full_name: string;
+  row_count?: number;
+  column_count?: number;
+  columns?: any[];
 }
 
 export default function TablesPageEditable() {
@@ -173,13 +176,15 @@ export default function TablesPageEditable() {
       // Only auto-select first table if no table is currently selected
       // This prevents resetting the selection when refreshing the table list
       if (tablesArray.length > 0 && !selectedTable) {
-        setSelectedTable(tablesArray[0].table_name);
+        setSelectedTable(tablesArray[0].full_name || tablesArray[0].table_name);
       } else if (selectedTable) {
         // Verify the currently selected table still exists in the list
-        const tableExists = tablesArray.some((t: Table) => t.table_name === selectedTable);
+        const tableExists = tablesArray.some((t: Table) => 
+          (t.full_name || t.table_name) === selectedTable
+        );
         if (!tableExists && tablesArray.length > 0) {
           // If selected table was deleted, select the first available table
-          setSelectedTable(tablesArray[0].table_name);
+          setSelectedTable(tablesArray[0].full_name || tablesArray[0].table_name);
         }
       }
     } catch (err) {
@@ -482,24 +487,32 @@ export default function TablesPageEditable() {
             </div>
           ) : (
             <div className="space-y-0.5">
-              {tables.map((table) => (
-                <button
-                  key={table.table_name}
-                  onClick={() => setSelectedTable(table.table_name)}
-                  className={`w-full text-left px-2 py-1.5 rounded transition-colors ${
-                    selectedTable === table.table_name
-                      ? 'bg-[#2a2a2a] text-[#ededed]'
-                      : 'text-[#a1a1a1] hover:bg-[#2a2a2a] hover:text-[#ededed]'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                    <span className="text-xs truncate">{table.table_name}</span>
-                  </div>
-                </button>
-              ))}
+              {tables.map((table) => {
+                const tableIdentifier = table.full_name || table.table_name;
+                const displayName = table.table_name;
+                return (
+                  <button
+                    key={tableIdentifier}
+                    onClick={() => setSelectedTable(tableIdentifier)}
+                    className={`w-full text-left px-2 py-1.5 rounded transition-colors ${
+                      selectedTable === tableIdentifier
+                        ? 'bg-[#2a2a2a] text-[#ededed]'
+                        : 'text-[#a1a1a1] hover:bg-[#2a2a2a] hover:text-[#ededed]'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                      <span className="text-xs truncate">
+                        {table.table_schema && table.table_schema !== 'public' ? (
+                          <><span className="text-[#6b6b6b]">{table.table_schema}.</span>{displayName}</>
+                        ) : displayName}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
