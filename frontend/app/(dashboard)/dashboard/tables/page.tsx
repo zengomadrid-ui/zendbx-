@@ -161,19 +161,21 @@ export default function TablesPageEditable() {
     }
 
     try {
-      const data = await apiClient.get(`/api/projects/${projectId}/tables`);
-      setTables(data);
+      const data = await apiClient.get(`/api/projects/${projectId}/db/tables/`);
+      // Extract tables array from response
+      const tablesArray = data.tables || data;
+      setTables(tablesArray);
       
       // Only auto-select first table if no table is currently selected
       // This prevents resetting the selection when refreshing the table list
-      if (data.length > 0 && !selectedTable) {
-        setSelectedTable(data[0].table_name);
+      if (tablesArray.length > 0 && !selectedTable) {
+        setSelectedTable(tablesArray[0].table_name);
       } else if (selectedTable) {
         // Verify the currently selected table still exists in the list
-        const tableExists = data.some((t: Table) => t.table_name === selectedTable);
-        if (!tableExists && data.length > 0) {
+        const tableExists = tablesArray.some((t: Table) => t.table_name === selectedTable);
+        if (!tableExists && tablesArray.length > 0) {
           // If selected table was deleted, select the first available table
-          setSelectedTable(data[0].table_name);
+          setSelectedTable(tablesArray[0].table_name);
         }
       }
     } catch (err) {
