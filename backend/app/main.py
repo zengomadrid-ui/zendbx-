@@ -36,12 +36,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 # CORS middleware - Must be added before routes
 # Production-safe CORS configuration
 if settings.ENVIRONMENT == "production":
-    # Production: Strict CORS
+    # Production: Strict CORS + localhost for testing
     allowed_origins = [
         "https://devapp.zendbx.in",
         "https://zendbx.in",
         "https://www.zendbx.in",
         "https://zendbx-2-zpp9.onrender.com",  # Backend itself for testing
+        "http://localhost:5173",  # CRITICAL: Allow localhost for development testing
+        "http://localhost:3000",  # Alternative frontend port
     ]
     allow_credentials = True
     print(f"🔒 Production CORS enabled for: {allowed_origins}")
@@ -193,7 +195,7 @@ async def health_check():
     return {
         "status": "healthy",
         "database": "connected",
-        "cors_fix": "deployed_v2",  # Added to verify deployment
+        "cors_fix": "deployed_v3_with_localhost",  # Updated marker
         "timestamp": "2024-03-30T00:00:00Z"
     }
 
