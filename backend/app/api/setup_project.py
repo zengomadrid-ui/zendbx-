@@ -237,3 +237,67 @@ async def setup_project(request: ProjectSetupRequest):
 
 
 import hashlib
+import secrets
+
+
+@router.post("/api/admin/add-jwt-secret")
+async def add_jwt_secret(request: ProjectSetupRequest):
+    """
+    Add JWT secret to project if missing
+    """
+    # Simple password protection
+    SETUP_SECRET = "zendbx_setup_2024"
+    
+    if request.setup_secret != SETUP_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid setup secret")
+    
+    try:
+        project_id = UUID(request.project_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid project ID format")
+    
+    from ..core.db_router import get_main_db_pool
+    
+    try:
+        main_pool = await get_main_db_pool()
+        
+        async with main_pool.acquire() as conn:
+            # Check current jwt_secret
+            project = await conn.fetchrow("""
+                SELECT id, name, jwt_secret
+                FROM projects
+                WHERE id = $1
+            """, project_id)
+            
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found")
+            
+            if project['jwt_secret']:
+                return {
+                    "status": "already_exists",
+                    "message": "JWT secret already configured",
+                    "project_id": str(project_id),
+                    "project_name": project['name']
+                }
+            
+            # Generate JWT secret (32 bytes = 256 bits)
+            jwt_secret = secrets.token_urlsafe(32)
+            
+            # Update project with JWT secret
+            await conn.execute("""
+                UPDATE projects
+                SET jwt_secret = $1, updated_at = NOW()
+                WHERE id = $2
+            """, jwt_secret, project_id)
+            
+            return {
+                "status": "success",
+                "message": "JWT secret added successfully",
+                "project_id": str(project_id),
+                "project_name": project['name'],
+                "jwt_secret": jwt_secret
+            }
+            
+    except Exception as e:
+        logger.error(f"Failed to add JWT secret: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed: {str(e)}")

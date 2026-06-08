@@ -164,17 +164,21 @@ async def create_project(
     
     # Store project metadata
     try:
+        # Generate JWT secret (32 bytes = 256 bits for HS256)
+        jwt_secret = secrets.token_urlsafe(32)
+        
         result = await execute_on_main_db(
             """
-            INSERT INTO projects (user_id, name, description, database_name, slug)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO projects (user_id, name, description, database_name, slug, jwt_secret)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id, user_id, name, slug, description, database_name, status, created_at, updated_at
             """,
             current_user["id"],
             project_data.name,
             project_data.description,
             db_name,
-            ""  # Temporary, will be updated below
+            "",  # Temporary, will be updated below
+            jwt_secret
         )
         
         project = dict(result[0])
