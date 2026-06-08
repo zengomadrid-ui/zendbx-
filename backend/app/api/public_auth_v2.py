@@ -222,7 +222,15 @@ async def login(
             )
         
         # Verify password
-        password_hash = user['metadata'].get('password_hash')
+        password_hash = user['metadata']
+        # metadata may be a string (JSON) or already a dict depending on asyncpg
+        if isinstance(password_hash, str):
+            import json
+            try:
+                password_hash = json.loads(password_hash)
+            except (json.JSONDecodeError, TypeError):
+                password_hash = {}
+        password_hash = password_hash.get('password_hash') if isinstance(password_hash, dict) else None
         if not password_hash or not verify_password(request_data.password, password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

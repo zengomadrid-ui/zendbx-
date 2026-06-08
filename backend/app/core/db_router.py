@@ -115,14 +115,22 @@ async def get_project_db(project_id: str, api_key: str) -> asyncpg.Pool:
         
         # Validate the provided key
         key_valid = False
+        api_key_stripped = api_key.strip()
         for key_record in api_keys:
-            if key_record['encrypted_key'] == api_key:
+            stored_key = (key_record['encrypted_key'] or '').strip()
+            if stored_key == api_key_stripped:
                 key_valid = True
                 logger.info(f"Valid {key_record['key_type']} key ({key_record['role']}) for project {project_id}")
                 break
         
         if not key_valid:
             logger.error(f"Invalid API key for project {project_id}")
+            logger.error(f"  Provided key length: {len(api_key_stripped)}")
+            logger.error(f"  Provided key prefix: {api_key_stripped[:30]}...")
+            logger.error(f"  Stored keys count: {len(api_keys)}")
+            for k in api_keys:
+                stored = (k['encrypted_key'] or '').strip()
+                logger.error(f"  Stored [{k['key_type']}] length: {len(stored)}, prefix: {stored[:30]}...")
             raise HTTPException(status_code=403, detail="Invalid API key")
         
         # Get database name
