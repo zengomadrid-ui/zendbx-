@@ -159,7 +159,6 @@ async def signup(
         logger.info(f"✅ User created in project database: {user['email']}")
         logger.info(f"   User ID: {user['id']}")
         logger.info(f"   Project ID: {project_id}")
-        logger.info(f"   Database: {project_db._pool._working_params.database}")  # Log which DB was used
     
     # Generate JWT
     access_token = generate_jwt(user['id'], project_id, user['email'], jwt_secret)
