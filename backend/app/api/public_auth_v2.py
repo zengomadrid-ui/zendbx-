@@ -3,6 +3,7 @@ Public Authentication API v2 - Multi-Tenant
 Auto-syncs users to project database after authentication
 """
 from fastapi import APIRouter, HTTPException, Header, Request, status
+from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr
 from uuid import UUID, uuid4
 import bcrypt
@@ -74,6 +75,25 @@ def generate_jwt(user_id: UUID, project_id: UUID, email: str, secret: str) -> st
     }
     
     return jwt.encode(payload, secret, algorithm="HS256")
+
+
+# Explicit OPTIONS handlers for CORS preflight
+@router.options("/v1/auth/{project_id}/signup")
+async def signup_options(project_id: UUID):
+    """Handle CORS preflight for signup"""
+    return Response(status_code=200)
+
+
+@router.options("/v1/auth/{project_id}/login")
+async def login_options(project_id: UUID):
+    """Handle CORS preflight for login"""
+    return Response(status_code=200)
+
+
+@router.options("/v1/auth/{project_id}/user")
+async def get_user_options(project_id: UUID):
+    """Handle CORS preflight for get user"""
+    return Response(status_code=200)
 
 
 @router.post("/v1/auth/{project_id}/signup")

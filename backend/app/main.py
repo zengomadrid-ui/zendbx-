@@ -41,18 +41,28 @@ if settings.ENVIRONMENT == "production":
         "https://devapp.zendbx.in",
         "https://zendbx.in",
         "https://www.zendbx.in",
+        "https://zendbx-2-zpp9.onrender.com",  # Backend itself for testing
     ]
+    allow_credentials = True
     print(f"🔒 Production CORS enabled for: {allowed_origins}")
 else:
-    # Development: Allow all origins (including file:// for testing)
-    allowed_origins = ["*"]
-    print(f"🔓 Development CORS enabled for: ALL ORIGINS")
+    # Development: Allow specific origins for better security
+    allowed_origins = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8000",
+    ]
+    allow_credentials = True
+    print(f"🔓 Development CORS enabled for: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=False,  # Must be False when allow_origins is "*"
-    allow_methods=["*"],  # Allow all methods
+    allow_credentials=allow_credentials,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],  # Allow all headers
     expose_headers=["*"],
     max_age=3600,

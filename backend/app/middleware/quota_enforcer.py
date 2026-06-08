@@ -55,6 +55,11 @@ class QuotaEnforcerMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """Process request and enforce quotas"""
         
+        # CRITICAL: Skip for OPTIONS requests FIRST (CORS preflight)
+        if request.method == "OPTIONS":
+            print(f"🔵 QuotaEnforcer: Skipping OPTIONS {request.url.path}")
+            return await call_next(request)
+        
         # Skip quota check for excluded paths
         if self._should_skip_quota_check(request.url.path):
             return await call_next(request)

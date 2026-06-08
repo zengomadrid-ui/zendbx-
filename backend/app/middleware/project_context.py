@@ -92,16 +92,17 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
             return None
     
     async def dispatch(self, request: Request, call_next):
+        # CRITICAL: Skip for OPTIONS requests FIRST (CORS preflight)
+        if request.method == "OPTIONS":
+            print(f"🔵 ProjectContext: Skipping OPTIONS {request.url.path}")
+            return await call_next(request)
+        
         # Skip middleware for admin endpoints (prefix match)
         if any(request.url.path.startswith(path) for path in self.SKIP_PATHS):
             return await call_next(request)
         
         # Skip middleware for exact path matches
         if request.url.path in self.SKIP_EXACT_PATHS:
-            return await call_next(request)
-        
-        # Skip for OPTIONS requests (CORS preflight)
-        if request.method == "OPTIONS":
             return await call_next(request)
         
         try:

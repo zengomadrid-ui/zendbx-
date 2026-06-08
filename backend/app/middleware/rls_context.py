@@ -46,12 +46,13 @@ class RLSContextMiddleware(BaseHTTPMiddleware):
     ]
     
     async def dispatch(self, request: Request, call_next):
-        # Skip middleware for public endpoints
-        if any(request.url.path.startswith(path) for path in self.SKIP_PATHS):
+        # CRITICAL: Skip for OPTIONS requests FIRST (CORS preflight)
+        if request.method == "OPTIONS":
+            print(f"🔵 RLSContext: Skipping OPTIONS {request.url.path}")
             return await call_next(request)
         
-        # Skip for OPTIONS requests (CORS preflight)
-        if request.method == "OPTIONS":
+        # Skip middleware for public endpoints
+        if any(request.url.path.startswith(path) for path in self.SKIP_PATHS):
             return await call_next(request)
         
         try:
