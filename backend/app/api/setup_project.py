@@ -157,8 +157,24 @@ async def setup_project(request: ProjectSetupRequest):
             logger.error(f"Schema setup error: {str(e)}")
             results["steps"].append(f"⚠️  Schema setup: {str(e)}")
         
-        # Step 4: Generate API keys
+        # Step 4: Generate API keys and JWT secret
         async with main_pool.acquire() as conn:
+            # Check if JWT secret exists
+            jwt_secret_val = await conn.fetchval("""
+                SELECT jwt_secret FROM projects WHERE id = $1
+            """, project_id)
+            
+            if not jwt_secret_val:
+                jwt_secret_val = secrets.token_urlsafe(32)
+                await conn.execute("""
+                    UPDATE projects SET jwt_secret = $1, updated_at = NOW() WHERE id = $2
+                """, jwt_secret_val, project_id)
+                results["steps"].append("✅ JWT secret generated and saved")
+            else:
+                results["steps"].append("ℹ️  JWT secret already exists")
+            
+            results["jwt_secret"] = jwt_secret_val
+            
             # Check if keys already exist
             existing_keys = await conn.fetch("""
                 SELECT key_type, encrypted_key 
