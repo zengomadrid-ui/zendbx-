@@ -193,6 +193,7 @@ async def health_check():
     return {
         "status": "healthy",
         "database": "connected",
+        "cors_fix": "deployed_v2",  # Added to verify deployment
         "timestamp": "2024-03-30T00:00:00Z"
     }
 
