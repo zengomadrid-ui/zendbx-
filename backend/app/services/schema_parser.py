@@ -43,14 +43,21 @@ class SchemaParser:
     @staticmethod
     async def get_tables(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
         """
-        Get all user-created tables with their columns from ALL user schemas.
+        Get all user-created tables with their columns from the project's schema.
         Excludes system schemas (auth, information_schema, pg_catalog) and
         all internal platform tables regardless of which schema they live in.
         """
         try:
             excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
 
-            # Query ALL user schemas, not just public or project schema
+            # If schema_name is provided, ONLY search that schema
+            # Otherwise search all non-system schemas (for backwards compatibility)
+            if schema_name:
+                schema_filter = f"AND t.table_schema = '{schema_name}'"
+            else:
+                schema_filter = "AND t.table_schema NOT IN ('auth', 'information_schema', 'pg_catalog', 'pg_toast', 'public')"
+
+            # Query only the project's schema
             query = f"""
             SELECT 
                 t.table_schema,
@@ -79,7 +86,7 @@ class SchemaParser:
                 ON t.table_name = c.table_name 
                 AND t.table_schema = c.table_schema
             WHERE t.table_type = 'BASE TABLE'
-            AND t.table_schema NOT IN ('auth', 'information_schema', 'pg_catalog', 'pg_toast')
+            {schema_filter}
             AND t.table_name NOT LIKE '_zendbx_%'
             AND t.table_name NOT LIKE '_nexora_%'
             AND t.table_name NOT IN ({excluded_tables})

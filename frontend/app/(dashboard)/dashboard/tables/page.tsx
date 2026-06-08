@@ -18,7 +18,13 @@ interface Table {
 export default function TablesPageEditable() {
   const { showToast } = useToast();
   const [tables, setTables] = useState<Table[]>([]);
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  // Initialize selectedTable from localStorage if available
+  const [selectedTable, setSelectedTable] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('selected_table');
+    }
+    return null;
+  });
   const [tableData, setTableData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [editingCell, setEditingCell] = useState<{row: number, col: string} | null>(null);
@@ -173,19 +179,36 @@ export default function TablesPageEditable() {
       const tablesArray = data.tables || data;
       setTables(tablesArray);
       
-      // Only auto-select first table if no table is currently selected
-      // This prevents resetting the selection when refreshing the table list
-      if (tablesArray.length > 0 && !selectedTable) {
-        setSelectedTable(tablesArray[0].full_name || tablesArray[0].table_name);
-      } else if (selectedTable) {
-        // Verify the currently selected table still exists in the list
-        const tableExists = tablesArray.some((t: Table) => 
-          (t.full_name || t.table_name) === selectedTable
-        );
-        if (!tableExists && tablesArray.length > 0) {
-          // If selected table was deleted, select the first available table
-          setSelectedTable(tablesArray[0].full_name || tablesArray[0].table_name);
+      // Check if we have a previously selected table in localStorage
+      const savedSelectedTable = localStorage.getItem('selected_table');
+      
+      if (tablesArray.length > 0) {
+        if (savedSelectedTable && tablesArray.some((t: Table) => 
+          (t.full_name || t.table_name) === savedSelectedTable
+        )) {
+          // If saved table exists in the list, select it
+          setSelectedTable(savedSelectedTable);
+        } else if (!selectedTable) {
+          // Only auto-select first table if no table is currently selected
+          const firstTable = tablesArray[0].full_name || tablesArray[0].table_name;
+          setSelectedTable(firstTable);
+          localStorage.setItem('selected_table', firstTable);
+        } else {
+          // Verify the currently selected table still exists in the list
+          const tableExists = tablesArray.some((t: Table) => 
+            (t.full_name || t.table_name) === selectedTable
+          );
+          if (!tableExists) {
+            // If selected table was deleted, select the first available table
+            const firstTable = tablesArray[0].full_name || tablesArray[0].table_name;
+            setSelectedTable(firstTable);
+            localStorage.setItem('selected_table', firstTable);
+          }
         }
+      } else {
+        // No tables available, clear selection
+        setSelectedTable(null);
+        localStorage.removeItem('selected_table');
       }
     } catch (err) {
       console.error('Failed to fetch tables:', err);
@@ -202,7 +225,17 @@ export default function TablesPageEditable() {
     console.log('Fetching table data for:', tableName, 'Project:', projectId);
     setLoading(true);
     try {
-      // Get schema
+      // Parse schema and table name properly
+      let schemaName = 'public';
+      let tableOnly = tableName;
+      
+      if (tableName.includes('.')) {
+        const parts = tableName.split('.');
+        schemaName = parts[0];
+        tableOnly = parts[1];
+      }
+      
+      // Get schema - use proper quoting for schema-qualified names
       const schemaSql = `
         SELECT 
           column_name as name,
@@ -210,7 +243,8 @@ export default function TablesPageEditable() {
           is_nullable,
           column_default
         FROM information_schema.columns 
-        WHERE table_name = '${tableName}'
+        WHERE table_name = '${tableOnly}'
+        AND table_schema = '${schemaName}'
         ORDER BY ordinal_position
       `;
       
@@ -220,8 +254,8 @@ export default function TablesPageEditable() {
       const columns = schemaRes.rows || [];
       console.log('Columns:', columns);
       
-      // Get data
-      const dataSql = `SELECT * FROM "${tableName}" LIMIT 100`;
+      // Get data - use proper schema.table format
+      const dataSql = `SELECT * FROM "${schemaName}"."${tableOnly}" LIMIT 100`;
       console.log('Fetching data with SQL:', dataSql);
       const dataRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: dataSql });
       console.log('Data response:', dataRes);
@@ -286,7 +320,17 @@ export default function TablesPageEditable() {
       formattedValue = `'${editValue.replace(/'/g, "''")}'`;
     }
 
-    const updateSql = `UPDATE "${selectedTable}" SET "${colName}" = ${formattedValue} WHERE "${primaryKey.name}" = '${pkValue}'`;
+    // Parse schema and table name properly
+    let schemaName = 'public';
+    let tableOnly = selectedTable;
+    
+    if (selectedTable.includes('.')) {
+      const parts = selectedTable.split('.');
+      schemaName = parts[0];
+      tableOnly = parts[1];
+    }
+
+    const updateSql = `UPDATE "${schemaName}"."${tableOnly}" SET "${colName}" = ${formattedValue} WHERE "${primaryKey.name}" = '${pkValue}'`;
 
     try {
       await apiClient.post(`/api/projects/${projectId}/query`, { sql: updateSql });
@@ -331,7 +375,18 @@ export default function TablesPageEditable() {
     }
 
     const pkValue = row[primaryKey.name];
-    const deleteSql = `DELETE FROM "${selectedTable}" WHERE "${primaryKey.name}" = '${pkValue}'`;
+    
+    // Parse schema and table name properly
+    let schemaName = 'public';
+    let tableOnly = selectedTable;
+    
+    if (selectedTable.includes('.')) {
+      const parts = selectedTable.split('.');
+      schemaName = parts[0];
+      tableOnly = parts[1];
+    }
+    
+    const deleteSql = `DELETE FROM "${schemaName}"."${tableOnly}" WHERE "${primaryKey.name}" = '${pkValue}'`;
 
     try {
       await apiClient.post(`/api/projects/${projectId}/query`, { sql: deleteSql });
@@ -365,16 +420,27 @@ export default function TablesPageEditable() {
       return;
     }
 
-    const dropSql = `DROP TABLE "${selectedTable}"`;
+    // Parse schema and table name properly
+    let schemaName = 'public';
+    let tableOnly = selectedTable;
+    
+    if (selectedTable.includes('.')) {
+      const parts = selectedTable.split('.');
+      schemaName = parts[0];
+      tableOnly = parts[1];
+    }
+
+    const dropSql = `DROP TABLE "${schemaName}"."${tableOnly}"`;
 
     try {
       await apiClient.post(`/api/projects/${projectId}/query`, { sql: dropSql });
       
       showToast(`Table "${selectedTable}" deleted successfully`, 'success');
       
-      // Clear selection and refresh tables list
+      // Clear selection and localStorage
       setSelectedTable(null);
       setTableData(null);
+      localStorage.removeItem('selected_table');
       fetchTables();
     } catch (err: any) {
       showToast(err.message || 'Failed to delete table', 'error');
@@ -444,7 +510,17 @@ export default function TablesPageEditable() {
       }
     });
 
-    const insertSql = `INSERT INTO "${selectedTable}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')}) RETURNING *`;
+    // Parse schema and table name properly
+    let schemaName = 'public';
+    let tableOnly = selectedTable;
+    
+    if (selectedTable.includes('.')) {
+      const parts = selectedTable.split('.');
+      schemaName = parts[0];
+      tableOnly = parts[1];
+    }
+
+    const insertSql = `INSERT INTO "${schemaName}"."${tableOnly}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')}) RETURNING *`;
 
     console.log('Insert SQL:', insertSql); // Debug log
 
@@ -493,7 +569,10 @@ export default function TablesPageEditable() {
                 return (
                   <button
                     key={tableIdentifier}
-                    onClick={() => setSelectedTable(tableIdentifier)}
+                    onClick={() => {
+                      setSelectedTable(tableIdentifier);
+                      localStorage.setItem('selected_table', tableIdentifier);
+                    }}
                     className={`w-full text-left px-2 py-1.5 rounded transition-colors ${
                       selectedTable === tableIdentifier
                         ? 'bg-[#2a2a2a] text-[#ededed]'
