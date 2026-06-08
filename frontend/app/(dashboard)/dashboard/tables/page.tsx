@@ -148,6 +148,7 @@ export default function TablesPageEditable() {
   };
 
   const fetchTables = async () => {
+    // Fetch tables for the current project
     let projectId = localStorage.getItem('current_project_id');
     
     if (!projectId) {
