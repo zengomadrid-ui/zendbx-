@@ -198,8 +198,9 @@ async def close_all_pools():
 
 async def get_project_db_direct(project_id: str) -> asyncpg.Pool:
     """
-    Get project database without ANON_KEY validation
-    Used for internal operations (admin endpoints)
+    Get project database without ANON_KEY validation.
+    Uses PostgreSQL schemas (same as the rest of the system).
+    Returns the main pool - callers must set search_path to the project schema.
     """
     main_pool = await get_main_db_pool()
     
@@ -212,34 +213,6 @@ async def get_project_db_direct(project_id: str) -> asyncpg.Pool:
         
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
-        
-        db_name = project['database_name']
-        
-        # Check cache
-        cache_key = f"direct:{project_id}"
-        if cache_key in _connection_pools:
-            return _connection_pools[cache_key]
-        
-        # Parse DATABASE_URL for connection params
-        from .config import settings
-        import re
-        match = re.match(r'postgresql://([^:]+):([^@]+)@([^:/]+)(?::(\d+))?/(.+)', settings.DATABASE_URL)
-        if not match:
-            raise ValueError(f"Invalid DATABASE_URL format")
-        
-        db_user, db_password, db_host, db_port, _ = match.groups()
-        db_port = db_port or "5432"
-        
-        # Create pool
-        pool = await asyncpg.create_pool(
-            host=db_host,
-            port=int(db_port),
-            database=db_name,
-            user=db_user,
-            password=db_password,
-            min_size=2,
-            max_size=10
-        )
-        
-        _connection_pools[cache_key] = pool
-        return pool
+    
+    # Return main pool - schema is set per-connection in the auth endpoints
+    return main_pool
