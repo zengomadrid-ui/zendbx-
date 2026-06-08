@@ -40,9 +40,8 @@ async def create_record(
     logger.info(f"POST /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
     try:
-        # Ensure table exists (create if not) - service role only
-        if enforcer.is_service_role:
-            await ensure_table_exists(pool, table_name, data)
+        # Ensure table exists (create if not) - auto-create for any role on insert
+        await ensure_table_exists(pool, table_name, data)
         
         # Prepare insert query
         columns = list(data.keys())

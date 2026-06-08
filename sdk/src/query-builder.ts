@@ -105,21 +105,20 @@ export class QueryBuilder<Row extends Record<string, unknown> = Record<string, u
     return this.http.request<Row[]>(`/rest/v1/${this.table}?${params}`);
   }
 
-  /** Insert one or more rows */
-  async insert(data: Partial<Row> | Partial<Row>[]): Promise<ZendbxResponse<Row[]>> {
-    return this.http.request<Row[]>(`/rest/v1/${this.table}`, {
-      method: 'POST',
-      body: data,
-    });
+  /** Insert one or more rows — returns a MutationBuilder so you can chain .select() */
+  insert(data: Partial<Row> | Partial<Row>[]): MutationBuilder<Row> {
+    return new MutationBuilder<Row>(this.http, this.table, 'POST', data);
   }
 
-  /** Update rows matching the applied filters */
-  async update(data: Partial<Row>): Promise<ZendbxResponse<Row[]>> {
+  /** Update rows matching the applied filters — returns a MutationBuilder so you can chain .select() */
+  update(data: Partial<Row>): MutationBuilder<Row> {
     const params = this._buildFilterParams();
-    return this.http.request<Row[]>(`/rest/v1/${this.table}?${params}`, {
-      method: 'PATCH',
-      body: data,
-    });
+    return new MutationBuilder<Row>(this.http, this.table, 'PATCH', data, params);
+  }
+
+  /** Upsert rows (insert or update on conflict) */
+  upsert(data: Partial<Row> | Partial<Row>[]): MutationBuilder<Row> {
+    return new MutationBuilder<Row>(this.http, this.table, 'POST', data, '', true);
   }
 
   /** Delete rows matching the applied filters */
@@ -162,5 +161,89 @@ export class QueryBuilder<Row extends Record<string, unknown> = Record<string, u
         : `${f.op}.${f.value}`;
       p.append(f.column, serialized);
     }
+  }
+}
+
+/**
+ * Chainable builder for mutation operations (insert, update, upsert).
+ * Allows `.select()` to be called after a mutation, matching Supabase's API.
+ *
+ * @example
+ * const { data, error } = await zendbx.from('profiles').insert({ id, name }).select()
+ * const { data, error } = await zendbx.from('posts').update({ title }).eq('id', 1).select('id, title')
+ */
+export class MutationBuilder<Row extends Record<string, unknown> = Record<string, unknown>> {
+  private _selectColumns = '*';
+  private _shouldSelect = false;
+  private _single = false;
+
+  constructor(
+    private http: HttpClient,
+    private table: string,
+    private method: 'POST' | 'PATCH',
+    private body: Partial<Row> | Partial<Row>[],
+    private filterParams = '',
+    private isUpsert = false
+  ) {}
+
+  /** Chain .select() after mutation to return the inserted/updated rows */
+  select(columns = '*'): this {
+    this._selectColumns = columns;
+    this._shouldSelect = true;
+    return this;
+  }
+
+  /** Return a single object instead of an array */
+  single(): this {
+    this._single = true;
+    return this;
+  }
+
+  /** Execute the mutation */
+  then<TResult1 = ZendbxResponse<Row[]>, TResult2 = never>(
+    onfulfilled: (value: ZendbxResponse<Row[]>) => TResult1 | PromiseLike<TResult1>,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
+  ): Promise<TResult1 | TResult2> {
+    return this._execute().then(onfulfilled, onrejected);
+  }
+
+  catch<TResult = never>(
+    onrejected: (reason: unknown) => TResult | PromiseLike<TResult>
+  ): Promise<ZendbxResponse<Row[]> | TResult> {
+    return this._execute().catch(onrejected);
+  }
+
+  finally(onfinally?: (() => void) | null): Promise<ZendbxResponse<Row[]>> {
+    return this._execute().finally(onfinally);
+  }
+
+  private async _execute(): Promise<ZendbxResponse<Row[]>> {
+    const url = this.filterParams
+      ? `/rest/v1/${this.table}?${this.filterParams}`
+      : `/rest/v1/${this.table}`;
+
+    const headers: Record<string, string> = {};
+
+    // PostgREST-style: request representation back
+    if (this._shouldSelect) {
+      headers['Prefer'] = 'return=representation';
+    }
+
+    if (this.isUpsert) {
+      headers['Prefer'] = (headers['Prefer'] ? headers['Prefer'] + ',' : '') + 'resolution=merge-duplicates';
+    }
+
+    const result = await this.http.request<Row[]>(url, {
+      method: this.method,
+      body: this.body,
+      headers,
+    });
+
+    // If select wasn't chained, return empty data array on success
+    if (!this._shouldSelect && !result.error) {
+      return { data: [], error: null };
+    }
+
+    return result;
   }
 }
