@@ -35,13 +35,13 @@ async def get_main_db_pool() -> asyncpg.Pool:
     return _main_pool
 
 
-async def get_project_db(project_id: str, anon_key: str) -> asyncpg.Pool:
+async def get_project_db(project_id: str, api_key: str) -> asyncpg.Pool:
     """
     Validates project and returns database connection pool
     
     Args:
         project_id: UUID of the project
-        anon_key: ANON_KEY for authentication
+        api_key: API key (anon or service_role) for authentication
     
     Returns:
         asyncpg.Pool: Connection pool for the project database
@@ -50,7 +50,7 @@ async def get_project_db(project_id: str, anon_key: str) -> asyncpg.Pool:
         HTTPException: If project not found or invalid key
     """
     # Check cache first
-    cache_key = f"{project_id}:{anon_key}"
+    cache_key = f"{project_id}:{api_key}"
     if cache_key in _connection_pools:
         logger.debug(f"Using cached connection pool for project {project_id}")
         return _connection_pools[cache_key]
@@ -59,15 +59,14 @@ async def get_project_db(project_id: str, anon_key: str) -> asyncpg.Pool:
     main_pool = await get_main_db_pool()
     
     async with main_pool.acquire() as conn:
+        # Get project and check BOTH anon and service_role keys
         project = await conn.fetchrow("""
             SELECT 
                 p.id, 
                 p.name,
                 p.database_name, 
-                p.jwt_secret, 
-                ak.encrypted_key
+                p.jwt_secret
             FROM projects p
-            LEFT JOIN api_keys ak ON ak.project_id = p.id AND ak.key_type = 'anon'
             WHERE p.id = $1
         """, project_id)
         
@@ -75,14 +74,28 @@ async def get_project_db(project_id: str, anon_key: str) -> asyncpg.Pool:
             logger.error(f"Project not found: {project_id}")
             raise HTTPException(status_code=404, detail="Project not found")
         
-        # Validate ANON_KEY
-        if not project['encrypted_key']:
-            logger.error(f"No ANON_KEY configured for project {project_id}")
-            raise HTTPException(status_code=500, detail="Project not configured with ANON_KEY")
+        # Check if the provided key matches either anon or service_role key
+        api_keys = await conn.fetch("""
+            SELECT encrypted_key, key_type, role
+            FROM api_keys
+            WHERE project_id = $1 AND is_active = true
+        """, project_id)
         
-        if project['encrypted_key'] != anon_key:
-            logger.error(f"Invalid ANON_KEY for project {project_id}")
-            raise HTTPException(status_code=403, detail="Invalid ANON_KEY")
+        if not api_keys:
+            logger.error(f"No API keys configured for project {project_id}")
+            raise HTTPException(status_code=500, detail="Project not configured with API keys")
+        
+        # Validate the provided key
+        key_valid = False
+        for key_record in api_keys:
+            if key_record['encrypted_key'] == api_key:
+                key_valid = True
+                logger.info(f"Valid {key_record['key_type']} key ({key_record['role']}) for project {project_id}")
+                break
+        
+        if not key_valid:
+            logger.error(f"Invalid API key for project {project_id}")
+            raise HTTPException(status_code=403, detail="Invalid API key")
         
         # Get database name
         db_name = project['database_name']

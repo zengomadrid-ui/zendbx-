@@ -458,24 +458,19 @@ async def get_project_keys(
     
     keys = {}
     for key in keys_result:
-        # Use encrypted_key (full JWT) if available, otherwise use key_prefix
-        full_key = key["encrypted_key"] if key["encrypted_key"] else key["key_prefix"]
-        
-        # Mask the key for security unless explicitly requested
+        # Always return the full encrypted_key when reveal=True
         if reveal:
-            display_key = full_key
+            display_key = key["encrypted_key"] if key["encrypted_key"] else key["key_prefix"]
         else:
-            # Show first 12 and last 4 characters, mask the rest
-            if full_key and len(full_key) > 16:
-                display_key = f"{full_key[:12]}...{full_key[-4:]}"
-            else:
-                display_key = key["key_prefix"]
+            # Show only key_prefix when not revealing
+            display_key = key["key_prefix"]
         
         key_data = {
             "id": str(key["id"]),
             "name": key["name"],
             "key_prefix": key["key_prefix"],
-            "full_key": display_key,  # Masked or full based on reveal parameter
+            "full_key": display_key,  # Full encrypted_key when reveal=True, prefix when False
+            "encrypted_key": key["encrypted_key"] if reveal else None,  # Include encrypted_key field when revealing
             "masked": not reveal,  # Indicate if key is masked
             "role": key["role"],
             "is_active": key["is_active"],

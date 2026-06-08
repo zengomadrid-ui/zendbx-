@@ -33,8 +33,10 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
         "/openapi.json",
         "/health",
         "/v1/auth/",  # New multi-tenant auth endpoints
-        "/"
     ]
+    
+    # Exact match paths (not prefix match)
+    SKIP_EXACT_PATHS = ["/"]
     
     async def extract_project_from_subdomain(self, host: str) -> str:
         """Extract project slug from subdomain"""
@@ -90,8 +92,12 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
             return None
     
     async def dispatch(self, request: Request, call_next):
-        # Skip middleware for admin endpoints
+        # Skip middleware for admin endpoints (prefix match)
         if any(request.url.path.startswith(path) for path in self.SKIP_PATHS):
+            return await call_next(request)
+        
+        # Skip middleware for exact path matches
+        if request.url.path in self.SKIP_EXACT_PATHS:
             return await call_next(request)
         
         # Skip for OPTIONS requests (CORS preflight)

@@ -83,8 +83,8 @@ export default function APIKeysPage() {
     try {
       const token = localStorage.getItem('token');
       
-      // Use the /keys endpoint that returns FULL keys
-      const url = `${API_URL}/api/projects/${selectedProject}/keys`;
+      // Use the /keys endpoint with reveal=true to get FULL keys
+      const url = `${API_URL}/api/projects/${selectedProject}/keys?reveal=true`;
       
       console.log('Fetching FULL API keys from:', url);
       
@@ -106,14 +106,15 @@ export default function APIKeysPage() {
       const keysArray = [];
       
       if (data.keys?.anon) {
-        const fullKey = data.keys.anon.full_key || data.keys.anon.encrypted_key || data.keys.anon.key_prefix || 'No key available';
-        console.log('Anon full_key length:', fullKey.length);
-        console.log('Anon full_key:', fullKey);
+        // Priority: encrypted_key > full_key > key_prefix
+        const fullKey = data.keys.anon.encrypted_key || data.keys.anon.full_key || data.keys.anon.key_prefix || 'No key available';
+        console.log('Anon key length:', fullKey.length);
+        console.log('Anon key:', fullKey.substring(0, 50) + '...');
         keysArray.push({
           id: data.keys.anon.id,
           name: data.keys.anon.name,
           key: fullKey,  // Store the FULL key here
-          key_prefix: data.keys.anon.key_prefix,  // Keep prefix for reference
+          key_prefix: data.keys.anon.key_prefix,  // Keep prefix for masking
           role: data.keys.anon.role,
           is_active: data.keys.anon.is_active,
           created_at: data.keys.anon.created_at,
@@ -122,14 +123,15 @@ export default function APIKeysPage() {
       }
       
       if (data.keys?.service_role) {
-        const fullKey = data.keys.service_role.full_key || data.keys.service_role.encrypted_key || data.keys.service_role.key_prefix || 'No key available';
-        console.log('Service role full_key length:', fullKey.length);
-        console.log('Service role full_key:', fullKey);
+        // Priority: encrypted_key > full_key > key_prefix
+        const fullKey = data.keys.service_role.encrypted_key || data.keys.service_role.full_key || data.keys.service_role.key_prefix || 'No key available';
+        console.log('Service role key length:', fullKey.length);
+        console.log('Service role key:', fullKey.substring(0, 50) + '...');
         keysArray.push({
           id: data.keys.service_role.id,
           name: data.keys.service_role.name,
           key: fullKey,  // Store the FULL key here
-          key_prefix: data.keys.service_role.key_prefix,  // Keep prefix for reference
+          key_prefix: data.keys.service_role.key_prefix,  // Keep prefix for masking
           role: data.keys.service_role.role,
           is_active: data.keys.service_role.is_active,
           created_at: data.keys.service_role.created_at,
@@ -459,8 +461,8 @@ export default function APIKeysPage() {
                         <div className="flex-1 min-w-0">
                           <code className="text-[#a1a1a1] font-mono text-[10px] break-all block">
                             {visibleKeys.has(apiKey.id) 
-                              ? (apiKey.key || apiKey.key_prefix || 'No key available')
-                              : maskKey(apiKey.key || apiKey.key_prefix || 'No key available')
+                              ? (apiKey.key || 'No key available')
+                              : (apiKey.key_prefix + '••••••••••••••••')
                             }
                           </code>
                         </div>
@@ -482,9 +484,9 @@ export default function APIKeysPage() {
                             )}
                           </button>
                           <button
-                            onClick={() => copyToClipboard(apiKey.key || apiKey.key_prefix || '')}
+                            onClick={() => copyToClipboard(apiKey.key || '')}
                             className="p-1 rounded hover:bg-[#3a3a3a] text-[#a1a1a1] hover:text-[#ededed] transition-colors"
-                            title="Copy key"
+                            title="Copy full key"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
