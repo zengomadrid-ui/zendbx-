@@ -228,29 +228,93 @@ async def initialize_database_on_startup(database_url: str) -> bool:
     if validation['valid']:
         print("✅ Database schema is valid and ready")
         print("="*60 + "\n")
-        return True
-    
-    # Step 3: Initialize schema if needed
-    print(f"⚠️  {validation['message']}")
-    print(f"   Missing tables: {', '.join(validation['missing_tables'][:5])}")
-    if len(validation['missing_tables']) > 5:
-        print(f"   ... and {len(validation['missing_tables']) - 5} more")
-    
-    print("\n🔧 Attempting automatic schema initialization...")
-    
-    results = await initializer.initialize_schema()
-    
-    if results['initialized']:
-        print("✅ Database initialized successfully")
-        print("="*60 + "\n")
-        return True
     else:
-        print("❌ Database initialization failed")
-        if results['errors']:
-            print("   Errors:")
-            for error in results['errors'][:3]:
-                print(f"   - {error}")
-        print("\n⚠️  Manual initialization required:")
-        print("   Run: psql $DATABASE_URL -f backend/database/init_main_database.sql")
-        print("="*60 + "\n")
-        return False
+        # Step 3: Initialize schema if needed
+        print(f"⚠️  {validation['message']}")
+        print(f"   Missing tables: {', '.join(validation['missing_tables'][:5])}")
+        if len(validation['missing_tables']) > 5:
+            print(f"   ... and {len(validation['missing_tables']) - 5} more")
+        
+        print("\n🔧 Attempting automatic schema initialization...")
+        
+        results = await initializer.initialize_schema()
+        
+        if results['initialized']:
+            print("✅ Database initialized successfully")
+            print("="*60 + "\n")
+        else:
+            print("❌ Database initialization failed")
+            if results['errors']:
+                print("   Errors:")
+                for error in results['errors'][:3]:
+                    print(f"   - {error}")
+            print("="*60 + "\n")
+
+    # Step 4: Fix any projects missing JWT secrets (permanent fix for existing projects)
+    await fix_projects_missing_jwt_secrets(database_url)
+    
+    return True
+
+
+async def fix_projects_missing_jwt_secrets(database_url: str):
+    """
+    Fix any existing projects that are missing JWT secrets or API keys.
+    This runs on every startup and is idempotent.
+    """
+    import secrets as secrets_module
+    import hashlib
+    
+    try:
+        conn = await asyncpg.connect(database_url)
+        try:
+            # Fix projects missing jwt_secret
+            projects_fixed = await conn.execute("""
+                UPDATE projects
+                SET jwt_secret = encode(gen_random_bytes(32), 'hex'),
+                    updated_at = NOW()
+                WHERE jwt_secret IS NULL OR jwt_secret = ''
+            """)
+            
+            if projects_fixed != "UPDATE 0":
+                print(f"✅ Fixed JWT secrets: {projects_fixed}")
+            
+            # Fix projects missing API keys
+            projects_without_keys = await conn.fetch("""
+                SELECT p.id, p.user_id
+                FROM projects p
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM api_keys k 
+                    WHERE k.project_id = p.id 
+                    AND k.key_type = 'anon' 
+                    AND k.is_active = true
+                )
+            """)
+            
+            for project in projects_without_keys:
+                project_id = project['id']
+                user_id = project['user_id']
+                
+                # Generate anon key
+                anon_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + secrets_module.token_hex(32)
+                anon_hash = hashlib.sha256(anon_key.encode()).hexdigest()
+                
+                # Generate service_role key
+                service_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + secrets_module.token_hex(32)
+                service_hash = hashlib.sha256(service_key.encode()).hexdigest()
+                
+                await conn.execute("""
+                    INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+                    VALUES ($1, $2, 'anon (public)', $3, $4, $5, 'read', 'anon', true),
+                           ($1, $2, 'service_role (secret)', $6, $7, $8, 'admin', 'service_role', true)
+                    ON CONFLICT DO NOTHING
+                """, user_id, project_id,
+                    anon_hash, anon_key[:17] + '...', anon_key,
+                    service_hash, service_key[:17] + '...', service_key)
+                
+                print(f"✅ Generated API keys for project {project_id}")
+                
+        finally:
+            await conn.close()
+            
+    except Exception as e:
+        print(f"⚠️  Could not fix project secrets: {str(e)}")

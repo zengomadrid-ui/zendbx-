@@ -1,183 +1,213 @@
 """
 Project Context Middleware
-Intercepts requests and resolves project context from headers OR subdomain
+PostgREST/Supabase-compatible authentication and project isolation.
+
+Header priority:
+  apikey: <anon_key or service_role_key>   → identifies the project + base role
+  Authorization: Bearer <user_jwt>          → identifies the authenticated user
+
+Schema isolation: SET search_path TO "<schema>", public
 """
-from fastapi import Request, HTTPException
+from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 import logging
 import re
+import jwt as pyjwt
 
-from ..core.db_router import get_project_db
+from ..core.db_router import validate_project_key, get_main_db_pool, get_project_info
 from ..core.config import settings
 from ..core.database import execute_on_main_db
 
 logger = logging.getLogger(__name__)
 
 
+# Paths that bypass project context entirely
+SKIP_PREFIXES = [
+    "/api/auth/",
+    "/api/projects",
+    "/api/admin",
+    "/api/ai/",
+    "/docs",
+    "/openapi.json",
+    "/health",
+    "/v1/auth/",
+]
+SKIP_EXACT = {"/", "/health"}
+
+
 class ProjectContextMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware that extracts project context from:
-    1. Subdomain (e.g., project-slug-id.zendbx.in)
-    2. Path prefix (e.g., /p/project-slug-id)
-    3. Headers (x-project-id)
-    """
-    
-    # Paths that don't require project context (admin endpoints)
-    SKIP_PATHS = [
-        "/api/auth/",
-        "/api/projects",
-        "/api/admin",
-        "/api/ai/",  # AI endpoints (admin only)
-        "/docs",
-        "/openapi.json",
-        "/health",
-        "/v1/auth/",  # New multi-tenant auth endpoints
-    ]
-    
-    # Exact match paths (not prefix match)
-    SKIP_EXACT_PATHS = ["/"]
-    
-    async def extract_project_from_subdomain(self, host: str) -> str:
-        """Extract project slug from subdomain"""
-        if not settings.ENABLE_SUBDOMAIN_ROUTING:
-            return None
-        
-        # Remove port if present
-        host = host.split(':')[0]
-        
-        # Check if it's a project subdomain
-        # Format: project-slug-id.zendbx.in or project-slug-id.localhost
-        base_domain = settings.BASE_DOMAIN if settings.ENVIRONMENT == "production" else "localhost"
-        
-        if host.endswith(f".{base_domain}"):
-            # Extract subdomain
-            slug = host.replace(f".{base_domain}", "")
-            
-            # Ignore www, api, ws subdomains
-            if slug in ["www", "api", "ws"]:
-                return None
-            
-            logger.info(f"Extracted project slug from subdomain: {slug}")
-            return slug
-        
-        return None
-    
-    async def extract_project_from_path(self, path: str) -> str:
-        """Extract project slug from path prefix /p/slug"""
-        match = re.match(r'^/p/([^/]+)', path)
-        if match:
-            slug = match.group(1)
-            logger.info(f"Extracted project slug from path: {slug}")
-            return slug
-        return None
-    
-    async def get_project_id_from_slug(self, slug: str) -> str:
-        """Resolve project ID from slug"""
-        try:
-            result = await execute_on_main_db(
-                "SELECT id FROM projects WHERE slug = $1",
-                slug
-            )
-            
-            if result:
-                project_id = str(result[0]["id"])
-                logger.info(f"Resolved slug '{slug}' to project ID: {project_id}")
-                return project_id
-            else:
-                logger.warning(f"Project not found for slug: {slug}")
-                return None
-        except Exception as e:
-            logger.error(f"Error resolving project slug: {str(e)}")
-            return None
-    
+
     async def dispatch(self, request: Request, call_next):
-        # CRITICAL: Skip for OPTIONS requests FIRST (CORS preflight)
+        # Always skip OPTIONS (CORS preflight)
         if request.method == "OPTIONS":
-            print(f"🔵 ProjectContext: Skipping OPTIONS {request.url.path}")
             return await call_next(request)
-        
-        # Skip middleware for admin endpoints (prefix match)
-        if any(request.url.path.startswith(path) for path in self.SKIP_PATHS):
+
+        path = request.url.path
+
+        # Skip admin/auth paths
+        if path in SKIP_EXACT:
             return await call_next(request)
-        
-        # Skip middleware for exact path matches
-        if request.url.path in self.SKIP_EXACT_PATHS:
+        if any(path.startswith(p) for p in SKIP_PREFIXES):
             return await call_next(request)
-        
+        if "/v1/auth/" in path:
+            return await call_next(request)
+
         try:
-            # Try to extract project context from multiple sources
+            # ── Step 1: Resolve project ID ────────────────────────────────────
             project_id = None
             project_slug = None
-            
-            # 1. Try subdomain routing (highest priority)
-            host = request.headers.get("host", "")
-            project_slug = await self.extract_project_from_subdomain(host)
-            
-            # 2. Try path-based routing
+
+            # a) Subdomain routing
+            host = request.headers.get("host", "").split(":")[0]
+            project_slug = self._slug_from_subdomain(host)
+
+            # b) Path prefix /p/{slug}
             if not project_slug:
-                project_slug = await self.extract_project_from_path(request.url.path)
-            
-            # 3. Try header-based routing (legacy)
+                project_slug = self._slug_from_path(path)
+
+            # c) x-project-id header (legacy)
             if not project_slug:
                 project_id = request.headers.get("x-project-id")
-            
-            # Resolve slug to project ID if needed
+
             if project_slug and not project_id:
-                project_id = await self.get_project_id_from_slug(project_slug)
-            
-            # Extract auth header
-            auth_header = request.headers.get("authorization")
-            
-            # Log request
-            logger.info(f"{request.method} {request.url.path} - Project: {project_id}")
-            
+                project_id = await self._resolve_slug(project_slug)
+
             if not project_id:
-                logger.warning(f"Missing x-project-id header for {request.url.path}")
                 return JSONResponse(
                     status_code=400,
-                    content={"detail": "Missing x-project-id header"}
+                    content={"detail": "Missing project context. Use /p/{slug}/... or x-project-id header."},
+                    headers=self._cors_headers(request),
                 )
-            
-            # Extract ANON_KEY from Bearer token
-            anon_key = None
-            if auth_header:
-                if auth_header.startswith("Bearer "):
-                    anon_key = auth_header.split(" ", 1)[1]
-                elif auth_header.startswith("bearer "):
-                    anon_key = auth_header.split(" ", 1)[1]
-            
-            if not anon_key:
-                logger.warning(f"Missing or invalid Authorization header for {request.url.path}")
+
+            # ── Step 2: Read apikey and Authorization headers ─────────────────
+            apikey_header = request.headers.get("apikey")
+            auth_header = request.headers.get("authorization", "")
+            bearer_token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else None
+
+            # ── Step 3: Determine project key ─────────────────────────────────
+            # Priority: apikey header → Bearer token (if anon/service_role)
+            project_key = apikey_header or bearer_token
+
+            if not project_key:
                 return JSONResponse(
                     status_code=401,
-                    content={"detail": "Missing or invalid Authorization header. Expected: Bearer <ANON_KEY>"}
+                    content={"detail": "Missing API key. Provide apikey header or Authorization: Bearer <anon_key>."},
+                    headers=self._cors_headers(request),
                 )
-            
-            # Validate and get project database
+
+            # ── Step 4: Validate project key ──────────────────────────────────
             try:
-                project_db = await get_project_db(project_id, anon_key)
-            except HTTPException as e:
-                logger.error(f"Project validation failed: {e.detail}")
+                ctx = await validate_project_key(project_id, project_key)
+            except Exception as e:
+                status_code = getattr(e, "status_code", 403)
+                detail = getattr(e, "detail", str(e))
                 return JSONResponse(
-                    status_code=e.status_code,
-                    content={"detail": e.detail}
+                    status_code=status_code,
+                    content={"detail": detail},
+                    headers=self._cors_headers(request),
                 )
-            
-            # Inject into request state
+
+            schema = ctx["schema"]
+            base_role = ctx["role"]      # 'anon' or 'service_role'
+            jwt_secret = ctx["jwt_secret"]
+            pool = ctx["pool"]
+
+            # ── Step 5: Identify authenticated user ───────────────────────────
+            user_id = None
+            user_role = base_role
+            user_email = None
+
+            # If apikey was used for project identification and Bearer is a separate user JWT
+            user_bearer = bearer_token if apikey_header else None
+
+            if user_bearer:
+                try:
+                    payload = pyjwt.decode(user_bearer, jwt_secret, algorithms=["HS256"])
+                    token_role = payload.get("role", "")
+                    if token_role == "authenticated":
+                        user_id = payload.get("sub")
+                        user_role = "authenticated"
+                        user_email = payload.get("email")
+                        logger.debug(f"Authenticated user: {user_id}")
+                except pyjwt.ExpiredSignatureError:
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "User token expired"},
+                        headers=self._cors_headers(request),
+                    )
+                except pyjwt.InvalidTokenError:
+                    pass  # Ignore invalid user token, keep base role
+
+            # ── Step 6: Set search_path on request state ──────────────────────
+            # We store context on request.state; actual SET search_path happens
+            # per-connection in RLSEnforcer and auth endpoints.
             request.state.project_id = project_id
-            request.state.project_db = project_db
-            request.state.anon_key = anon_key
-            
-            logger.debug(f"Project context injected: {project_id}")
-            
-            # Continue to endpoint
-            response = await call_next(request)
-            return response
-            
+            request.state.project_slug = project_slug or ctx.get("slug")
+            request.state.project_schema = schema
+            request.state.project_db = pool          # shared pool
+            request.state.anon_key = project_key
+            request.state.jwt_secret = jwt_secret
+            request.state.rls_user_id = user_id
+            request.state.rls_role = user_role
+            request.state.rls_project_id = project_id
+            request.state.user_email = user_email
+
+            logger.info(
+                f"{request.method} {path} | project={project_id} schema={schema} role={user_role}"
+            )
+
+            return await call_next(request)
+
         except Exception as e:
-            logger.error(f"Middleware error: {str(e)}", exc_info=True)
+            logger.error(f"ProjectContextMiddleware error: {e}", exc_info=True)
             return JSONResponse(
                 status_code=500,
-                content={"detail": f"Internal server error: {str(e)}"}
+                content={"detail": f"Internal server error: {str(e)}"},
+                headers=self._cors_headers(request),
             )
+
+    # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def _slug_from_subdomain(self, host: str) -> str | None:
+        if not settings.ENABLE_SUBDOMAIN_ROUTING:
+            return None
+        base = settings.BASE_DOMAIN if settings.ENVIRONMENT == "production" else "localhost"
+        if host.endswith(f".{base}"):
+            slug = host[: -(len(base) + 1)]
+            if slug not in ("www", "api", "ws"):
+                return slug
+        return None
+
+    def _slug_from_path(self, path: str) -> str | None:
+        m = re.match(r"^/p/([^/]+)", path)
+        return m.group(1) if m else None
+
+    async def _resolve_slug(self, slug: str) -> str | None:
+        try:
+            # First try as a direct UUID project ID
+            import uuid
+            try:
+                uuid.UUID(slug)
+                # It's a valid UUID - check if it's a real project ID
+                result = await execute_on_main_db("SELECT id FROM projects WHERE id = $1", slug)
+                if result:
+                    return str(result[0]["id"])
+            except ValueError:
+                pass  # Not a UUID, fall through to slug lookup
+
+            # Then try as a slug
+            result = await execute_on_main_db("SELECT id FROM projects WHERE slug = $1", slug)
+            return str(result[0]["id"]) if result else None
+        except Exception as e:
+            logger.error(f"Slug resolution error: {e}")
+            return None
+
+    def _cors_headers(self, request: Request) -> dict:
+        origin = request.headers.get("origin", "*")
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD",
+            "Access-Control-Allow-Headers": "*",
+        }

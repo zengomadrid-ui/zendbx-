@@ -231,7 +231,12 @@ from app.api import (
 
 # Multi-tenant APIs (new) - These MUST come first to override old endpoints
 app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New multi-tenant auth
-app.include_router(rest_v1.router, tags=["rest-api"])  # Universal REST API
+app.include_router(rest_v1.router, tags=["rest-api"])  # Universal REST API at /rest/v1/{table}
+
+# Also mount REST API under /p/{slug}/ prefix for Supabase-compatible SDK usage
+from fastapi import APIRouter as _APIRouter
+_p_router = _APIRouter(prefix="/p/{project_slug}")
+app.include_router(rest_v1.router, prefix="/p/{project_slug}", tags=["rest-api-slug"])
 
 # OAuth URL Generator System (public endpoints - no prefix)
 app.include_router(oauth_login.router)  # Public OAuth login URLs
