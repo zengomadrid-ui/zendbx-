@@ -12,35 +12,32 @@ logger = logging.getLogger(__name__)
 async def ensure_table_exists(
     pool: asyncpg.Pool,
     table_name: str,
-    sample_data: Optional[Dict[str, Any]] = None
+    sample_data: Optional[Dict[str, Any]] = None,
+    schema: Optional[str] = None
 ) -> bool:
     """
-    Check if table exists, create if not
-    
-    Args:
-        pool: Database connection pool
-        table_name: Name of the table
-        sample_data: Sample data for schema inference
-    
-    Returns:
-        bool: True if table exists or was created successfully
+    Check if table exists in the current search_path schema, create if not.
+    The connection must already have search_path set (done by RLSEnforcer._prepare_conn).
     """
     async with pool.acquire() as conn:
-        # Check if table exists
+        # Set search_path if schema provided
+        if schema:
+            await conn.execute(f'SET search_path TO "{schema}", public')
+
+        # Check using current_schema() so it respects whatever search_path is active
         exists = await conn.fetchval("""
             SELECT EXISTS (
                 SELECT 1 FROM information_schema.tables 
-                WHERE table_schema = 'public' AND table_name = $1
+                WHERE table_schema = current_schema() AND table_name = $1
             )
         """, table_name)
         
         if exists:
-            logger.debug(f"Table '{table_name}' already exists")
+            logger.debug(f"Table '{table_name}' already exists in schema '{schema or 'current'}'")
             return True
         
-        logger.info(f"Creating table '{table_name}'...")
+        logger.info(f"Auto-creating table '{table_name}' in schema '{schema or 'current'}'...")
         
-        # Create table based on type
         if table_name == "users":
             await create_users_table(conn)
         else:

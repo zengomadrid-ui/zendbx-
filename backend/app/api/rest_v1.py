@@ -40,8 +40,8 @@ async def create_record(
     logger.info(f"POST /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
     try:
-        # Ensure table exists (create if not) - auto-create for any role on insert
-        await ensure_table_exists(pool, table_name, data)
+        # Ensure table exists in the correct project schema
+        await ensure_table_exists(pool, table_name, data, schema=enforcer.schema)
         
         # Prepare insert query
         columns = list(data.keys())
@@ -133,8 +133,13 @@ async def get_records(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving records from {table_name}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        # Table doesn't exist — return empty array instead of 500
+        if 'does not exist' in error_msg or 'relation' in error_msg:
+            logger.info(f"Table '{table_name}' not found, returning empty array")
+            return []
+        logger.error(f"Error retrieving records from {table_name}: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @router.patch("/{table_name}")
