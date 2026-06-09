@@ -80,13 +80,15 @@ export class ZendbxClient {
 
   /** @internal */
   readonly httpClient: HttpClient;
+  private readonly _projectId: string;
 
   constructor(opts: ZendbxClientOptions) {
+    this._projectId = opts.projectId;
     const wsUrl =
       opts.wsUrl ??
       opts.apiUrl.replace(/^http/, 'ws').replace(/:\d+$/, '') + ':8001';
 
-    this.httpClient = new HttpClient(opts.apiUrl, opts.anonKey);
+    this.httpClient = new HttpClient(opts.apiUrl, opts.anonKey, opts.projectId);
 
     this.auth     = new AuthModule(this.httpClient, opts.projectId);
     this.projects = new ProjectsModule(this.httpClient);
@@ -114,7 +116,7 @@ export class ZendbxClient {
   from<Row extends Record<string, unknown> = Record<string, unknown>>(
     table: string
   ): QueryBuilder<Row> {
-    return new QueryBuilder<Row>(this.httpClient, table);
+    return new QueryBuilder<Row>(this.httpClient, table, this._projectId);
   }
 }
 

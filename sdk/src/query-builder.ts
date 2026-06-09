@@ -22,8 +22,14 @@ export class QueryBuilder<Row extends Record<string, unknown> = Record<string, u
 
   constructor(
     private http: HttpClient,
-    private table: string
+    private table: string,
+    private projectId: string
   ) {}
+
+  // ─── base path ──────────────────────────────────────────────────────────────
+  private get _basePath(): string {
+    return `/p/${this.projectId}/rest/v1/${this.table}`;
+  }
 
   // ─── Column selection ───────────────────────────────────────────────────────
 
@@ -102,29 +108,29 @@ export class QueryBuilder<Row extends Record<string, unknown> = Record<string, u
   /** Execute a SELECT query */
   async execute(): Promise<ZendbxResponse<Row[]>> {
     const params = this._buildParams();
-    return this.http.request<Row[]>(`/rest/v1/${this.table}?${params}`);
+    return this.http.request<Row[]>(`${this._basePath}?${params}`);
   }
 
   /** Insert one or more rows — returns a MutationBuilder so you can chain .select() */
   insert(data: Partial<Row> | Partial<Row>[]): MutationBuilder<Row> {
-    return new MutationBuilder<Row>(this.http, this.table, 'POST', data);
+    return new MutationBuilder<Row>(this.http, this._basePath, 'POST', data);
   }
 
   /** Update rows matching the applied filters — returns a MutationBuilder so you can chain .select() */
   update(data: Partial<Row>): MutationBuilder<Row> {
     const params = this._buildFilterParams();
-    return new MutationBuilder<Row>(this.http, this.table, 'PATCH', data, params);
+    return new MutationBuilder<Row>(this.http, this._basePath, 'PATCH', data, params);
   }
 
   /** Upsert rows (insert or update on conflict) */
   upsert(data: Partial<Row> | Partial<Row>[]): MutationBuilder<Row> {
-    return new MutationBuilder<Row>(this.http, this.table, 'POST', data, '', true);
+    return new MutationBuilder<Row>(this.http, this._basePath, 'POST', data, '', true);
   }
 
   /** Delete rows matching the applied filters */
   async delete(): Promise<ZendbxResponse<null>> {
     const params = this._buildFilterParams();
-    return this.http.request<null>(`/rest/v1/${this.table}?${params}`, {
+    return this.http.request<null>(`${this._basePath}?${params}`, {
       method: 'DELETE',
     });
   }
@@ -179,7 +185,7 @@ export class MutationBuilder<Row extends Record<string, unknown> = Record<string
 
   constructor(
     private http: HttpClient,
-    private table: string,
+    private basePath: string,   // full path e.g. /p/{id}/rest/v1/{table}
     private method: 'POST' | 'PATCH',
     private body: Partial<Row> | Partial<Row>[],
     private filterParams = '',
@@ -219,12 +225,11 @@ export class MutationBuilder<Row extends Record<string, unknown> = Record<string
 
   private async _execute(): Promise<ZendbxResponse<Row[]>> {
     const url = this.filterParams
-      ? `/rest/v1/${this.table}?${this.filterParams}`
-      : `/rest/v1/${this.table}`;
+      ? `${this.basePath}?${this.filterParams}`
+      : this.basePath;
 
     const headers: Record<string, string> = {};
 
-    // PostgREST-style: request representation back
     if (this._shouldSelect) {
       headers['Prefer'] = 'return=representation';
     }
@@ -239,7 +244,6 @@ export class MutationBuilder<Row extends Record<string, unknown> = Record<string
       headers,
     });
 
-    // If select wasn't chained, return empty data array on success
     if (!this._shouldSelect && !result.error) {
       return { data: [], error: null };
     }

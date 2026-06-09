@@ -99,37 +99,36 @@ async def get_records(
     logger.info(f"GET /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
     try:
-        # Build query
-        query = f"SELECT {select} FROM {table_name}"
+        # Build WHERE conditions from ALL query params (Supabase-style)
+        where_parts = []
         params = []
-        
-        # Add WHERE clause
-        if id:
-            # Support Supabase-style: ?id=eq.{uuid}
-            if id.startswith("eq."):
-                id_value = id[3:]
-                query += " WHERE id = $1"
-                params.append(id_value)
-            else:
-                query += " WHERE id = $1"
-                params.append(id)
-        
-        # Add ORDER BY
+        param_idx = 1
+        skip_keys = {'select', 'limit', 'offset', 'order'}
+
+        for key, val in request.query_params.items():
+            if key in skip_keys:
+                continue
+            actual_val = val[3:] if val.startswith("eq.") else val
+            where_parts.append(f"{key} = ${param_idx}")
+            params.append(actual_val)
+            param_idx += 1
+
+        query = f"SELECT {select} FROM {table_name}"
+        if where_parts:
+            query += " WHERE " + " AND ".join(where_parts)
+
         if order:
-            # Support: ?order=created_at.desc
             if "." in order:
-                col, direction = order.split(".")
+                col, direction = order.split(".", 1)
                 query += f" ORDER BY {col} {direction.upper()}"
             else:
                 query += f" ORDER BY {order}"
-        
-        # Add LIMIT and OFFSET
+
         query += f" LIMIT {limit} OFFSET {offset}"
-        
-        # Execute query with RLS enforcement
+
         records = await enforcer.execute(pool, query, *params)
         result = [dict(r) for r in records]
-        
+
         logger.info(f"Retrieved {len(result)} records from {table_name}")
         return result
         
@@ -151,11 +150,12 @@ async def update_record(
     data: Dict[str, Any],
     request: Request,
     enforcer: RLSEnforcer = Depends(get_rls_enforcer),
-    id: Optional[str] = Query(None, description="Filter by ID (eq.{uuid})")
+    id: Optional[str] = Query(None, description="Filter by ID (eq.{uuid})"),
+    user_id: Optional[str] = Query(None, description="Filter by user_id (eq.{uuid})")
 ):
     """
-    Universal PATCH endpoint - updates a record in any table
-    
+    Universal PATCH endpoint - updates records in any table.
+    Supports filtering by id or user_id.
     RLS: Respects UPDATE policies on the table
     """
     pool = request.state.project_db
@@ -163,31 +163,47 @@ async def update_record(
     
     logger.info(f"PATCH /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
-    if not id:
-        raise HTTPException(status_code=400, detail="Missing id parameter")
+    if not id and not user_id:
+        raise HTTPException(status_code=400, detail="Missing filter parameter (id or user_id required)")
     
     try:
-        # Parse ID
-        if id.startswith("eq."):
-            id_value = id[3:]
+        # Determine filter
+        if id:
+            filter_col = "id"
+            filter_val = id[3:] if id.startswith("eq.") else id
         else:
-            id_value = id
+            filter_col = "user_id"
+            filter_val = user_id[3:] if user_id.startswith("eq.") else user_id
         
         # Build SET clause
         set_parts = []
-        values = [id_value]
+        values = [filter_val]
         
         for i, (key, value) in enumerate(data.items(), start=2):
+            if key in (filter_col,):  # skip the filter column itself
+                continue
             set_parts.append(f"{key} = ${i}")
             values.append(value)
         
-        # Add updated_at
-        set_parts.append(f"updated_at = NOW()")
+        if not set_parts:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        
+        # Only add updated_at if column exists
+        async with pool.acquire() as conn:
+            has_updated_at = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name = $1 AND column_name = 'updated_at'
+                )
+            """, table_name)
+        
+        if has_updated_at:
+            set_parts.append("updated_at = NOW()")
         
         query = f"""
             UPDATE {table_name}
             SET {', '.join(set_parts)}
-            WHERE id = $1
+            WHERE {filter_col} = $1
             RETURNING *
         """
         

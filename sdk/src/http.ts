@@ -12,11 +12,13 @@ export class HttpClient {
   /** @internal exposed for modules that need to build absolute URLs (e.g. storage) */
   readonly baseUrl: string;
   private anonKey: string;
+  private projectId: string;
   private _token: string | null = null;
 
-  constructor(apiUrl: string, anonKey: string) {
+  constructor(apiUrl: string, anonKey: string, projectId: string) {
     this.baseUrl = apiUrl.replace(/\/$/, '');
     this.anonKey = anonKey;
+    this.projectId = projectId;
     this._loadStoredToken();
   }
 
@@ -46,8 +48,11 @@ export class HttpClient {
     };
 
     if (!options.skipAuth) {
-      const token = this._token ?? this.anonKey;
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+      // Always send anonKey as apikey header (for ProjectContextMiddleware)
+      headers['apikey'] = this.anonKey;
+      // Send user JWT as Authorization if logged in, else send anonKey
+      const authToken = this._token ?? this.anonKey;
+      headers['Authorization'] = `Bearer ${authToken}`;
     }
 
     try {
