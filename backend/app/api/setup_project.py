@@ -15,7 +15,8 @@ router = APIRouter()
 
 class ProjectSetupRequest(BaseModel):
     project_id: str
-    setup_secret: str  # Simple password protection
+    setup_secret: str
+    force_regenerate: bool = False
 
 
 @router.post("/api/admin/setup-project")
@@ -182,18 +183,27 @@ async def setup_project(request: ProjectSetupRequest):
                 WHERE project_id = $1 AND is_active = true
             """, project_id)
             
-            if existing_keys:
+            if existing_keys and not request.force_regenerate:
                 results["steps"].append(f"ℹ️  API keys already exist ({len(existing_keys)} keys)")
                 results["keys"] = {
                     key['key_type']: key['encrypted_key'] 
                     for key in existing_keys
                 }
             else:
+                if existing_keys:
+                    await conn.execute(
+                        "UPDATE api_keys SET is_active = false WHERE project_id = $1",
+                        project_id
+                    )
+                    results["steps"].append("🔄 Old keys deactivated, regenerating...")
+
                 import jwt as pyjwt
                 from datetime import datetime
                 
-                anon_payload = {"role": "anon", "iss": "zendbx", "project_id": str(project_id), "iat": int(datetime.utcnow().timestamp())}
-                service_payload = {"role": "service_role", "iss": "zendbx", "project_id": str(project_id), "iat": int(datetime.utcnow().timestamp())}
+                now_ts = int(datetime.utcnow().timestamp())
+                slug = project['slug'] or ''
+                anon_payload = {"iss": "zendbx", "project_id": str(project_id), "project_slug": slug, "role": "anon", "iat": now_ts}
+                service_payload = {"iss": "zendbx", "project_id": str(project_id), "project_slug": slug, "role": "service_role", "iat": now_ts}
                 
                 anon_key = pyjwt.encode(anon_payload, jwt_secret_val, algorithm="HS256")
                 service_key = pyjwt.encode(service_payload, jwt_secret_val, algorithm="HS256")
@@ -212,7 +222,7 @@ async def setup_project(request: ProjectSetupRequest):
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """, project['user_id'], project_id, 'service_role (secret)', service_hash, service_key[:17] + '...', service_key, 'admin', 'service_role', True)
                 
-                results["steps"].append("✅ JWT-based API keys generated")
+                results["steps"].append("✅ JWT-signed API keys generated")
                 results["keys"] = {"anon": anon_key, "service_role": service_key}
         
         results["status"] = "success"
