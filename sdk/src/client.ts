@@ -1,6 +1,6 @@
 import { HttpClient } from './http';
 import { AuthModule } from './auth';
-import { QueryBuilder } from './query-builder';
+import { TableBuilder } from './query-builder';
 import { ProjectsModule } from './projects';
 import { AIModule } from './ai';
 import { DatabaseModule } from './database';
@@ -16,8 +16,8 @@ export interface ZendbxClientOptions {
    */
   apiUrl: string;
 
-  /** Your project's UUID */
-  projectId: string;
+  /** Your project's UUID (optional if using project-scoped URL) */
+  projectId?: string;
 
   /**
    * The anon (public) API key for unauthenticated requests.
@@ -83,23 +83,23 @@ export class ZendbxClient {
   private readonly _projectId: string;
 
   constructor(opts: ZendbxClientOptions) {
-    this._projectId = opts.projectId;
+    this._projectId = opts.projectId ?? '';
     const wsUrl =
       opts.wsUrl ??
       opts.apiUrl.replace(/^http/, 'ws').replace(/:\d+$/, '') + ':8001';
 
-    this.httpClient = new HttpClient(opts.apiUrl, opts.anonKey, opts.projectId);
+    this.httpClient = new HttpClient(opts.apiUrl, opts.anonKey, this._projectId);
 
-    this.auth     = new AuthModule(this.httpClient, opts.projectId);
+    this.auth     = new AuthModule(this.httpClient, this._projectId);
     this.projects = new ProjectsModule(this.httpClient);
-    this.ai       = new AIModule(this.httpClient, opts.projectId);
-    this.db       = new DatabaseModule(this.httpClient, opts.projectId);
+    this.ai       = new AIModule(this.httpClient, this._projectId);
+    this.db       = new DatabaseModule(this.httpClient, this._projectId);
     this.storage  = new StorageModule(this.httpClient);
     this.backups  = new BackupsModule(this.httpClient);
-    this.team     = new TeamModule(this.httpClient, opts.projectId);
+    this.team     = new TeamModule(this.httpClient, this._projectId);
 
     this.realtime = new RealtimeModule(
-      opts.projectId,
+      this._projectId,
       wsUrl,
       () => this.httpClient.token,
       opts.anonKey
@@ -108,43 +108,55 @@ export class ZendbxClient {
 
   /**
    * Start a chainable query against any table.
-   * Respects RLS — the user's JWT is sent automatically after sign-in.
    *
    * @example
-   * const { data, error } = await zendbx.from('users').select('id, email').limit(10).execute()
+   * const { data } = await zendbx.from('users').select('*').eq('status', 'active').limit(10)
+   * const { data } = await zendbx.from('users').insert({ name: 'John' })
+   * const { data } = await zendbx.from('users').update({ name: 'Jane' }).eq('id', 1)
+   * const { data } = await zendbx.from('users').delete().eq('id', 1)
    */
   from<Row extends Record<string, unknown> = Record<string, unknown>>(
     table: string
-  ): QueryBuilder<Row> {
-    return new QueryBuilder<Row>(this.httpClient, table, this._projectId);
+  ): TableBuilder<Row> {
+    return new TableBuilder<Row>(this.httpClient, table, this._projectId);
   }
 }
 
 /**
  * Create a new ZENDBX client instance.
  *
- * Accepts either a flat signature or an options object:
+ * Supports two calling conventions:
  *
  * @example
- * // Flat (recommended for most users)
- * const zendbx = createClient('https://api.zendbx.in', 'anon-key', { projectId: 'uuid' })
+ * // 2-arg (recommended — project context embedded in key/URL)
+ * const db = createClient(process.env.ZENDBX_URL!, process.env.ZENDBX_API_KEY!)
+ *
+ * // 3-arg (explicit project ID)
+ * const db = createClient('https://api.zendbx.in', 'anon-key', { projectId: 'uuid' })
  *
  * // Options object
- * const zendbx = createClient({ apiUrl: '...', anonKey: '...', projectId: '...' })
+ * const db = createClient({ apiUrl: '...', anonKey: '...', projectId: '...' })
  */
 export function createClient(
   urlOrOptions: string | ZendbxClientOptions,
   anonKey?: string,
-  extra?: { projectId: string; wsUrl?: string }
+  extra?: { projectId?: string; wsUrl?: string }
 ): ZendbxClient {
   if (typeof urlOrOptions === 'string') {
     if (!anonKey) throw new Error('createClient: anonKey is required');
-    if (!extra?.projectId) throw new Error('createClient: projectId is required');
+
+    // Extract projectId from the URL if it contains /p/{uuid}/
+    let projectId = extra?.projectId ?? '';
+    if (!projectId) {
+      const match = urlOrOptions.match(/\/p\/([0-9a-f-]{36})/i);
+      if (match) projectId = match[1];
+    }
+
     return new ZendbxClient({
       apiUrl: urlOrOptions,
       anonKey,
-      projectId: extra.projectId,
-      wsUrl: extra.wsUrl,
+      projectId,
+      wsUrl: extra?.wsUrl,
     });
   }
   return new ZendbxClient(urlOrOptions);
