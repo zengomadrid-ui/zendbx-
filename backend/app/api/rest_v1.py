@@ -37,11 +37,14 @@ async def create_record(
     pool = request.state.project_db
     project_id = request.state.project_id
     
-    logger.info(f"POST /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
+    # Get schema from enforcer or fall back to request.state directly
+    schema = enforcer.schema or getattr(request.state, 'project_schema', None)
+    
+    logger.info(f"POST /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}, Schema: {schema}")
     
     try:
         # Ensure table exists in the correct project schema
-        await ensure_table_exists(pool, table_name, data, schema=enforcer.schema)
+        await ensure_table_exists(pool, table_name, data, schema=schema)
         
         # Prepare insert query
         columns = list(data.keys())

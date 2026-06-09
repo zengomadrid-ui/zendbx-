@@ -30,16 +30,12 @@ class RLSEnforcer:
     """
     
     def __init__(self, request: Request):
-        """
-        Initialize RLS enforcer with request context
-        
-        Args:
-            request: FastAPI request object with RLS context
-        """
         self.request = request
         self.user_id = getattr(request.state, 'rls_user_id', None)
         self.role = getattr(request.state, 'rls_role', 'anon')
         self.project_id = getattr(request.state, 'rls_project_id', None)
+        # Schema for search_path — critical for correct data isolation
+        self.schema = getattr(request.state, 'project_schema', None)
     
     @property
     def is_service_role(self) -> bool:
@@ -51,6 +47,15 @@ class RLSEnforcer:
         """Check if user is authenticated"""
         return self.role in ["authenticated", "service_role"] and self.user_id is not None
     
+    async def _prepare_conn(self, conn, bypass_rls: bool = False):
+        """Set search_path and RLS context on a connection."""
+        if self.schema:
+            await conn.execute(f'SET search_path TO "{self.schema}", public')
+        if not (bypass_rls and self.is_service_role):
+            await set_rls_context(conn, self.user_id, self.role)
+        else:
+            logger.info("Bypassing RLS with service_role")
+
     async def execute(
         self,
         pool: asyncpg.Pool,
@@ -75,15 +80,9 @@ class RLSEnforcer:
         """
         async with pool.acquire() as conn:
             try:
-                # Set RLS context unless bypassing
-                if not (bypass_rls and self.is_service_role):
-                    await set_rls_context(conn, self.user_id, self.role)
-                else:
-                    logger.info(f"Bypassing RLS with service_role for query")
-                
-                # Execute query
+                # Set search_path and RLS context
+                await self._prepare_conn(conn, bypass_rls)
                 result = await conn.fetch(query, *params)
-                
                 return result
                 
             except asyncpg.exceptions.InsufficientPrivilegeError as e:
@@ -123,15 +122,9 @@ class RLSEnforcer:
         """
         async with pool.acquire() as conn:
             try:
-                # Set RLS context unless bypassing
-                if not (bypass_rls and self.is_service_role):
-                    await set_rls_context(conn, self.user_id, self.role)
-                else:
-                    logger.info(f"Bypassing RLS with service_role for query")
-                
-                # Execute query
+                # Set search_path and RLS context
+                await self._prepare_conn(conn, bypass_rls)
                 result = await conn.fetchrow(query, *params)
-                
                 return result
                 
             except asyncpg.exceptions.InsufficientPrivilegeError as e:
@@ -170,15 +163,9 @@ class RLSEnforcer:
         """
         async with pool.acquire() as conn:
             try:
-                # Set RLS context unless bypassing
-                if not (bypass_rls and self.is_service_role):
-                    await set_rls_context(conn, self.user_id, self.role)
-                else:
-                    logger.info(f"Bypassing RLS with service_role for command")
-                
-                # Execute command
+                # Set search_path and RLS context
+                await self._prepare_conn(conn, bypass_rls)
                 result = await conn.execute(query, *params)
-                
                 return result
                 
             except asyncpg.exceptions.InsufficientPrivilegeError as e:
