@@ -267,10 +267,10 @@ async def fix_projects_missing_jwt_secrets(database_url: str):
     try:
         conn = await asyncpg.connect(database_url)
         try:
-            # Fix projects missing jwt_secret
+            # Fix projects missing jwt_secret - use encode+digest which doesn't need pgcrypto
             projects_fixed = await conn.execute("""
                 UPDATE projects
-                SET jwt_secret = encode(gen_random_bytes(32), 'hex'),
+                SET jwt_secret = md5(random()::text) || md5(random()::text),
                     updated_at = NOW()
                 WHERE jwt_secret IS NULL OR jwt_secret = ''
             """)
