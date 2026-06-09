@@ -26,8 +26,10 @@ logger = logging.getLogger(__name__)
 SKIP_PREFIXES = [
     "/api/auth/",
     "/api/projects",
+    "/api/storage",
     "/api/admin",
     "/api/ai/",
+    "/api/storage",   # Storage uses its own auth via get_current_user
     "/docs",
     "/openapi.json",
     "/health",
