@@ -44,14 +44,30 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 
-def generate_jwt(user_id, project_id: UUID, email: str, secret: str) -> str:
+def generate_jwt(user_id, project_id: UUID, email: str, secret: str, slug: str = None) -> str:
+    """Generate a user access token (role=authenticated)."""
     payload = {
+        "iss": "zendbx",
         "sub": str(user_id),
         "project_id": str(project_id),
+        "project_slug": slug or "",
         "email": email,
         "role": "authenticated",
         "iat": datetime.utcnow(),
         "exp": datetime.utcnow() + timedelta(days=7)
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def generate_project_key_jwt(project_id: UUID, slug: str, secret: str, role: str) -> str:
+    """Generate a project API key JWT (role=anon or service_role, no expiry)."""
+    payload = {
+        "iss": "zendbx",
+        "project_id": str(project_id),
+        "project_slug": slug or "",
+        "role": role,  # 'anon' or 'service_role'
+        "iat": datetime.utcnow(),
+        # No 'exp' — project keys do not expire
     }
     return jwt.encode(payload, secret, algorithm="HS256")
 
@@ -72,7 +88,7 @@ async def get_project_info(project_id: UUID) -> dict:
     pool = await get_main_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT id, name, database_name, jwt_secret FROM projects WHERE id = $1",
+            "SELECT id, name, slug, database_name, jwt_secret FROM projects WHERE id = $1",
             project_id
         )
     if not row:
@@ -111,7 +127,7 @@ async def signup(project_id: UUID, request_data: SignUpRequest):
         await conn.execute(f'SET search_path TO "{schema}", public')
         await set_rls_context(conn, user_id=None, role='service_role')
 
-        # Ensure users table exists
+        # Ensure users table exists with correct schema
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -126,6 +142,20 @@ async def signup(project_id: UUID, request_data: SignUpRequest):
                 last_login_at TIMESTAMPTZ
             )
         """)
+        # Add missing columns for existing tables (safe, idempotent)
+        for col_sql in [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'email'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ",
+        ]:
+            try:
+                await conn.execute(col_sql)
+            except Exception:
+                pass  # Column already exists
 
         existing = await conn.fetchrow("SELECT id FROM users WHERE email = $1", request_data.email)
         if existing:
@@ -141,7 +171,7 @@ async def signup(project_id: UUID, request_data: SignUpRequest):
 
         logger.info(f"✅ Signup: {user['email']} in schema '{schema}'")
 
-    access_token = generate_jwt(user['id'], project_id, user['email'], project['jwt_secret'])
+    access_token = generate_jwt(user['id'], project_id, user['email'], project['jwt_secret'], project.get('slug'))
 
     return {
         "access_token": access_token,
@@ -189,7 +219,7 @@ async def login(project_id: UUID, request_data: SignInRequest):
         )
         logger.info(f"✅ Login: {user['email']} in schema '{schema}'")
 
-    access_token = generate_jwt(user['id'], project_id, user['email'], project['jwt_secret'])
+    access_token = generate_jwt(user['id'], project_id, user['email'], project['jwt_secret'], project.get('slug'))
 
     return {
         "access_token": access_token,

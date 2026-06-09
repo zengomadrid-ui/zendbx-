@@ -2,11 +2,10 @@
 Database Tables API
 Endpoints for managing database tables
 """
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
-from app.core.database import get_project_db_pool
 from app.services.db_manager import TableManager
 from app.services.schema_parser import SchemaParser
 from app.api.auth import get_current_user
@@ -38,8 +37,7 @@ class AddColumnRequest(BaseModel):
 async def get_project_db_from_header(x_project_id: str = Header(...)):
     """Get project database pool and schema name from header"""
     try:
-        # Get the database name from projects table
-        from app.core.database import get_main_db_pool
+        from app.core.db_router import get_main_db_pool
         main_pool = await get_main_db_pool()
         async with main_pool.acquire() as conn:
             result = await conn.fetchrow(
@@ -48,11 +46,12 @@ async def get_project_db_from_header(x_project_id: str = Header(...)):
             )
             if not result:
                 raise HTTPException(status_code=404, detail="Project not found")
-            
+
             db_name = result["database_name"]
-            pool = await get_project_db_pool(db_name)
-            # Return both pool and schema name
-            return {"pool": pool, "schema": db_name}
+            # Return the SAME shared pool — search_path is set per-connection in queries
+            return {"pool": main_pool, "schema": db_name}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -40,37 +40,45 @@ def generate_supabase_key(key_type: str) -> tuple[str, str, str]:
 # HELPER: Create Default Project Keys
 # ============================================
 
-async def create_default_project_keys(project_id: UUID, user_id: UUID) -> dict:
-    """Create anon and service_role keys for a new project"""
-    
-    # Generate anon key (public)
-    anon_key, anon_hash, anon_prefix = generate_supabase_key("anon")
-    
-    # Generate service_role key (private)
-    service_key, service_hash, service_prefix = generate_supabase_key("service_role")
-    
-    # Insert anon key with full JWT in encrypted_key column
+async def create_default_project_keys(project_id: UUID, user_id: UUID, jwt_secret: str, slug: str) -> dict:
+    """Create anon and service_role JWT keys for a new project."""
+    import jwt as pyjwt
+    from datetime import datetime
+
+    def make_key(role: str) -> str:
+        payload = {
+            "iss": "zendbx",
+            "project_id": str(project_id),
+            "project_slug": slug,
+            "role": role,
+            "iat": datetime.utcnow(),
+            # No exp — project keys don't expire
+        }
+        return pyjwt.encode(payload, jwt_secret, algorithm="HS256")
+
+    anon_key = make_key("anon")
+    service_key = make_key("service_role")
+
+    anon_hash = hashlib.sha256(anon_key.encode()).hexdigest()
+    service_hash = hashlib.sha256(service_key.encode()).hexdigest()
+
     await execute_on_main_db(
         """
         INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """,
-        user_id, project_id, "anon (public)", anon_hash, anon_prefix, anon_key, "read", "anon", True
+        user_id, project_id, "anon (public)", anon_hash, anon_key[:17] + "...", anon_key, "read", "anon", True
     )
-    
-    # Insert service_role key with full JWT in encrypted_key column
+
     await execute_on_main_db(
         """
         INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """,
-        user_id, project_id, "service_role (secret)", service_hash, service_prefix, service_key, "admin", "service_role", True
+        user_id, project_id, "service_role (secret)", service_hash, service_key[:17] + "...", service_key, "admin", "service_role", True
     )
-    
-    return {
-        "anon_key": anon_key,
-        "service_role_key": service_key
-    }
+
+    return {"anon_key": anon_key, "service_role_key": service_key}
 
 # ============================================
 # HELPER: Generate Project Slug
@@ -209,17 +217,21 @@ async def create_project(
         import jwt as pyjwt
         from datetime import datetime
         
+        now_ts = int(datetime.utcnow().timestamp())
+        
         anon_payload = {
-            "role": "anon",
             "iss": "zendbx",
             "project_id": str(project_id),
-            "iat": int(datetime.utcnow().timestamp()),
+            "project_slug": slug,
+            "role": "anon",
+            "iat": now_ts,
         }
         service_payload = {
-            "role": "service_role",
             "iss": "zendbx",
             "project_id": str(project_id),
-            "iat": int(datetime.utcnow().timestamp()),
+            "project_slug": slug,
+            "role": "service_role",
+            "iat": now_ts,
         }
         
         anon_key = pyjwt.encode(anon_payload, jwt_secret, algorithm="HS256")
