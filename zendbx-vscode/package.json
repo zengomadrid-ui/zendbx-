@@ -1,0 +1,213 @@
+{
+  "name": "zendbx",
+  "displayName": "ZendBX",
+  "description": "Official ZendBX VS Code Extension - Database Platform Integration",
+  "version": "1.0.0",
+  "publisher": "zendbx",
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Data Science",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "database",
+    "postgresql",
+    "sql",
+    "backend",
+    "api"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "zendbx.login",
+        "title": "Login",
+        "category": "ZendBX",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "zendbx.logout",
+        "title": "Logout",
+        "category": "ZendBX",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "zendbx.refreshProjects",
+        "title": "Refresh Projects",
+        "category": "ZendBX",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "zendbx.createProject",
+        "title": "Create New Project",
+        "category": "ZendBX",
+        "icon": "$(add)"
+      },
+      {
+        "command": "zendbx.selectProject",
+        "title": "Select Active Project",
+        "category": "ZendBX",
+        "icon": "$(check)"
+      },
+      {
+        "command": "zendbx.openDashboard",
+        "title": "Open Dashboard",
+        "category": "ZendBX",
+        "icon": "$(browser)"
+      },
+      {
+        "command": "zendbx.openSQLRunner",
+        "title": "Open SQL Runner",
+        "category": "ZendBX",
+        "icon": "$(database)"
+      },
+      {
+        "command": "zendbx.refreshDatabase",
+        "title": "Refresh Database",
+        "category": "ZendBX",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "zendbx.refreshStorage",
+        "title": "Refresh Storage",
+        "category": "ZendBX",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "zendbx.showWelcome",
+        "title": "Show Welcome",
+        "category": "ZendBX",
+        "icon": "$(home)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "zendbx",
+          "title": "ZendBX",
+          "icon": "media/logo.png"
+        }
+      ]
+    },
+    "views": {
+      "zendbx": [
+        {
+          "id": "zendbx.projects",
+          "name": "Projects",
+          "icon": "$(folder)",
+          "contextualTitle": "ZendBX Projects"
+        },
+        {
+          "id": "zendbx.database",
+          "name": "Database",
+          "icon": "$(database)",
+          "contextualTitle": "Database Explorer"
+        },
+        {
+          "id": "zendbx.storage",
+          "name": "Storage",
+          "icon": "$(file)",
+          "contextualTitle": "Storage Explorer"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "zendbx.login",
+          "when": "view == zendbx.projects",
+          "group": "navigation@1"
+        },
+        {
+          "command": "zendbx.refreshProjects",
+          "when": "view == zendbx.projects",
+          "group": "navigation@2"
+        },
+        {
+          "command": "zendbx.createProject",
+          "when": "view == zendbx.projects",
+          "group": "navigation@3"
+        },
+        {
+          "command": "zendbx.refreshDatabase",
+          "when": "view == zendbx.database",
+          "group": "navigation"
+        },
+        {
+          "command": "zendbx.refreshStorage",
+          "when": "view == zendbx.storage",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "zendbx.selectProject",
+          "when": "view == zendbx.projects && viewItem == project",
+          "group": "inline"
+        },
+        {
+          "command": "zendbx.openDashboard",
+          "when": "view == zendbx.projects && viewItem == project"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "zendbx.login"
+        },
+        {
+          "command": "zendbx.logout"
+        },
+        {
+          "command": "zendbx.openSQLRunner"
+        },
+        {
+          "command": "zendbx.openDashboard"
+        },
+        {
+          "command": "zendbx.showWelcome"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ZendBX",
+      "properties": {
+        "zendbx.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "ZendBX API URL"
+        },
+        "zendbx.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-refresh project data"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "axios": "^1.6.2"
+  }
+}

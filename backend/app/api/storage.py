@@ -309,6 +309,49 @@ async def bucket_stats(
 # File upload                                                          #
 # ------------------------------------------------------------------ #
 
+@router.post("/buckets/{bucket_id}/upload")
+async def upload_file_to_bucket(
+    bucket_id: str,
+    project_id: str = Form(...),
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+):
+    """SDK-compatible upload endpoint: POST /api/storage/buckets/{bucket_id}/upload"""
+    return await _do_upload(bucket_id, project_id, file, current_user)
+
+
+@router.get("/buckets/{bucket_id}/objects")
+async def list_objects(
+    bucket_id: str,
+    project_id: str = Query(...),
+    prefix: Optional[str] = Query(None),
+    current_user=Depends(get_current_user),
+):
+    """SDK-compatible list endpoint: GET /api/storage/buckets/{bucket_id}/objects"""
+    user_id = _get_user_id(current_user)
+    pool = await get_main_db_pool()
+    async with pool.acquire() as conn:
+        await _get_project_for_user(project_id, user_id, conn)
+        await _get_bucket(bucket_id, project_id, conn)
+        if prefix:
+            rows = await conn.fetch(
+                """SELECT id, file_name, original_name, file_size, mime_type, storage_key, created_at
+                   FROM storage_objects
+                   WHERE bucket_id = $1 AND deleted_at IS NULL AND storage_key LIKE $2
+                   ORDER BY created_at DESC""",
+                uuid.UUID(bucket_id), f"%{prefix}%",
+            )
+        else:
+            rows = await conn.fetch(
+                """SELECT id, file_name, original_name, file_size, mime_type, storage_key, created_at
+                   FROM storage_objects
+                   WHERE bucket_id = $1 AND deleted_at IS NULL
+                   ORDER BY created_at DESC""",
+                uuid.UUID(bucket_id),
+            )
+    return [dict(r) for r in rows]
+
+
 @router.post("/upload")
 async def upload_file(
     project_id: str = Form(...),
@@ -316,6 +359,11 @@ async def upload_file(
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
 ):
+    """Dashboard upload endpoint: POST /api/storage/upload"""
+    return await _do_upload(bucket_id, project_id, file, current_user)
+
+
+async def _do_upload(bucket_id: str, project_id: str, file: UploadFile, current_user):
     user_id = _get_user_id(current_user)
     user_plan = _get_user_plan(current_user)
 

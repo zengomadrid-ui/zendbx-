@@ -41,3 +41,21 @@ Thumbs.db
 # Local storage
 storage_data/
 backend/storage_data/
+
+# Test files (keep test_cors.* for CORS testing)
+backend/test_api*.py
+backend/apply_*.py
+backend/fix_*.py
+backend/database/fix_*.sql
+
+# Temporary documentation
+CORS_FIX_SUMMARY.md
+DEPLOYMENT_STATUS.md
+ROOT_CAUSE_FOUND.md
+WAITING_FOR_RENDER.md
+SECURITY_FIX_*.md
+
+# Build artifacts
+sdk/*.tgz
+sdk/dist/
+*.egg-info/
