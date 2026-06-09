@@ -1,218 +1,136 @@
 """
-Dynamic Database Router
-Manages per-project database connections with pooling and caching
+Database Router - Schema-per-project architecture
+Single shared PostgreSQL pool. Project isolation via search_path.
 """
 import asyncpg
 from typing import Dict, Optional
 from fastapi import HTTPException
 import logging
+import jwt as pyjwt
 
 logger = logging.getLogger(__name__)
 
-# Connection pools per project (cached)
-_connection_pools: Dict[str, asyncpg.Pool] = {}
-
-# Main database pool (for project metadata)
 _main_pool: Optional[asyncpg.Pool] = None
 
 
 async def get_main_db_pool() -> asyncpg.Pool:
-    """Get or create main database connection pool"""
+    """Get or create the single shared database pool."""
     global _main_pool
-    
+
     if _main_pool is None:
         from .config import settings
-        
+
         if not settings.DATABASE_URL:
-            logger.error("DATABASE_URL is not configured!")
             raise ValueError("DATABASE_URL environment variable is required")
-        
-        logger.info(f"🔄 Creating main database pool from DATABASE_URL")
-        logger.info(f"   DATABASE_URL length: {len(settings.DATABASE_URL)}")
-        logger.info(f"   DATABASE_URL starts with: {settings.DATABASE_URL[:30]}...")
-        
+
+        logger.info("🔄 Creating main database pool")
         try:
             _main_pool = await asyncpg.create_pool(
                 dsn=settings.DATABASE_URL,
                 min_size=5,
                 max_size=20,
                 command_timeout=60,
-                timeout=30  # Add explicit connection timeout
+                timeout=30,
             )
-            logger.info("✅ Main database pool created successfully")
-            logger.info(f"   Pool size: {_main_pool.get_size()}, Available: {_main_pool.get_idle_size()}")
+            logger.info(f"✅ Pool ready: size={_main_pool.get_size()}")
         except Exception as e:
-            logger.error(f"❌ Failed to create database pool: {type(e).__name__}: {str(e)}")
-            logger.error(f"   DATABASE_URL (first 100 chars): {settings.DATABASE_URL[:100]}")
+            logger.error(f"❌ Pool creation failed: {e}")
             raise
-    
+
     return _main_pool
 
 
 async def initialize_main_pool():
-    """Initialize the main database pool at application startup"""
+    """Call at startup to warm up the pool."""
     global _main_pool
-    
     if _main_pool is not None:
-        logger.info("Main database pool already initialized")
         return _main_pool
-    
-    logger.info("🚀 Initializing main database pool at startup...")
+    return await get_main_db_pool()
+
+
+async def get_project_info(project_id: str) -> dict:
+    """Fetch project record. Raises 404 if not found."""
     pool = await get_main_db_pool()
-    logger.info(f"✅ Main pool initialized: size={pool.get_size()}, idle={pool.get_idle_size()}")
-    return pool
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, name, database_name, jwt_secret, slug FROM projects WHERE id = $1",
+            project_id,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return dict(row)
+
+
+async def validate_project_key(project_id: str, api_key: str) -> dict:
+    """
+    Validate an API key against a project.
+    Keys are JWTs signed with the project's jwt_secret.
+    Falls back to DB lookup for legacy keys.
+    Returns: dict with keys: project_id, schema, role, jwt_secret
+    """
+    pool = await get_main_db_pool()
+    async with pool.acquire() as conn:
+        project = await conn.fetchrow(
+            "SELECT id, name, database_name, jwt_secret, slug FROM projects WHERE id = $1",
+            project_id,
+        )
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    jwt_secret = project["jwt_secret"]
+    if not jwt_secret:
+        raise HTTPException(status_code=500, detail="Project not configured (missing jwt_secret)")
+
+    # Try JWT decode first (new-style keys)
+    key_role = None
+    try:
+        payload = pyjwt.decode(api_key, jwt_secret, algorithms=["HS256"])
+        key_role = payload.get("role", "anon")
+        logger.info(f"✅ JWT key validated: role={key_role} project={project_id}")
+    except Exception:
+        # Fall back to legacy DB string match
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT encrypted_key, key_type FROM api_keys WHERE project_id = $1 AND is_active = true",
+                project_id,
+            )
+        match = next((r for r in rows if (r["encrypted_key"] or "").strip() == api_key.strip()), None)
+        if not match:
+            raise HTTPException(status_code=403, detail="Invalid API key")
+        key_role = match["key_type"]  # 'anon' or 'service_role'
+        logger.info(f"✅ Legacy key validated: role={key_role} project={project_id}")
+
+    return {
+        "project_id": str(project["id"]),
+        "schema": project["database_name"],
+        "slug": project["slug"],
+        "role": key_role,
+        "jwt_secret": jwt_secret,
+        "pool": await get_main_db_pool(),
+    }
 
 
 async def get_project_db(project_id: str, api_key: str) -> asyncpg.Pool:
     """
-    Validates project and returns database connection pool
-    
-    Args:
-        project_id: UUID of the project
-        api_key: API key (anon or service_role) for authentication
-    
-    Returns:
-        asyncpg.Pool: Connection pool for the project database
-    
-    Raises:
-        HTTPException: If project not found or invalid key
+    Backward-compatible shim. Returns the shared pool after validating the key.
+    Callers must SET search_path themselves.
     """
-    # Check cache first
-    cache_key = f"{project_id}:{api_key}"
-    if cache_key in _connection_pools:
-        logger.debug(f"Using cached connection pool for project {project_id}")
-        return _connection_pools[cache_key]
-    
-    # Query main DB for project
-    main_pool = await get_main_db_pool()
-    
-    async with main_pool.acquire() as conn:
-        # Get project and check BOTH anon and service_role keys
-        project = await conn.fetchrow("""
-            SELECT 
-                p.id, 
-                p.name,
-                p.database_name, 
-                p.jwt_secret
-            FROM projects p
-            WHERE p.id = $1
-        """, project_id)
-        
-        if not project:
-            logger.error(f"Project not found: {project_id}")
-            raise HTTPException(status_code=404, detail="Project not found")
-        
-        # Validate API key — decode it as a JWT signed with the project's jwt_secret
-        # This is Supabase-style: keys are JWTs, no DB lookup needed
-        project_jwt_secret = project['jwt_secret']
-        
-        if not project_jwt_secret:
-            logger.error(f"Project {project_id} has no jwt_secret configured")
-            raise HTTPException(status_code=500, detail="Project not configured with JWT secret")
-        
-        try:
-            import jwt as pyjwt
-            key_payload = pyjwt.decode(api_key, project_jwt_secret, algorithms=["HS256"])
-            key_role = key_payload.get("role", "unknown")
-            logger.info(f"✅ Valid {key_role} key for project {project_id}")
-        except Exception as e:
-            # Fall back to legacy DB lookup for old-style keys
-            logger.warning(f"JWT decode failed for key, trying legacy DB lookup: {e}")
-            api_keys = await conn.fetch("""
-                SELECT encrypted_key, key_type, role
-                FROM api_keys
-                WHERE project_id = $1 AND is_active = true
-            """, project_id)
-            
-            key_valid = any((k['encrypted_key'] or '').strip() == api_key.strip() for k in api_keys)
-            
-            if not key_valid:
-                logger.error(f"Invalid API key for project {project_id}")
-                raise HTTPException(status_code=403, detail="Invalid API key")
-        
-        # Get database name
-        db_name = project['database_name']
-        
-        if not db_name:
-            logger.error(f"No database configured for project {project_id}")
-            raise HTTPException(status_code=500, detail="Project database not configured")
-        
-        logger.info(f"Creating connection pool for project {project['name']} (DB: {db_name})")
-        
-        # Create connection pool for project DB
-        try:
-            from .config import settings
-            
-            # Parse main DATABASE_URL to extract connection params
-            import re
-            match = re.match(r'postgresql://([^:]+):([^@]+)@([^:/]+)(?::(\d+))?/(.+)', settings.DATABASE_URL)
-            if not match:
-                raise ValueError(f"Invalid DATABASE_URL format: {settings.DATABASE_URL}")
-            
-            db_user, db_password, db_host, db_port, _ = match.groups()
-            db_port = db_port or "5432"
-            
-            logger.info(f"Creating pool for project DB '{db_name}' on {db_host}:{db_port}")
-            
-            pool = await asyncpg.create_pool(
-                host=db_host,
-                port=int(db_port),
-                database=db_name,
-                user=db_user,
-                password=db_password,
-                min_size=2,
-                max_size=10,
-                command_timeout=60
-            )
-            
-            # Cache it
-            _connection_pools[cache_key] = pool
-            
-            logger.info(f"Connection pool created for project {project_id}")
-            return pool
-            
-        except Exception as e:
-            logger.error(f"Failed to create connection pool for project {project_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to connect to project database: {str(e)}")
-
-
-async def close_all_pools():
-    """Close all connection pools (for graceful shutdown)"""
-    global _main_pool, _connection_pools
-    
-    logger.info("Closing all database connection pools...")
-    
-    # Close project pools
-    for project_id, pool in _connection_pools.items():
-        await pool.close()
-        logger.info(f"Closed pool for project {project_id}")
-    
-    _connection_pools.clear()
-    
-    # Close main pool
-    if _main_pool:
-        await _main_pool.close()
-        _main_pool = None
-        logger.info("Closed main database pool")
+    info = await validate_project_key(project_id, api_key)
+    return info["pool"]
 
 
 async def get_project_db_direct(project_id: str) -> asyncpg.Pool:
-    """
-    Get project database without ANON_KEY validation.
-    Uses PostgreSQL schemas (same as the rest of the system).
-    Returns the main pool - callers must set search_path to the project schema.
-    """
-    main_pool = await get_main_db_pool()
-    
-    async with main_pool.acquire() as conn:
-        project = await conn.fetchrow("""
-            SELECT database_name, name
-            FROM projects
-            WHERE id = $1
-        """, project_id)
-        
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Return main pool - schema is set per-connection in the auth endpoints
-    return main_pool
+    """Return shared pool without key validation (internal use only)."""
+    project = await get_project_info(project_id)
+    _ = project  # just validates the project exists
+    return await get_main_db_pool()
+
+
+async def close_all_pools():
+    """Graceful shutdown."""
+    global _main_pool
+    if _main_pool:
+        await _main_pool.close()
+        _main_pool = None
+        logger.info("Database pool closed")
