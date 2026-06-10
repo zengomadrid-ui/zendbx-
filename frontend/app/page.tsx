@@ -1,8 +1,11 @@
+"use client";
+
 import Hero from "@/components/landing/Hero";
 import SocialProof from "@/components/landing/SocialProof";
 import HowItWorks from "@/components/landing/HowItWorks";
 import Features from "@/components/landing/Features";
 import InteractiveDemo from "@/components/landing/InteractiveDemo";
+import SDKSection from "@/components/landing/SDKSection";
 import Pricing from "@/components/landing/Pricing";
 import Testimonials from "@/components/landing/Testimonials";
 import CTA from "@/components/landing/CTA";
@@ -18,6 +21,7 @@ export default function Home() {
       <HowItWorks />
       <Features />
       <InteractiveDemo />
+      <SDKSection />
       <Pricing />
       <Testimonials />
       <CTA />
