@@ -55,14 +55,8 @@ class BulkDeleteRequest(BaseModel):
 # ── Service initialization helpers ────────────────────────────────────────
 
 def _get_services():
-    """Initialize all storage services with dependencies."""
-    provider = get_storage_provider()
-    if not provider:
-        raise HTTPException(
-            status_code=503,
-            detail="Storage provider unavailable. Please configure storage settings.",
-        )
-    
+    """Initialize all storage services. Provider may be None if B2 not configured."""
+    provider = get_storage_provider()  # None if B2 not set — handled per-operation
     repo = StorageRepository()
     return {
         "bucket": BucketService(repo, provider),
@@ -71,6 +65,17 @@ def _get_services():
         "project": ProjectService(repo),
         "signed_url": SignedUrlService(provider),
     }
+
+
+def _require_provider():
+    """Guard for operations that actually need B2 (upload, download, signed URL)."""
+    provider = get_storage_provider()
+    if not provider:
+        raise HTTPException(
+            status_code=503,
+            detail="Storage provider unavailable. Configure B2_KEY_ID and B2_APPLICATION_KEY in environment variables.",
+        )
+    return provider
 
 
 def _uid(current_user) -> uuid.UUID:
@@ -188,10 +193,8 @@ async def upload_file(
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
 ):
-    """
-    Upload a file to a bucket.
-    SDK endpoint: POST /p/{project_slug}/storage/buckets/{bucket_slug_or_uuid}/upload
-    """
+    """Upload a file to a bucket."""
+    _require_provider()
     services = _get_services()
     pool = await get_main_db_pool()
     
@@ -329,6 +332,7 @@ async def download_file(
     current_user=Depends(get_current_user),
 ):
     """Download a file."""
+    _require_provider()
     services = _get_services()
     pool = await get_main_db_pool()
     
@@ -390,6 +394,7 @@ async def generate_signed_url(
     current_user=Depends(get_current_user),
 ):
     """Generate a temporary signed URL for file access."""
+    _require_provider()
     services = _get_services()
     pool = await get_main_db_pool()
     

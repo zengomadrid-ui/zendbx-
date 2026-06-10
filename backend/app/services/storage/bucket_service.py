@@ -51,7 +51,8 @@ class BucketService:
     ) -> Dict[str, Any]:
         """
         Create a new storage bucket.
-        Validates uniqueness and delegates to provider and repository.
+        Validates uniqueness and creates the DB record.
+        Provider verification is skipped if storage is not configured.
         """
         slug = slugify(name)
 
@@ -63,17 +64,9 @@ class BucketService:
                 detail="A bucket with this name already exists in this project",
             )
 
-        # Ensure provider bucket exists (idempotent)
-        success = await self.provider.create_bucket(provider_bucket_name, is_public)
-        if not success:
-            raise HTTPException(
-                status_code=503,
-                detail="Storage provider unavailable",
-            )
-
-        # Create bucket record
+        # Create bucket record first — provider is only needed for actual uploads
         bucket_id = uuid.uuid4()
-        return await self.repo.create_bucket(
+        result = await self.repo.create_bucket(
             bucket_id=bucket_id,
             project_id=project_id,
             name=name,
@@ -83,6 +76,16 @@ class BucketService:
             user_id=user_id,
             conn=conn,
         )
+
+        # Try to verify/create the provider bucket — non-fatal if storage not configured
+        if self.provider:
+            try:
+                await self.provider.create_bucket(provider_bucket_name, is_public)
+            except Exception as e:
+                # Log but don't fail — bucket metadata is already saved
+                print(f"[BucketService] Provider bucket check failed (non-fatal): {e}")
+
+        return result
 
     async def update_bucket(
         self,
@@ -127,9 +130,13 @@ class BucketService:
         # Get all object storage keys
         storage_keys = await self.repo.get_bucket_objects_keys(bucket["id"], conn)
 
-        # Delete from provider
-        for key in storage_keys:
-            await self.provider.delete_file(key, provider_bucket_name)
+        # Best-effort delete from provider
+        if self.provider and storage_keys:
+            for key in storage_keys:
+                try:
+                    await self.provider.delete_file(key, provider_bucket_name)
+                except Exception as e:
+                    print(f"[BucketService] Provider delete failed (non-fatal): {e}")
 
         # Soft delete all objects
         await self.repo.soft_delete_all_objects_in_bucket(bucket["id"], conn)

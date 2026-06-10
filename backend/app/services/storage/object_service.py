@@ -74,15 +74,18 @@ class ObjectService:
     ) -> Dict[str, Any]:
         """
         Delete a storage object.
-        Removes from provider, soft deletes record, updates quotas.
+        Removes from provider if available, always soft deletes record and updates quotas.
         """
-        # Delete from provider
-        await self.provider.delete_file(obj["storage_key"], provider_bucket_name)
+        # Best-effort delete from provider — skip if not configured
+        if self.provider:
+            try:
+                await self.provider.delete_file(obj["storage_key"], provider_bucket_name)
+            except Exception as e:
+                print(f"[ObjectService] Provider delete failed (non-fatal): {e}")
 
-        # Soft delete object
+        # Always soft delete from DB
         await self.repo.soft_delete_object(obj["id"], conn)
 
-        # Update bucket stats
         file_size = obj.get("file_size", 0)
         await self.repo.update_bucket_stats(
             bucket_id=obj["bucket_id"],
@@ -90,8 +93,6 @@ class ObjectService:
             file_count_delta=-1,
             conn=conn,
         )
-
-        # Update project storage
         await self.repo.update_project_storage(project_id, -file_size, conn)
 
         return {"success": True}

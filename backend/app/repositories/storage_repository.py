@@ -30,7 +30,7 @@ class StorageRepository:
                 SELECT p.id, p.slug, p.storage_used, p.max_storage, u.plan
                 FROM projects p
                 JOIN users u ON u.id = p.user_id
-                WHERE p.id = $1 AND p.deleted_at IS NULL
+                WHERE p.id = $1
                 """,
                 uid,
             )
@@ -45,7 +45,7 @@ class StorageRepository:
             SELECT p.id, p.slug, p.storage_used, p.max_storage, u.plan
             FROM projects p
             JOIN users u ON u.id = p.user_id
-            WHERE p.slug = $1 AND p.deleted_at IS NULL
+            WHERE p.slug = $1
             """,
             identifier,
         )
@@ -57,7 +57,6 @@ class StorageRepository:
         user_id: uuid.UUID,
         conn: Connection,
     ) -> Optional[Dict[str, Any]]:
-        """Resolve project with ownership verification."""
         # Try UUID first
         try:
             uid = uuid.UUID(identifier)
@@ -66,7 +65,7 @@ class StorageRepository:
                 SELECT p.id, p.slug, p.storage_used, p.max_storage, u.plan
                 FROM projects p
                 JOIN users u ON u.id = p.user_id
-                WHERE p.id = $1 AND p.user_id = $2 AND p.deleted_at IS NULL
+                WHERE p.id = $1 AND p.user_id = $2
                 """,
                 uid,
                 user_id,
@@ -82,7 +81,7 @@ class StorageRepository:
             SELECT p.id, p.slug, p.storage_used, p.max_storage, u.plan
             FROM projects p
             JOIN users u ON u.id = p.user_id
-            WHERE p.slug = $1 AND p.user_id = $2 AND p.deleted_at IS NULL
+            WHERE p.slug = $1 AND p.user_id = $2
             """,
             identifier,
             user_id,

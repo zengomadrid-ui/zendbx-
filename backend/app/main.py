@@ -11,14 +11,27 @@ app = FastAPI(
     debug=settings.DEBUG
 )
 
-# Global exception handler to prevent crashes and always return CORS headers
+# Global exception handler — re-raise HTTPException so FastAPI handles it correctly,
+# catch everything else as 500
+from fastapi import HTTPException as _HTTPException
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch all unhandled exceptions and return proper error response with CORS headers"""
+    # Let FastAPI's own HTTPException handler deal with known HTTP errors
+    if isinstance(exc, _HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Credentials": "true",
+            }
+        )
+
     print(f"❌ UNHANDLED EXCEPTION: {type(exc).__name__}: {str(exc)}")
     print(f"❌ Traceback:")
     print(traceback.format_exc())
-    
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -26,7 +39,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             "type": type(exc).__name__
         },
         headers={
-            "Access-Control-Allow-Origin": "*",  # Emergency CORS
+            "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Credentials": "true",
             "Access-Control-Allow-Methods": "*",
             "Access-Control-Allow-Headers": "*",
@@ -224,7 +237,8 @@ from app.api import (
     billing,  # Billing & Usage Quotas
     admin_quotas,  # Admin quota management
     oauth_providers, oauth_redirects, oauth_login,  # OAuth URL Generator System
-    storage,  # Object Storage
+    storage,  # Object Storage (legacy /api/storage)
+    storage_v2,  # Object Storage v2 (project-scoped /p/{slug}/storage)
     run_migration,  # One-time database migrations
     setup_project,  # Temporary setup endpoint
 )
@@ -290,8 +304,11 @@ app.include_router(billing.router, tags=["billing"])
 # Admin Quota Management API
 app.include_router(admin_quotas.router, tags=["admin-quotas"])
 
-# Object Storage API
+# Object Storage API (legacy — dashboard uses these)
 app.include_router(storage.router, tags=["storage"])
+
+# Object Storage API v2 — project-scoped, SDK-friendly
+app.include_router(storage_v2.router, tags=["storage-v2"])
 
 # Database Migration API (one-time use)
 app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])
