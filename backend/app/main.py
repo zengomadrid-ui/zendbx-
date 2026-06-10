@@ -275,6 +275,11 @@ app.include_router(imports_router.router, prefix="/api/projects", tags=["imports
 app.include_router(imports_router.router, prefix="/api", tags=["imports"])  # Simple import endpoint
 app.include_router(auto_api.router, prefix="/api", tags=["auto-api"])
 app.include_router(api_keys.router, tags=["api-keys"])
+
+# Object Storage API v2 — MUST come before project_api.router to prevent
+# /p/{slug}/storage/... from being swallowed by the /p/{slug}/{table_name} catch-all
+app.include_router(storage_v2.router, tags=["storage-v2"])
+
 app.include_router(project_api.router, tags=["project-api"])
 
 # Database Management APIs
@@ -306,9 +311,6 @@ app.include_router(admin_quotas.router, tags=["admin-quotas"])
 
 # Object Storage API (legacy — dashboard uses these)
 app.include_router(storage.router, tags=["storage"])
-
-# Object Storage API v2 — project-scoped, SDK-friendly
-app.include_router(storage_v2.router, tags=["storage-v2"])
 
 # Database Migration API (one-time use)
 app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])
