@@ -39,14 +39,16 @@ export default function StoragePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const pid = localStorage.getItem('current_project_id') || '';
-    if (pid) fetchAnalytics(pid);
+    const slug =
+      localStorage.getItem('current_project_slug') ||
+      localStorage.getItem('current_project_id') || '';
+    if (slug) fetchAnalytics(slug);
     else setLoading(false);
   }, []);
 
-  async function fetchAnalytics(pid: string) {
+  async function fetchAnalytics(slug: string) {
     try {
-      const res = await apiFetch(`api/storage/analytics?project_id=${pid}`);
+      const res = await apiFetch(`p/${slug}/storage/analytics`);
       if (res.ok) setAnalytics(await res.json());
     } catch (e) {
       console.error(e);

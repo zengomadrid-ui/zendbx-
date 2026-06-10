@@ -37,6 +37,9 @@ export type {
   TeamMember,
   StorageBucket,
   StorageObject,
+  StorageUploadResult,
+  StorageSignedUrl,
+  StorageAnalytics,
   AISQLResult,
   AIExplainResult,
   AIFixResult,
@@ -44,6 +47,5 @@ export type {
   RealtimeCallback,
   RealtimePayload,
   QueryAnalytics,
-  StorageAnalytics,
   UsageQuota,
 } from './types';

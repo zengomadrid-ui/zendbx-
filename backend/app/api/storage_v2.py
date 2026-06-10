@@ -1,16 +1,18 @@
 """
-Storage API — Legacy Routes (/api/storage/...)
+Storage API v2 — Project-scoped routes (/p/{project_slug}/storage/...)
 
-DEPRECATED: Use /p/{project_slug}/storage/* instead.
-Maintained for backward compatibility. All business logic routes through
-the V3 service layer (repositories + services/storage/).
-No SQL, no provider calls — this router is thin.
+Architecture V3:
+- Clean service layer with repositories
+- Provider abstraction
+- Project-scoped: no UUIDs in URLs
+- Bucket resolution by slug or UUID
+- All business logic in service layer
 """
 import io
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -25,8 +27,9 @@ from app.services.storage.upload_service import UploadService
 from app.services.storage.project_service import ProjectService
 from app.services.storage.signed_url_service import SignedUrlService
 
-router = APIRouter(prefix="/api/storage", tags=["storage"])
+router = APIRouter(prefix="/p/{project_slug}/storage", tags=["storage-v2"])
 
+# Provider bucket name (configured globally)
 PROVIDER_BUCKET = _settings.B2_BUCKET_NAME
 
 
@@ -49,6 +52,8 @@ class BulkDeleteRequest(BaseModel):
     file_ids: list[str]
 
 
+# ── Service initialization helpers ────────────────────────────────────────
+
 def _get_services():
     """Initialize all storage services with dependencies."""
     provider = get_storage_provider()
@@ -57,6 +62,7 @@ def _get_services():
             status_code=503,
             detail="Storage provider unavailable. Please configure storage settings.",
         )
+    
     repo = StorageRepository()
     return {
         "bucket": BucketService(repo, provider),
@@ -68,6 +74,7 @@ def _get_services():
 
 
 def _uid(current_user) -> uuid.UUID:
+    """Extract user UUID from current_user."""
     if hasattr(current_user, "id"):
         return uuid.UUID(str(current_user.id))
     return uuid.UUID(str(current_user["id"]))
@@ -77,30 +84,30 @@ def _uid(current_user) -> uuid.UUID:
 
 @router.get("/buckets")
 async def list_buckets(
-    project_id: str = Query(...),
+    project_slug: str,
     current_user=Depends(get_current_user),
 ):
+    """List all buckets in a project."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
+        project = await services["project"].resolve_project(project_slug, conn)
         return await services["bucket"].list_buckets(project["id"], conn)
 
 
 @router.post("/buckets")
 async def create_bucket(
+    project_slug: str,
     body: CreateBucketRequest,
-    project_id: str = Query(...),
     current_user=Depends(get_current_user),
 ):
+    """Create a new storage bucket."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
+        project = await services["project"].resolve_project(project_slug, conn)
         return await services["bucket"].create_bucket(
             project_id=project["id"],
             user_id=_uid(current_user),
@@ -112,20 +119,20 @@ async def create_bucket(
         )
 
 
-@router.patch("/buckets/{bucket_id}")
+@router.patch("/buckets/{bucket}")
 async def update_bucket(
-    bucket_id: str,
+    project_slug: str,
+    bucket: str,
     body: UpdateBucketRequest,
-    project_id: str = Query(...),
     current_user=Depends(get_current_user),
 ):
+    """Update bucket metadata."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
-        bucket_row = await services["project"].resolve_bucket(bucket_id, project["id"], conn)
+        project = await services["project"].resolve_project(project_slug, conn)
+        bucket_row = await services["project"].resolve_bucket(bucket, project["id"], conn)
         return await services["bucket"].update_bucket(
             bucket=bucket_row,
             name=body.name,
@@ -135,19 +142,19 @@ async def update_bucket(
         )
 
 
-@router.delete("/buckets/{bucket_id}")
+@router.delete("/buckets/{bucket}")
 async def delete_bucket(
-    bucket_id: str,
-    project_id: str = Query(...),
+    project_slug: str,
+    bucket: str,
     current_user=Depends(get_current_user),
 ):
+    """Delete a bucket and all its objects."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
-        bucket_row = await services["project"].resolve_bucket(bucket_id, project["id"], conn)
+        project = await services["project"].resolve_project(project_slug, conn)
+        bucket_row = await services["project"].resolve_bucket(bucket, project["id"], conn)
         return await services["bucket"].delete_bucket(
             bucket=bucket_row,
             project_id=project["id"],
@@ -156,62 +163,41 @@ async def delete_bucket(
         )
 
 
-@router.get("/buckets/{bucket_id}/stats")
+@router.get("/buckets/{bucket}/stats")
 async def bucket_stats(
-    bucket_id: str,
-    project_id: str = Query(...),
+    project_slug: str,
+    bucket: str,
     current_user=Depends(get_current_user),
 ):
+    """Get detailed statistics for a bucket."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
-        bucket_row = await services["project"].resolve_bucket(bucket_id, project["id"], conn)
+        project = await services["project"].resolve_project(project_slug, conn)
+        bucket_row = await services["project"].resolve_bucket(bucket, project["id"], conn)
         return await services["bucket"].get_bucket_stats(bucket_row["id"], conn)
 
 
 # ── Upload ─────────────────────────────────────────────────────────────────
 
-@router.post("/buckets/{bucket_id}/upload")
-async def upload_to_bucket(
-    bucket_id: str,
-    project_id: str = Form(...),
-    file: UploadFile = File(...),
-    current_user=Depends(get_current_user),
-):
-    services = _get_services()
-    pool = await get_main_db_pool()
-    async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
-        bucket_row = await services["project"].resolve_bucket(bucket_id, project["id"], conn)
-        return await services["upload"].upload_file(
-            file=file,
-            bucket=bucket_row,
-            project=project,
-            user_id=_uid(current_user),
-            provider_bucket_name=PROVIDER_BUCKET,
-            conn=conn,
-        )
-
-
-@router.post("/upload")
+@router.post("/buckets/{bucket}/upload")
 async def upload_file(
-    project_id: str = Form(...),
-    bucket_id: str = Form(...),
+    project_slug: str,
+    bucket: str,
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
 ):
+    """
+    Upload a file to a bucket.
+    SDK endpoint: POST /p/{project_slug}/storage/buckets/{bucket_slug_or_uuid}/upload
+    """
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
-        bucket_row = await services["project"].resolve_bucket(bucket_id, project["id"], conn)
+        project = await services["project"].resolve_project(project_slug, conn)
+        bucket_row = await services["project"].resolve_bucket(bucket, project["id"], conn)
         return await services["upload"].upload_file(
             file=file,
             bucket=bucket_row,
@@ -224,71 +210,75 @@ async def upload_file(
 
 # ── Objects / Files ────────────────────────────────────────────────────────
 
-@router.get("/buckets/{bucket_id}/objects")
+@router.get("/buckets/{bucket}/objects")
 async def list_objects(
-    bucket_id: str,
-    project_id: str = Query(...),
+    project_slug: str,
+    bucket: str,
     prefix: Optional[str] = Query(None),
     current_user=Depends(get_current_user),
 ):
+    """List objects in a bucket with optional prefix filter."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
-        bucket_row = await services["project"].resolve_bucket(bucket_id, project["id"], conn)
+        project = await services["project"].resolve_project(project_slug, conn)
+        bucket_row = await services["project"].resolve_bucket(bucket, project["id"], conn)
         return await services["object"].list_objects(bucket_row["id"], prefix, conn)
 
 
-@router.get("/buckets/{bucket_id}/files")
+@router.get("/buckets/{bucket}/files")
 async def list_files(
-    bucket_id: str,
-    project_id: str = Query(...),
+    project_slug: str,
+    bucket: str,
     search: Optional[str] = Query(None),
     sort_by: str = Query("created_at"),
     sort_dir: str = Query("desc"),
     current_user=Depends(get_current_user),
 ):
+    """List files with search and sorting."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
-        bucket_row = await services["project"].resolve_bucket(bucket_id, project["id"], conn)
+        project = await services["project"].resolve_project(project_slug, conn)
+        bucket_row = await services["project"].resolve_bucket(bucket, project["id"], conn)
         return await services["object"].list_files(
-            bucket_row["id"], search, sort_by, sort_dir, conn
+            bucket_row["id"],
+            search,
+            sort_by,
+            sort_dir,
+            conn,
         )
 
 
 @router.get("/files/{file_id}")
 async def get_file_metadata(
+    project_slug: str,
     file_id: str,
-    project_id: str = Query(...),
     current_user=Depends(get_current_user),
 ):
+    """Get file metadata."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
+        project = await services["project"].resolve_project(project_slug, conn)
         return await services["object"].get_object(uuid.UUID(file_id), project["id"], conn)
 
 
 @router.delete("/files/{file_id}")
 async def delete_file(
+    project_slug: str,
     file_id: str,
-    project_id: str = Query(...),
     current_user=Depends(get_current_user),
 ):
+    """Delete a file."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
+        project = await services["project"].resolve_project(project_slug, conn)
         file_row = await services["object"].get_object(uuid.UUID(file_id), project["id"], conn)
         return await services["object"].delete_object(
             obj=file_row,
@@ -300,21 +290,23 @@ async def delete_file(
 
 @router.post("/files/bulk-delete")
 async def bulk_delete_files(
+    project_slug: str,
     body: BulkDeleteRequest,
-    project_id: str = Query(...),
     current_user=Depends(get_current_user),
 ):
+    """Delete multiple files at once."""
     services = _get_services()
     pool = await get_main_db_pool()
     deleted = 0
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
+        project = await services["project"].resolve_project(project_slug, conn)
         for file_id_str in body.file_ids:
             try:
                 file_row = await services["object"].get_object(
-                    uuid.UUID(file_id_str), project["id"], conn
+                    uuid.UUID(file_id_str),
+                    project["id"],
+                    conn,
                 )
                 await services["object"].delete_object(
                     obj=file_row,
@@ -324,28 +316,31 @@ async def bulk_delete_files(
                 )
                 deleted += 1
             except Exception:
+                # Silently skip failed deletions
                 pass
+    
     return {"success": True, "deleted": deleted}
 
 
 @router.get("/files/{file_id}/download")
 async def download_file(
+    project_slug: str,
     file_id: str,
-    project_id: str = Query(...),
     current_user=Depends(get_current_user),
 ):
+    """Download a file."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
+        project = await services["project"].resolve_project(project_slug, conn)
         file_row = await services["object"].get_object(uuid.UUID(file_id), project["id"], conn)
         data, mime, name = await services["object"].download_object(
             obj=file_row,
             provider_bucket_name=PROVIDER_BUCKET,
             conn=conn,
         )
+    
     return StreamingResponse(
         io.BytesIO(data),
         media_type=mime,
@@ -355,48 +350,53 @@ async def download_file(
 
 @router.get("/files/{file_id}/preview")
 async def preview_file(
+    project_slug: str,
     file_id: str,
-    project_id: str = Query(...),
     current_user=Depends(get_current_user),
 ):
+    """Preview a file (inline display for public buckets, download for private)."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
+        project = await services["project"].resolve_project(project_slug, conn)
         file_row = await services["object"].get_object(uuid.UUID(file_id), project["id"], conn)
+        
+        # Check if bucket is public
         bucket = await StorageRepository.get_bucket_by_id(file_row["bucket_id"], conn)
-
-    if bucket and bucket.get("is_public"):
-        url = await services["signed_url"].get_public_url(
-            file_row["storage_key"], PROVIDER_BUCKET
-        )
-        return RedirectResponse(url=url)
-
-    async with pool.acquire() as conn:
+        if bucket and bucket.get("is_public"):
+            # Return public URL redirect
+            url = await services["signed_url"].get_public_url(
+                file_row["storage_key"],
+                PROVIDER_BUCKET,
+            )
+            return RedirectResponse(url=url)
+        
+        # Download and stream for private buckets
         data, mime, _ = await services["object"].download_object(
             obj=file_row,
             provider_bucket_name=PROVIDER_BUCKET,
             conn=conn,
         )
+    
     return StreamingResponse(io.BytesIO(data), media_type=mime)
 
 
 @router.post("/files/{file_id}/signed-url")
 async def generate_signed_url(
+    project_slug: str,
     file_id: str,
     body: SignedUrlRequest,
-    project_id: str = Query(...),
     current_user=Depends(get_current_user),
 ):
+    """Generate a temporary signed URL for file access."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
+        project = await services["project"].resolve_project(project_slug, conn)
         file_row = await services["object"].get_object(uuid.UUID(file_id), project["id"], conn)
+    
     return await services["signed_url"].generate_signed_url(
         storage_key=file_row["storage_key"],
         expiry=body.expiry,
@@ -406,15 +406,15 @@ async def generate_signed_url(
 
 @router.get("/analytics")
 async def storage_analytics(
-    project_id: str = Query(...),
+    project_slug: str,
     current_user=Depends(get_current_user),
 ):
+    """Get comprehensive storage analytics for the project."""
     services = _get_services()
     pool = await get_main_db_pool()
+    
     async with pool.acquire() as conn:
-        project = await services["project"].resolve_project_for_user(
-            project_id, _uid(current_user), conn
-        )
+        project = await services["project"].resolve_project(project_slug, conn)
         return await services["project"].get_storage_analytics(
             project_id=project["id"],
             project=project,

@@ -190,18 +190,57 @@ export interface TeamMember {
 export interface StorageBucket {
   id: string;
   name: string;
-  public: boolean;
+  slug: string;
+  description?: string;
+  is_public: boolean;
+  storage_used: number;
+  file_count: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface StorageObject {
   id: string;
-  name: string;
-  bucket_id: string;
-  size?: number;
-  content_type?: string;
+  file_name: string;
+  original_name: string;
+  file_size: number;
+  mime_type: string;
+  storage_key: string;
+  download_count?: number;
+  last_downloaded_at?: string;
   created_at: string;
-  url?: string;
+  updated_at?: string;
+}
+
+export interface StorageUploadResult {
+  id: string;
+  file_name: string;
+  original_name: string;
+  file_size: number;
+  mime_type: string;
+  storage_key: string;
+}
+
+export interface StorageSignedUrl {
+  url: string;
+  expires_in: number;
+  expiry: string;
+}
+
+export interface StorageAnalytics {
+  storage_used: number;
+  max_storage: number;
+  storage_used_percent: number;
+  file_count: number;
+  bucket_count: number;
+  download_count: number;
+  largest_files: StorageObject[];
+  recent_uploads: StorageObject[];
+  storage_growth: Array<{
+    day: string;
+    uploads: number;
+    bytes_added: number;
+  }>;
 }
 
 // ─── Analytics Types ──────────────────────────────────────────────────────────
@@ -211,12 +250,6 @@ export interface QueryAnalytics {
   avg_execution_time_ms: number;
   slow_queries: number;
   error_rate: number;
-}
-
-export interface StorageAnalytics {
-  total_size_bytes: number;
-  bucket_count: number;
-  object_count: number;
 }
 
 // ─── Billing Types ────────────────────────────────────────────────────────────

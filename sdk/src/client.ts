@@ -16,8 +16,16 @@ export interface ZendbxClientOptions {
    */
   apiUrl: string;
 
-  /** Your project's UUID (optional if using project-scoped URL) */
+  /** Your project's UUID or slug */
   projectId?: string;
+
+  /**
+   * Human-readable project slug.
+   * Used by Storage V3, realtime, and other project-scoped APIs.
+   * If omitted, projectId is used as fallback.
+   * @example 'my-project'
+   */
+  projectSlug?: string;
 
   /**
    * The anon (public) API key for unauthenticated requests.
@@ -84,6 +92,7 @@ export class ZendbxClient {
 
   constructor(opts: ZendbxClientOptions) {
     this._projectId = opts.projectId ?? '';
+    const projectSlug = opts.projectSlug ?? opts.projectId ?? '';
     const wsUrl =
       opts.wsUrl ??
       opts.apiUrl.replace(/^http/, 'ws').replace(/:\d+$/, '') + ':8001';
@@ -94,7 +103,7 @@ export class ZendbxClient {
     this.projects = new ProjectsModule(this.httpClient);
     this.ai       = new AIModule(this.httpClient, this._projectId);
     this.db       = new DatabaseModule(this.httpClient, this._projectId);
-    this.storage  = new StorageModule(this.httpClient);
+    this.storage  = new StorageModule(this.httpClient, projectSlug);
     this.backups  = new BackupsModule(this.httpClient);
     this.team     = new TeamModule(this.httpClient, this._projectId);
 
@@ -140,22 +149,25 @@ export class ZendbxClient {
 export function createClient(
   urlOrOptions: string | ZendbxClientOptions,
   anonKey?: string,
-  extra?: { projectId?: string; wsUrl?: string }
+  extra?: { projectId?: string; projectSlug?: string; wsUrl?: string }
 ): ZendbxClient {
   if (typeof urlOrOptions === 'string') {
     if (!anonKey) throw new Error('createClient: anonKey is required');
 
-    // Extract projectId from the URL if it contains /p/{uuid}/
+    // Extract projectSlug from /p/{slug}/ pattern in URL
+    let projectSlug = extra?.projectSlug ?? '';
     let projectId = extra?.projectId ?? '';
-    if (!projectId) {
-      const match = urlOrOptions.match(/\/p\/([0-9a-f-]{36})/i);
-      if (match) projectId = match[1];
+
+    if (!projectSlug && !projectId) {
+      const slugMatch = urlOrOptions.match(/\/p\/([^/]+)/i);
+      if (slugMatch) projectSlug = slugMatch[1];
     }
 
     return new ZendbxClient({
       apiUrl: urlOrOptions,
       anonKey,
       projectId,
+      projectSlug,
       wsUrl: extra?.wsUrl,
     });
   }

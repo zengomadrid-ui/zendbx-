@@ -24,10 +24,19 @@ function formatBytes(bytes: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+/** Returns project slug, falling back to project ID for legacy compatibility. */
+function getProjectSlug(): string {
+  return (
+    localStorage.getItem('current_project_slug') ||
+    localStorage.getItem('current_project_id') ||
+    ''
+  );
+}
+
 export default function BucketsPage() {
   const [buckets, setBuckets] = useState<Bucket[]>([]);
   const [loading, setLoading] = useState(true);
-  const [projectId, setProjectId] = useState('');
+  const [projectSlug, setProjectSlug] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [editBucket, setEditBucket] = useState<Bucket | null>(null);
   const [form, setForm] = useState({ name: '', description: '', is_public: false });
@@ -35,15 +44,16 @@ export default function BucketsPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const pid = localStorage.getItem('current_project_id') || '';
-    setProjectId(pid);
-    if (pid) fetchBuckets(pid);
+    const slug = getProjectSlug();
+    setProjectSlug(slug);
+    if (slug) fetchBuckets(slug);
+    else setLoading(false);
   }, []);
 
-  async function fetchBuckets(pid: string) {
+  async function fetchBuckets(slug: string) {
     setLoading(true);
     try {
-      const res = await apiFetch(`api/storage/buckets?project_id=${pid}`);
+      const res = await apiFetch(`p/${slug}/storage/buckets`);
       if (res.ok) setBuckets(await res.json());
     } finally {
       setLoading(false);
@@ -55,7 +65,7 @@ export default function BucketsPage() {
     setSaving(true);
     setError('');
     try {
-      const res = await apiFetch(`api/storage/buckets?project_id=${projectId}`, {
+      const res = await apiFetch(`p/${projectSlug}/storage/buckets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -67,7 +77,7 @@ export default function BucketsPage() {
       }
       setShowCreate(false);
       setForm({ name: '', description: '', is_public: false });
-      fetchBuckets(projectId);
+      fetchBuckets(projectSlug);
     } finally {
       setSaving(false);
     }
@@ -78,7 +88,8 @@ export default function BucketsPage() {
     setSaving(true);
     setError('');
     try {
-      const res = await apiFetch(`api/storage/buckets/${editBucket.id}?project_id=${projectId}`, {
+      // Use slug for the identifier — V3 resolves both slug and UUID
+      const res = await apiFetch(`p/${projectSlug}/storage/buckets/${editBucket.slug}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -89,7 +100,7 @@ export default function BucketsPage() {
         return;
       }
       setEditBucket(null);
-      fetchBuckets(projectId);
+      fetchBuckets(projectSlug);
     } finally {
       setSaving(false);
     }
@@ -97,8 +108,8 @@ export default function BucketsPage() {
 
   async function handleDelete(bucket: Bucket) {
     if (!confirm(`Delete bucket "${bucket.name}" and all its files? This cannot be undone.`)) return;
-    await apiFetch(`api/storage/buckets/${bucket.id}?project_id=${projectId}`, { method: 'DELETE' });
-    fetchBuckets(projectId);
+    await apiFetch(`p/${projectSlug}/storage/buckets/${bucket.slug}`, { method: 'DELETE' });
+    fetchBuckets(projectSlug);
   }
 
   function openEdit(b: Bucket) {
@@ -167,8 +178,9 @@ export default function BucketsPage() {
               </div>
 
               <div className="flex items-center space-x-2">
+                {/* Link uses bucket slug — no UUID in URL */}
                 <Link
-                  href={`/dashboard/storage/buckets/${b.id}`}
+                  href={`/dashboard/storage/buckets/${b.slug}`}
                   className="flex-1 text-center py-1.5 bg-[#1a1a1a] hover:bg-[#242424] text-white text-xs rounded-lg transition-colors"
                 >
                   Browse Files

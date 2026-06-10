@@ -48,9 +48,7 @@ export class HttpClient {
     };
 
     if (!options.skipAuth) {
-      // Always send anonKey as apikey header (for ProjectContextMiddleware)
       headers['apikey'] = this.anonKey;
-      // Send user JWT as Authorization if logged in, else send anonKey
       const authToken = this._token ?? this.anonKey;
       headers['Authorization'] = `Bearer ${authToken}`;
     }
@@ -86,6 +84,68 @@ export class HttpClient {
         error: { message: (err as Error).message || 'Network error' },
       };
     }
+  }
+
+  /**
+   * Upload multipart/form-data (for file uploads).
+   * Does NOT set Content-Type — browser sets it with the correct boundary.
+   */
+  async requestFormData<T = unknown>(
+    endpoint: string,
+    formData: FormData,
+  ): Promise<ZendbxResponse<T>> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const headers: Record<string, string> = {
+      apikey: this.anonKey,
+      Authorization: `Bearer ${this._token ?? this.anonKey}`,
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const p = payload as Record<string, unknown> | null;
+        return {
+          data: null,
+          error: {
+            message: (p?.detail as string) || (p?.message as string) || `HTTP ${response.status}`,
+            status: response.status,
+            details: payload,
+          },
+        };
+      }
+
+      return { data: payload as T, error: null };
+    } catch (err) {
+      return {
+        data: null,
+        error: { message: (err as Error).message || 'Network error' },
+      };
+    }
+  }
+
+  /**
+   * Return raw Response for streaming operations (e.g. file downloads).
+   */
+  async requestRaw(endpoint: string): Promise<Response> {
+    const url = `${this.baseUrl}${endpoint}`;
+    return fetch(url, {
+      headers: {
+        apikey: this.anonKey,
+        Authorization: `Bearer ${this._token ?? this.anonKey}`,
+      },
+    });
   }
 
   // ─── localStorage helpers (no-op in Node) ──────────────────────────────────

@@ -29,13 +29,21 @@ SKIP_PREFIXES = [
     "/api/storage",
     "/api/admin",
     "/api/ai/",
-    "/api/storage",   # Storage uses its own auth via get_current_user
     "/docs",
     "/openapi.json",
     "/health",
     "/v1/auth/",
+    # Storage v2 handles project resolution internally — skip middleware
+    # Matched via regex in dispatch to handle /p/{any-slug}/storage
 ]
-SKIP_EXACT = {"/", "/health"}
+
+SKIP_EXACT = {"/", "/health", "/docs", "/openapi.json"}
+
+# Regex patterns to skip (can't do substring match cleanly in prefix list)
+import re as _re
+SKIP_PATH_PATTERNS = [
+    _re.compile(r"^/p/[^/]+/storage"),  # /p/{slug}/storage/...
+]
 
 
 class ProjectContextMiddleware(BaseHTTPMiddleware):
@@ -51,6 +59,8 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
         if path in SKIP_EXACT:
             return await call_next(request)
         if any(path.startswith(p) for p in SKIP_PREFIXES):
+            return await call_next(request)
+        if any(pat.match(path) for pat in SKIP_PATH_PATTERNS):
             return await call_next(request)
         if "/v1/auth/" in path:
             return await call_next(request)
