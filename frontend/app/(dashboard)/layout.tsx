@@ -301,8 +301,11 @@ export default function DashboardLayout({
                 .slice(0, 2);
               setActiveProjectInitial(initials);
               
-              // Store current project ID in localStorage for quick access
+              // Store current project ID and slug in localStorage for quick access
               localStorage.setItem('current_project_id', currentProject.id);
+              if (currentProject.slug) {
+                localStorage.setItem('current_project_slug', currentProject.slug);
+              }
               setCurrentProjectId(currentProject.id);
               
               // Update last_selected_project_id in database if it changed

@@ -52,9 +52,17 @@ export default function BucketsPage() {
 
   async function fetchBuckets(slug: string) {
     setLoading(true);
+    setError('');
     try {
       const res = await apiFetch(`p/${slug}/storage/buckets`);
-      if (res.ok) setBuckets(await res.json());
+      if (res.ok) {
+        setBuckets(await res.json());
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setError(d.detail || `Failed to load buckets (${res.status})`);
+      }
+    } catch (e: any) {
+      setError(e.message || 'Network error');
     } finally {
       setLoading(false);
     }
@@ -138,6 +146,17 @@ export default function BucketsPage() {
       {loading ? (
         <div className="flex items-center justify-center h-48">
           <LoadingSpinner size="md" text="Loading buckets..." />
+        </div>
+      ) : error ? (
+        <div className="bg-[#0f0f0f] border border-red-500/20 rounded-xl p-12 text-center">
+          <p className="text-red-400 font-medium">Failed to load buckets</p>
+          <p className="text-sm text-gray-500 mt-1">{error}</p>
+          <button
+            onClick={() => fetchBuckets(projectSlug)}
+            className="mt-4 px-4 py-2 bg-[#1a1a1a] hover:bg-[#242424] text-gray-300 text-sm rounded-lg transition-colors"
+          >
+            Retry
+          </button>
         </div>
       ) : buckets.length === 0 ? (
         <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl p-12 text-center">
