@@ -15,6 +15,17 @@ export { BackupsModule } from './backups';
 export { TeamModule } from './team';
 export { HttpClient } from './http';
 
+// Error classes
+export {
+  ZendbxSDKError,
+  MissingConfigError,
+  InvalidUrlError,
+  AuthExpiredError,
+  UploadPayloadError,
+  ProjectNotFoundError,
+  StorageProviderError,
+} from './errors';
+
 export type {
   ZendbxResponse,
   ZendbxError,
@@ -23,6 +34,8 @@ export type {
   AuthData,
   SignUpCredentials,
   SignInCredentials,
+  AuthChangeEvent,
+  AuthStateSubscription,
   Project,
   ProjectKeys,
   CreateProjectInput,

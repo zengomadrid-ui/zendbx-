@@ -8,76 +8,86 @@ import { RealtimeModule } from './realtime';
 import { StorageModule } from './storage';
 import { BackupsModule } from './backups';
 import { TeamModule } from './team';
+import { MissingConfigError, InvalidUrlError } from './errors';
 
 export interface ZendbxClientOptions {
   /**
-   * Base URL of your ZENDBX backend.
+   * Base URL of your ZendBX backend.
    * @example 'https://api.zendbx.in'
    */
   apiUrl: string;
 
-  /** Your project's UUID or slug */
+  /**
+   * Your project UUID (from the ZendBX dashboard).
+   * Used for auth, realtime, and legacy APIs.
+   */
   projectId?: string;
 
   /**
-   * Human-readable project slug.
-   * Used by Storage V3, realtime, and other project-scoped APIs.
-   * If omitted, projectId is used as fallback.
+   * Your project slug (human-readable identifier).
+   * Used for Storage V3 and project-scoped REST APIs.
    * @example 'my-project'
    */
   projectSlug?: string;
 
   /**
-   * The anon (public) API key for unauthenticated requests.
+   * The anon (public) API key.
    * Found in Project Settings → API Keys.
    */
   anonKey: string;
 
   /**
    * WebSocket server URL for realtime features.
-   * Defaults to the same host on port 8001 if not provided.
+   * Defaults to same host on port 8001.
    */
   wsUrl?: string;
 }
 
 /**
- * ZENDBX JavaScript / TypeScript SDK
+ * ZendBX JavaScript / TypeScript SDK
  *
  * @example
  * ```ts
  * import { createClient } from '@zendbx/sdk'
  *
- * const zendbx = createClient('https://api.zendbx.in', 'your-anon-key', {
- *   projectId: 'your-project-uuid',
+ * const client = createClient({
+ *   apiUrl: 'https://api.zendbx.in',
+ *   anonKey: 'your-anon-key',
+ *   projectSlug: 'my-project',
  * })
  *
  * // Auth
- * const { data, error } = await zendbx.auth.signIn({ email, password })
+ * const { data } = await client.auth.signIn({ email, password })
  *
- * // CRUD
- * const { data } = await zendbx.from('posts').select('*').eq('published', true).limit(10).execute()
+ * // Reactive auth state
+ * client.auth.onAuthStateChange((event, session) => {
+ *   console.log(event, session?.user)
+ * })
  *
- * // AI
- * const { data } = await zendbx.ai.generateSQL('show top 5 users by post count')
+ * // CRUD (direct await — no .execute() needed)
+ * const { data } = await client.from('users').select('*').eq('status', 'active').limit(10)
+ *
+ * // Storage
+ * const { data } = await client.storage.bucket('resumes').upload(file)
  * ```
  */
 export class ZendbxClient {
-  /** Authentication — sign up, sign in, sign out, sessions, password reset */
+  /** Authentication — signUp, signIn, signOut, onAuthStateChange */
   readonly auth: AuthModule;
 
-  /** Project management — CRUD + API key management */
+  /** Project management — CRUD + API keys */
   readonly projects: ProjectsModule;
 
-  /** AI features — natural language to SQL, explain, auto-fix */
+  /** AI features — generateSQL, explainSQL, fixSQL */
   readonly ai: AIModule;
 
-  /** Database — raw SQL, schema management, RLS policies, saved queries */
+  /** Database — raw SQL, schema, RLS, saved queries */
   readonly db: DatabaseModule;
 
-  /** Realtime — WebSocket subscriptions for table changes */
+  /** Realtime — WebSocket subscriptions */
   readonly realtime: RealtimeModule;
 
-  /** Object storage — buckets and file operations */
+  /** Object storage — bucket(slug).upload/download/delete/list */
   readonly storage: StorageModule;
 
   /** Backup & restore */
@@ -91,8 +101,22 @@ export class ZendbxClient {
   private readonly _projectId: string;
 
   constructor(opts: ZendbxClientOptions) {
-    this._projectId = opts.projectId ?? '';
+    if (!opts.apiUrl) throw new MissingConfigError('apiUrl');
+    if (!opts.anonKey) throw new MissingConfigError('anonKey');
+
+    try {
+      new URL(opts.apiUrl);
+    } catch {
+      throw new InvalidUrlError(opts.apiUrl);
+    }
+
+    if (!opts.projectId && !opts.projectSlug) {
+      throw new MissingConfigError('projectId or projectSlug');
+    }
+
+    this._projectId = opts.projectId ?? opts.projectSlug ?? '';
     const projectSlug = opts.projectSlug ?? opts.projectId ?? '';
+
     const wsUrl =
       opts.wsUrl ??
       opts.apiUrl.replace(/^http/, 'ws').replace(/:\d+$/, '') + ':8001';
@@ -111,56 +135,58 @@ export class ZendbxClient {
       this._projectId,
       wsUrl,
       () => this.httpClient.token,
-      opts.anonKey
+      opts.anonKey,
     );
   }
 
   /**
    * Start a chainable query against any table.
+   * Directly awaitable — no `.execute()` needed.
    *
    * @example
-   * const { data } = await zendbx.from('users').select('*').eq('status', 'active').limit(10)
-   * const { data } = await zendbx.from('users').insert({ name: 'John' })
-   * const { data } = await zendbx.from('users').update({ name: 'Jane' }).eq('id', 1)
-   * const { data } = await zendbx.from('users').delete().eq('id', 1)
+   * const { data } = await client.from('users').select('*').eq('status', 'active').limit(10)
+   * const { data } = await client.from('posts').insert({ title: 'Hello' })
+   * const { data } = await client.from('users').update({ name: 'Jane' }).eq('id', 1)
+   * const { data } = await client.from('users').delete().eq('id', 1)
    */
   from<Row extends Record<string, unknown> = Record<string, unknown>>(
-    table: string
+    table: string,
   ): TableBuilder<Row> {
     return new TableBuilder<Row>(this.httpClient, table, this._projectId);
   }
 }
 
 /**
- * Create a new ZENDBX client instance.
- *
- * Supports two calling conventions:
+ * Create a ZendBX client instance.
  *
  * @example
- * // 2-arg (recommended — project context embedded in key/URL)
- * const db = createClient(process.env.ZENDBX_URL!, process.env.ZENDBX_API_KEY!)
+ * // Options object (recommended)
+ * const client = createClient({
+ *   apiUrl: 'https://api.zendbx.in',
+ *   anonKey: 'your-anon-key',
+ *   projectSlug: 'my-project',
+ * })
  *
- * // 3-arg (explicit project ID)
- * const db = createClient('https://api.zendbx.in', 'anon-key', { projectId: 'uuid' })
- *
- * // Options object
- * const db = createClient({ apiUrl: '...', anonKey: '...', projectId: '...' })
+ * // Positional args
+ * const client = createClient('https://api.zendbx.in', 'anon-key', {
+ *   projectSlug: 'my-project',
+ * })
  */
 export function createClient(
   urlOrOptions: string | ZendbxClientOptions,
   anonKey?: string,
-  extra?: { projectId?: string; projectSlug?: string; wsUrl?: string }
+  extra?: { projectId?: string; projectSlug?: string; wsUrl?: string },
 ): ZendbxClient {
   if (typeof urlOrOptions === 'string') {
-    if (!anonKey) throw new Error('createClient: anonKey is required');
+    if (!anonKey) throw new MissingConfigError('anonKey');
 
-    // Extract projectSlug from /p/{slug}/ pattern in URL
     let projectSlug = extra?.projectSlug ?? '';
-    let projectId = extra?.projectId ?? '';
+    const projectId = extra?.projectId ?? '';
 
+    // Auto-extract slug from URL pattern /p/{slug}
     if (!projectSlug && !projectId) {
-      const slugMatch = urlOrOptions.match(/\/p\/([^/]+)/i);
-      if (slugMatch) projectSlug = slugMatch[1];
+      const match = urlOrOptions.match(/\/p\/([^/?#]+)/i);
+      if (match) projectSlug = match[1];
     }
 
     return new ZendbxClient({
@@ -171,5 +197,6 @@ export function createClient(
       wsUrl: extra?.wsUrl,
     });
   }
+
   return new ZendbxClient(urlOrOptions);
 }

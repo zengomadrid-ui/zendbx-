@@ -6,19 +6,27 @@ import type {
   AuthData,
   SignUpCredentials,
   SignInCredentials,
+  AuthChangeEvent,
+  AuthStateSubscription,
 } from './types';
 
+type AuthChangeCallback = (event: AuthChangeEvent, session: Session | null) => void;
+
 export class AuthModule {
+  private _listeners = new Set<AuthChangeCallback>();
+
   constructor(
     private http: HttpClient,
-    private projectId: string
+    private projectId: string,
   ) {}
 
+  // ─── Core Auth Methods ────────────────────────────────────────────────────
+
   /**
-   * Sign up a new user in your project.
+   * Sign up a new user.
    *
    * @example
-   * const { data, error } = await zendbx.auth.signUp({ email, password })
+   * const { data, error } = await client.auth.signUp({ email, password })
    */
   async signUp(credentials: SignUpCredentials): Promise<ZendbxResponse<AuthData>> {
     const { email, password, name } = credentials;
@@ -28,25 +36,33 @@ export class AuthModule {
       {
         method: 'POST',
         body: { email, password, name: name ?? email.split('@')[0] },
-      }
+      },
     );
 
-    return this._toAuthData(result);
+    const auth = this._toAuthData(result);
+    if (auth.data?.session) {
+      this._emit('SIGNED_IN', auth.data.session);
+    }
+    return auth;
   }
 
   /**
    * Sign in with email and password.
    *
    * @example
-   * const { data, error } = await zendbx.auth.signIn({ email, password })
+   * const { data, error } = await client.auth.signIn({ email, password })
    */
   async signIn(credentials: SignInCredentials): Promise<ZendbxResponse<AuthData>> {
     const result = await this.http.request<{ access_token: string; user: User }>(
       `/v1/auth/${this.projectId}/login`,
-      { method: 'POST', body: credentials }
+      { method: 'POST', body: credentials },
     );
 
-    return this._toAuthData(result);
+    const auth = this._toAuthData(result);
+    if (auth.data?.session) {
+      this._emit('SIGNED_IN', auth.data.session);
+    }
+    return auth;
   }
 
   /** Alias matching Supabase's signInWithPassword */
@@ -62,7 +78,14 @@ export class AuthModule {
 
     const result = await this.http.request<User>(`/v1/auth/${this.projectId}/user`);
 
-    if (result.error) return { data: { user: null }, error: result.error };
+    if (result.error) {
+      // Token expired or invalid
+      if (result.error.status === 401) {
+        this.http.clearToken();
+        this._emit('SIGNED_OUT', null);
+      }
+      return { data: { user: null }, error: result.error };
+    }
     return { data: { user: result.data }, error: null };
   }
 
@@ -97,6 +120,7 @@ export class AuthModule {
    */
   async signOut(): Promise<ZendbxResponse<null>> {
     this.http.clearToken();
+    this._emit('SIGNED_OUT', null);
     return { data: null, error: null };
   }
 
@@ -104,10 +128,12 @@ export class AuthModule {
    * Request a password reset email.
    */
   async resetPassword(email: string): Promise<ZendbxResponse<{ message: string }>> {
-    return this.http.request('/api/auth/forgot-password', {
+    const result = await this.http.request<{ message: string }>('/api/auth/forgot-password', {
       method: 'POST',
       body: { email },
     });
+    if (!result.error) this._emit('PASSWORD_RECOVERY', null);
+    return result;
   }
 
   /**
@@ -120,10 +146,91 @@ export class AuthModule {
     });
   }
 
-  // ─── Private helpers ───────────────────────────────────────────────────────
+  /**
+   * Update the currently authenticated user's profile.
+   */
+  async updateUser(updates: { name?: string; email?: string }): Promise<ZendbxResponse<User>> {
+    const result = await this.http.request<User>(`/v1/auth/${this.projectId}/user`, {
+      method: 'PATCH',
+      body: updates,
+    });
+    if (result.data) {
+      const session = this.http.token
+        ? { access_token: this.http.token, token_type: 'bearer' as const, user: result.data, expires_in: 604800 }
+        : null;
+      this._emit('USER_UPDATED', session);
+    }
+    return result;
+  }
+
+  // ─── Auth State Listener ──────────────────────────────────────────────────
+
+  /**
+   * Subscribe to authentication state changes.
+   *
+   * Events: SIGNED_IN | SIGNED_OUT | TOKEN_REFRESHED | USER_UPDATED | PASSWORD_RECOVERY
+   *
+   * @returns An object with an `unsubscribe()` method.
+   *
+   * @example
+   * const { unsubscribe } = client.auth.onAuthStateChange((event, session) => {
+   *   if (event === 'SIGNED_IN') console.log('User signed in:', session?.user)
+   *   if (event === 'SIGNED_OUT') console.log('User signed out')
+   * })
+   *
+   * // Later, stop listening:
+   * unsubscribe()
+   */
+  onAuthStateChange(callback: AuthChangeCallback): AuthStateSubscription {
+    this._listeners.add(callback);
+
+    // Fire immediately with current state
+    const currentSession = this.http.token
+      ? this._buildLocalSession()
+      : null;
+    queueMicrotask(() => {
+      callback(currentSession ? 'SIGNED_IN' : 'SIGNED_OUT', currentSession);
+    });
+
+    return {
+      unsubscribe: () => {
+        this._listeners.delete(callback);
+      },
+      data: {
+        subscription: {
+          unsubscribe: () => {
+            this._listeners.delete(callback);
+          },
+        },
+      },
+    };
+  }
+
+  // ─── Private ──────────────────────────────────────────────────────────────
+
+  private _emit(event: AuthChangeEvent, session: Session | null): void {
+    for (const cb of this._listeners) {
+      try {
+        cb(event, session);
+      } catch {
+        // Never let a subscriber crash the SDK
+      }
+    }
+  }
+
+  private _buildLocalSession(): Session | null {
+    if (!this.http.token) return null;
+    // We don't have user data locally without an API call — return minimal session
+    return {
+      access_token: this.http.token,
+      token_type: 'bearer',
+      user: { id: '', email: '' },
+      expires_in: 604800,
+    };
+  }
 
   private _toAuthData(
-    result: ZendbxResponse<{ access_token: string; user: User }>
+    result: ZendbxResponse<{ access_token: string; user: User }>,
   ): ZendbxResponse<AuthData> {
     if (result.error) return { data: null, error: result.error };
 

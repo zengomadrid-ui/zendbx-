@@ -45,6 +45,23 @@ export interface SignInCredentials {
   password: string;
 }
 
+// Auth state change events
+export type AuthChangeEvent =
+  | 'SIGNED_IN'
+  | 'SIGNED_OUT'
+  | 'TOKEN_REFRESHED'
+  | 'USER_UPDATED'
+  | 'PASSWORD_RECOVERY';
+
+export interface AuthStateSubscription {
+  unsubscribe: () => void;
+  data: {
+    subscription: {
+      unsubscribe: () => void;
+    };
+  };
+}
+
 // ─── Query Builder Types ─────────────────────────────────────────────────────
 
 export type FilterOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'ilike' | 'in' | 'is';
