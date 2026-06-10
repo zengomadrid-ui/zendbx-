@@ -307,6 +307,11 @@ export default function DashboardLayout({
                 localStorage.setItem('current_project_slug', currentProject.slug);
               }
               setCurrentProjectId(currentProject.id);
+
+              // Sync dashboard auth token into SDK namespace so SDK requests
+              // send the platform user JWT, not the anon key, as the Bearer token
+              const dashToken = localStorage.getItem('token');
+              if (dashToken) localStorage.setItem('zendbx_token', dashToken);
               
               // Update last_selected_project_id in database if it changed
               if (userData.last_selected_project_id !== currentProject.id) {
