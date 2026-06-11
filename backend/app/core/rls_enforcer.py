@@ -92,10 +92,25 @@ class RLSEnforcer:
                     detail="Access denied by row level security policy"
                 )
             except asyncpg.exceptions.PostgresError as e:
-                logger.error(f"Database error: {str(e)}")
+                logger.error(
+                    f"PostgreSQL error in execute(): "
+                    f"sqlstate={getattr(e, 'sqlstate', None)} "
+                    f"message={str(e)} "
+                    f"detail={getattr(e, 'detail', None)} "
+                    f"hint={getattr(e, 'hint', None)} "
+                    f"constraint={getattr(e, 'constraint_name', None)} "
+                    f"column={getattr(e, 'column_name', None)}"
+                )
                 raise HTTPException(
                     status_code=500,
-                    detail="Database error occurred"
+                    detail={
+                        "message": str(e),
+                        "sqlstate": getattr(e, "sqlstate", None),
+                        "detail": getattr(e, "detail", None),
+                        "hint": getattr(e, "hint", None),
+                        "constraint": getattr(e, "constraint_name", None),
+                        "column": getattr(e, "column_name", None),
+                    },
                 )
             finally:
                 # Always clear context
@@ -134,10 +149,25 @@ class RLSEnforcer:
                     detail="Access denied by row level security policy"
                 )
             except asyncpg.exceptions.PostgresError as e:
-                logger.error(f"Database error: {str(e)}")
+                logger.error(
+                    f"PostgreSQL error in execute_one(): "
+                    f"sqlstate={getattr(e, 'sqlstate', None)} "
+                    f"message={str(e)} "
+                    f"detail={getattr(e, 'detail', None)} "
+                    f"hint={getattr(e, 'hint', None)} "
+                    f"constraint={getattr(e, 'constraint_name', None)} "
+                    f"column={getattr(e, 'column_name', None)}"
+                )
                 raise HTTPException(
                     status_code=500,
-                    detail="Database error occurred"
+                    detail={
+                        "message": str(e),
+                        "sqlstate": getattr(e, "sqlstate", None),
+                        "detail": getattr(e, "detail", None),
+                        "hint": getattr(e, "hint", None),
+                        "constraint": getattr(e, "constraint_name", None),
+                        "column": getattr(e, "column_name", None),
+                    },
                 )
             finally:
                 await clear_rls_context(conn)
@@ -175,10 +205,25 @@ class RLSEnforcer:
                     detail="Access denied by row level security policy"
                 )
             except asyncpg.exceptions.PostgresError as e:
-                logger.error(f"Database error: {str(e)}")
+                logger.error(
+                    f"PostgreSQL error in execute_command(): "
+                    f"sqlstate={getattr(e, 'sqlstate', None)} "
+                    f"message={str(e)} "
+                    f"detail={getattr(e, 'detail', None)} "
+                    f"hint={getattr(e, 'hint', None)} "
+                    f"constraint={getattr(e, 'constraint_name', None)} "
+                    f"column={getattr(e, 'column_name', None)}"
+                )
                 raise HTTPException(
                     status_code=500,
-                    detail="Database error occurred"
+                    detail={
+                        "message": str(e),
+                        "sqlstate": getattr(e, "sqlstate", None),
+                        "detail": getattr(e, "detail", None),
+                        "hint": getattr(e, "hint", None),
+                        "constraint": getattr(e, "constraint_name", None),
+                        "column": getattr(e, "column_name", None),
+                    },
                 )
             finally:
                 await clear_rls_context(conn)
