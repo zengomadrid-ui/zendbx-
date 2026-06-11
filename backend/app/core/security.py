@@ -295,3 +295,146 @@ async def get_current_user_from_token(authorization: str = Header(...)) -> UserR
 
 # Alias for backward compatibility
 get_current_user = get_current_user_from_token
+
+
+# ============================================
+# UNIFIED AUTHENTICATION RESOLVER
+# ============================================
+
+from fastapi import Request
+import re as _re
+
+_PROJECT_SLUG_RE = _re.compile(r"^/p/([^/]+)")
+
+
+async def resolve_principal(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+) -> dict:
+    """
+    Unified auth dependency for endpoints that serve both dashboard users
+    (platform JWTs) and SDK users (project-scoped JWTs).
+
+    Resolution order:
+      1. Platform JWT  — signed with settings.SECRET_KEY, sub = platform user UUID
+      2. Project JWT   — signed with project.jwt_secret, role = 'authenticated'
+         Project is identified from /p/{slug} path or 'apikey' header.
+
+    Returns a normalized principal dict:
+      {
+        "user_id":      str,
+        "email":        str | None,
+        "plan":         str | None,
+        "token_type":   "platform" | "project",
+        "project_id":   str | None,   # only for project tokens
+      }
+
+    Raises 401 for missing / invalid tokens.
+    Raises 403 for inactive accounts.
+    """
+    from .database import get_main_db_pool
+
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Provide Authorization: Bearer <token>.",
+        )
+
+    token = authorization[7:].strip()
+
+    # ── 1. Try platform JWT ────────────────────────────────────────────────
+    payload = decode_access_token(token)
+    if payload:
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Could not validate credentials")
+
+        pool = await get_main_db_pool()
+        async with pool.acquire() as conn:
+            user = await conn.fetchrow(
+                "SELECT id, email, full_name, is_active, plan FROM users WHERE id = $1",
+                user_id,
+            )
+
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="User not found")
+        if not user["is_active"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="User account is inactive")
+
+        return {
+            "user_id": str(user["id"]),
+            "email": user["email"],
+            "plan": user["plan"],
+            "token_type": "platform",
+            "project_id": None,
+        }
+
+    # ── 2. Try project-scoped JWT ──────────────────────────────────────────
+    # Identify the project from the path (/p/{slug}/...) or apikey header.
+    project_identifier = None
+
+    path = request.url.path
+    m = _PROJECT_SLUG_RE.match(path)
+    if m:
+        project_identifier = m.group(1)
+
+    if not project_identifier:
+        project_identifier = request.headers.get("apikey") or request.headers.get("x-project-id")
+
+    if not project_identifier:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials. Token is not a valid platform JWT "
+                   "and no project context was found to attempt project-scoped validation.",
+        )
+
+    pool = await get_main_db_pool()
+    async with pool.acquire() as conn:
+        # Resolve slug or UUID
+        try:
+            import uuid as _uuid
+            _uuid.UUID(project_identifier)
+            project = await conn.fetchrow(
+                "SELECT id, jwt_secret FROM projects WHERE id = $1", project_identifier
+            )
+        except ValueError:
+            project = await conn.fetchrow(
+                "SELECT id, jwt_secret FROM projects WHERE slug = $1", project_identifier
+            )
+
+    if not project or not project["jwt_secret"]:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Could not validate credentials")
+
+    import jwt as _pyjwt
+    try:
+        proj_payload = _pyjwt.decode(token, project["jwt_secret"], algorithms=["HS256"])
+    except _pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Token expired")
+    except _pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Could not validate credentials")
+
+    role = proj_payload.get("role", "")
+    # Accept authenticated users and service_role — reject bare anon keys
+    if role not in ("authenticated", "service_role"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Anonymous key cannot be used for authenticated requests. "
+                   "Call auth.signIn() to get a user token.",
+        )
+
+    user_id = proj_payload.get("sub") or proj_payload.get("user_id")
+    email = proj_payload.get("email")
+
+    return {
+        "user_id": user_id or f"service:{project['id']}",
+        "email": email,
+        "plan": None,
+        "token_type": "project",
+        "project_id": str(project["id"]),
+    }

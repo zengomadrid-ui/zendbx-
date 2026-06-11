@@ -1,39 +1,62 @@
-import type { ZendbxResponse, ZendbxError } from './types';
+﻿import type { ZendbxResponse } from './types';
 
 export interface RequestOptions {
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
-  /** Skip adding auth header (for public endpoints) */
   skipAuth?: boolean;
+  allowAnon?: boolean;
+}
+
+export interface HttpClientOptions {
+  accessToken?: string;
+  getAccessToken?: () => string | null | Promise<string | null>;
+  storageKey?: string | null;
 }
 
 export class HttpClient {
-  /** @internal exposed for modules that need to build absolute URLs (e.g. storage) */
   readonly baseUrl: string;
-  private anonKey: string;
-  private projectId: string;
+  private readonly anonKey: string;
   private _token: string | null = null;
+  private readonly _getAccessToken: (() => string | null | Promise<string | null>) | null;
+  private readonly _storageKey: string | null;
 
-  constructor(apiUrl: string, anonKey: string, projectId: string) {
+  constructor(
+    apiUrl: string,
+    anonKey: string,
+    _projectId: string,
+    opts: HttpClientOptions = {},
+  ) {
     this.baseUrl = apiUrl.replace(/\/$/, '');
     this.anonKey = anonKey;
-    this.projectId = projectId;
-    this._loadStoredToken();
+    this._getAccessToken = opts.getAccessToken ?? null;
+    this._storageKey = opts.storageKey !== undefined ? opts.storageKey : 'zendbx_token';
+    if (opts.accessToken) {
+      this._token = opts.accessToken;
+    } else {
+      this._loadStoredToken();
+    }
   }
 
-  get token(): string | null {
-    return this._token;
-  }
+  get token(): string | null { return this._token; }
 
   setToken(token: string): void {
     this._token = token;
-    this._persist('zendbx_token', token);
+    if (this._storageKey) this._persist(this._storageKey, token);
   }
 
   clearToken(): void {
     this._token = null;
-    this._clear('zendbx_token');
+    if (this._storageKey) this._clear(this._storageKey);
+  }
+
+  async resolveToken(): Promise<string | null> {
+    if (this._token) return this._token;
+    if (this._getAccessToken) {
+      const t = await this._getAccessToken();
+      if (t) return t;
+    }
+    return null;
   }
 
   async request<T = unknown>(
@@ -41,7 +64,6 @@ export class HttpClient {
     options: RequestOptions = {},
   ): Promise<ZendbxResponse<T>> {
     const url = `${this.baseUrl}${endpoint}`;
-
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers ?? {}),
@@ -49,8 +71,20 @@ export class HttpClient {
 
     if (!options.skipAuth) {
       headers['apikey'] = this.anonKey;
-      const authToken = this._token ?? this.anonKey;
-      headers['Authorization'] = `Bearer ${authToken}`;
+      const userToken = await this.resolveToken();
+      if (userToken) {
+        headers['Authorization'] = `Bearer ${userToken}`;
+      } else if (options.allowAnon) {
+        headers['Authorization'] = `Bearer ${this.anonKey}`;
+      } else {
+        return {
+          data: null,
+          error: {
+            message: 'No authenticated session. Call auth.signIn() or provide getAccessToken() in createClient().',
+            status: 401,
+          },
+        };
+      }
     }
 
     try {
@@ -59,116 +93,80 @@ export class HttpClient {
         headers,
         body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       });
-
       let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch {
-        payload = null;
-      }
-
+      try { payload = await response.json(); } catch { payload = null; }
       if (!response.ok) {
         const p = payload as Record<string, unknown> | null;
-        const error: ZendbxError = {
-          message: this._friendlyMessage(response.status, p),
-          status: response.status,
-          details: payload,
-        };
-        return { data: null, error };
+        return { data: null, error: { message: this._msg(response.status, p), status: response.status, details: payload } };
       }
-
       return { data: payload as T, error: null };
     } catch (err) {
-      return {
-        data: null,
-        error: { message: (err as Error).message || 'Network error — check your API URL and internet connection.' },
-      };
+      return { data: null, error: { message: (err as Error).message || 'Network error.' } };
     }
   }
 
-  /**
-   * Upload multipart/form-data. Does NOT set Content-Type — browser sets the correct boundary.
-   */
   async requestFormData<T = unknown>(
     endpoint: string,
     formData: FormData,
   ): Promise<ZendbxResponse<T>> {
+    const userToken = await this.resolveToken();
+    if (!userToken) {
+      return {
+        data: null,
+        error: {
+          message: 'No authenticated session. Call auth.signIn() or provide getAccessToken() in createClient().',
+          status: 401,
+        },
+      };
+    }
     const url = `${this.baseUrl}${endpoint}`;
     const headers: Record<string, string> = {
       apikey: this.anonKey,
-      Authorization: `Bearer ${this._token ?? this.anonKey}`,
+      Authorization: `Bearer ${userToken}`,
     };
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: formData,
-      });
-
+      const response = await fetch(url, { method: 'POST', headers, body: formData });
       let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch {
-        payload = null;
-      }
-
+      try { payload = await response.json(); } catch { payload = null; }
       if (!response.ok) {
         const p = payload as Record<string, unknown> | null;
-        return {
-          data: null,
-          error: {
-            message: this._friendlyMessage(response.status, p),
-            status: response.status,
-            details: payload,
-          },
-        };
+        return { data: null, error: { message: this._msg(response.status, p), status: response.status, details: payload } };
       }
-
       return { data: payload as T, error: null };
     } catch (err) {
-      return {
-        data: null,
-        error: { message: (err as Error).message || 'Network error during file upload.' },
-      };
+      return { data: null, error: { message: (err as Error).message || 'Network error during upload.' } };
     }
   }
 
-  /**
-   * Return raw Response for streaming downloads.
-   */
   async requestRaw(endpoint: string): Promise<Response> {
+    const userToken = await this.resolveToken();
     const url = `${this.baseUrl}${endpoint}`;
     return fetch(url, {
       headers: {
         apikey: this.anonKey,
-        Authorization: `Bearer ${this._token ?? this.anonKey}`,
+        Authorization: `Bearer ${userToken ?? this.anonKey}`,
       },
     });
   }
 
-  // ─── Private helpers ───────────────────────────────────────────────────────
-
-  private _friendlyMessage(status: number, payload: Record<string, unknown> | null): string {
-    const serverMsg = (payload?.detail as string) || (payload?.message as string);
-    if (serverMsg) return serverMsg;
-
+  private _msg(status: number, payload: Record<string, unknown> | null): string {
+    const s = (payload?.detail as string) || (payload?.message as string);
+    if (s) return s;
     switch (status) {
-      case 400: return 'Bad request — check the data you are sending.';
-      case 401: return 'Authentication token expired or invalid. Call client.auth.signIn() to get a new token.';
-      case 403: return 'Permission denied — you do not have access to this resource.';
-      case 404: return 'Resource not found — check your project slug, bucket name, or file ID.';
-      case 409: return 'Conflict — a resource with this name already exists.';
+      case 400: return 'Bad request.';
+      case 401: return 'Authentication token expired or invalid. Call client.auth.signIn() to refresh.';
+      case 403: return 'Permission denied.';
+      case 404: return 'Resource not found.';
+      case 409: return 'Conflict.';
       case 413: return 'File too large or storage quota exceeded.';
-      case 415: return 'Unsupported file type — check the MIME type of the file you are uploading.';
-      case 503: return 'Storage provider unavailable — configure B2_KEY_ID and B2_APPLICATION_KEY on the server.';
+      case 503: return 'Storage provider unavailable.';
       default:  return `HTTP ${status} error.`;
     }
   }
 
   private _loadStoredToken(): void {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const stored = localStorage.getItem('zendbx_token');
+    if (this._storageKey && typeof window !== 'undefined' && window.localStorage) {
+      const stored = localStorage.getItem(this._storageKey);
       if (stored) this._token = stored;
     }
   }
