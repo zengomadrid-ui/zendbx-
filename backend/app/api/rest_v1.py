@@ -12,7 +12,6 @@ from typing import Optional, Dict, Any, List
 import logging
 from uuid import UUID
 
-from ..services.auto_table import ensure_table_exists
 from ..core.rls_enforcer import RLSEnforcer, get_rls_enforcer
 from ..middleware.rls_context import set_rls_context
 
@@ -43,20 +42,27 @@ async def create_record(
     logger.info(f"POST /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}, Schema: {schema}")
     
     try:
-        # Ensure table exists in the correct project schema
-        await ensure_table_exists(pool, table_name, data, schema=schema)
-        
-        # Prepare insert query
+        # Parse schema.table notation (e.g. "zenhire.resumes" → schema=zenhire, table=resumes)
+        if '.' in table_name:
+            schema_part, bare_table = table_name.split('.', 1)
+            qualified_table = f'"{schema_part}"."{bare_table}"'
+        else:
+            bare_table = table_name
+            qualified_table = f'"{schema}"."{bare_table}"' if schema else f'"{bare_table}"'
+
+        # Prepare insert query — never create tables here
         columns = list(data.keys())
         values = list(data.values())
         placeholders = [f"${i+1}" for i in range(len(values))]
-        
+
         query = f"""
-            INSERT INTO {table_name} ({', '.join(columns)})
+            INSERT INTO {qualified_table} ({', '.join(f'"{c}"' for c in columns)})
             VALUES ({', '.join(placeholders)})
             RETURNING *
         """
-        
+
+        logger.info(f"Executing: INSERT INTO {qualified_table} columns={columns}")
+
         # Insert data with RLS enforcement
         result = await enforcer.execute_one(pool, query, *values)
         
@@ -99,6 +105,14 @@ async def get_records(
     logger.info(f"GET /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
     try:
+        # Parse schema.table notation
+        if '.' in table_name:
+            schema_part, bare_table = table_name.split('.', 1)
+            qualified_table = f'"{schema_part}"."{bare_table}"'
+        else:
+            schema = enforcer.schema or getattr(request.state, 'project_schema', None)
+            qualified_table = f'"{schema}"."{table_name}"' if schema else f'"{table_name}"'
+
         # Build WHERE conditions from ALL query params (Supabase-style)
         where_parts = []
         params = []
@@ -109,11 +123,11 @@ async def get_records(
             if key in skip_keys:
                 continue
             actual_val = val[3:] if val.startswith("eq.") else val
-            where_parts.append(f"{key} = ${param_idx}")
+            where_parts.append(f'"{key}" = ${param_idx}')
             params.append(actual_val)
             param_idx += 1
 
-        query = f"SELECT {select} FROM {table_name}"
+        query = f"SELECT {select} FROM {qualified_table}"
         if where_parts:
             query += " WHERE " + " AND ".join(where_parts)
 
@@ -167,6 +181,16 @@ async def update_record(
         raise HTTPException(status_code=400, detail="Missing filter parameter (id or user_id required)")
     
     try:
+        # Parse schema.table notation
+        schema = enforcer.schema or getattr(request.state, 'project_schema', None)
+        if '.' in table_name:
+            schema_part, bare_table = table_name.split('.', 1)
+            qualified_table = f'"{schema_part}"."{bare_table}"'
+            bare_table_name = bare_table
+        else:
+            qualified_table = f'"{schema}"."{table_name}"' if schema else f'"{table_name}"'
+            bare_table_name = table_name
+
         # Determine filter
         if id:
             filter_col = "id"
@@ -195,13 +219,13 @@ async def update_record(
                     SELECT 1 FROM information_schema.columns
                     WHERE table_name = $1 AND column_name = 'updated_at'
                 )
-            """, table_name)
+            """, bare_table_name)
         
         if has_updated_at:
             set_parts.append("updated_at = NOW()")
         
         query = f"""
-            UPDATE {table_name}
+            UPDATE {qualified_table}
             SET {', '.join(set_parts)}
             WHERE {filter_col} = $1
             RETURNING *
@@ -216,7 +240,7 @@ async def update_record(
                 detail="Record not found or update blocked by row level security policy"
             )
         
-        logger.info(f"Record updated in {table_name}: {id_value}")
+        logger.info(f"Record updated in {qualified_table}: {filter_val}")
         return dict(result)
         
     except HTTPException:
@@ -247,27 +271,31 @@ async def delete_record(
         raise HTTPException(status_code=400, detail="Missing id parameter")
     
     try:
-        # Parse ID
-        if id.startswith("eq."):
-            id_value = id[3:]
+        # Parse schema.table notation
+        schema = enforcer.schema or getattr(request.state, 'project_schema', None)
+        if '.' in table_name:
+            schema_part, bare_table = table_name.split('.', 1)
+            qualified_table = f'"{schema_part}"."{bare_table}"'
         else:
-            id_value = id
+            qualified_table = f'"{schema}"."{table_name}"' if schema else f'"{table_name}"'
+
+        # Parse ID
+        id_value = id[3:] if id.startswith("eq.") else id
         
         # Execute delete with RLS enforcement
         result = await enforcer.execute_command(
             pool,
-            f"DELETE FROM {table_name} WHERE id = $1",
+            f"DELETE FROM {qualified_table} WHERE id = $1",
             id_value
         )
         
-        # Check if record was deleted
         if result == "DELETE 0":
             raise HTTPException(
                 status_code=404,
                 detail="Record not found or delete blocked by row level security policy"
             )
         
-        logger.info(f"Record deleted from {table_name}: {id_value}")
+        logger.info(f"Record deleted from {qualified_table}: {id_value}")
         return {"message": "Record deleted successfully", "id": id_value}
         
     except HTTPException:
