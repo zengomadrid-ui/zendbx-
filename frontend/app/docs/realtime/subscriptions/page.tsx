@@ -1,3 +1,5 @@
 ﻿import { StubPage } from '../../_stub';
-export default function Page() { return <StubPage Subscriptions="Subscriptions" Realtime="Realtime" Realtime/docs/realtime="/docs/realtime" />; }
+export default function Page() { 
+  return <StubPage title="Subscriptions" parent="Realtime" parentHref="/docs/realtime" />; 
+}
 

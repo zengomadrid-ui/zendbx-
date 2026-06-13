@@ -1,3 +1,5 @@
 ﻿import { StubPage } from '../../_stub';
-export default function Page() { return <StubPage SDK Realtime="SDK Realtime" SDK="SDK" SDK/docs/sdk="/docs/sdk" />; }
+export default function Page() { 
+  return <StubPage title="SDK Realtime" parent="SDK" parentHref="/docs/sdk" />; 
+}
 

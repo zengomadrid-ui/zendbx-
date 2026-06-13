@@ -1,3 +1,5 @@
 ﻿import { StubPage } from '../../_stub';
-export default function Page() { return <StubPage Schema-Qualified Tables="Schema-Qualified Tables" REST API="REST API" REST API/docs/rest="/docs/rest" />; }
+export default function Page() { 
+  return <StubPage title="Schema-Qualified Tables" parent="REST API" parentHref="/docs/rest" />; 
+}
 

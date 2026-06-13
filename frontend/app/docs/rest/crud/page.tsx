@@ -1,3 +1,5 @@
 ﻿import { StubPage } from '../../_stub';
-export default function Page() { return <StubPage CRUD Endpoints="CRUD Endpoints" REST API="REST API" REST API/docs/rest="/docs/rest" />; }
+export default function Page() { 
+  return <StubPage title="CRUD Endpoints" parent="REST API" parentHref="/docs/rest" />; 
+}
 

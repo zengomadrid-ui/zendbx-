@@ -1,3 +1,5 @@
 ﻿import { StubPage } from '../../_stub';
-export default function Page() { return <StubPage CRUD Operations="CRUD Operations" Database="Database" Database/docs/database="/docs/database" />; }
+export default function Page() { 
+  return <StubPage title="CRUD Operations" parent="Database" parentHref="/docs/database" />; 
+}
 

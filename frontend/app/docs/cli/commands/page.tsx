@@ -1,3 +1,5 @@
 ﻿import { StubPage } from '../../_stub';
-export default function Page() { return <StubPage CLI Commands="CLI Commands" CLI="CLI" CLI/docs/cli="/docs/cli" />; }
+export default function Page() { 
+  return <StubPage title="CLI Commands" parent="CLI" parentHref="/docs/cli" />; 
+}
 

@@ -1,2 +1,4 @@
 ﻿import { StubPage } from '../_stub';
-export default function Page() { return <StubPage Environment Variables="Environment Variables" Quick Start="Quick Start" Quick Start/docs/quickstart="/docs/quickstart" />; }
+export default function Page() { 
+  return <StubPage title="Environment Variables" parent="Quick Start" parentHref="/docs/quickstart" />; 
+}
