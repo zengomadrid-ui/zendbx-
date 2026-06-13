@@ -1,4 +1,4 @@
-﻿import type { ZendbxResponse } from './types';
+import type { ZendbxResponse } from './types';
 
 export interface RequestOptions {
   method?: string;
@@ -38,7 +38,9 @@ export class HttpClient {
     }
   }
 
-  get token(): string | null { return this._token; }
+  get token(): string | null {
+    return this._token;
+  }
 
   setToken(token: string): void {
     this._token = token;
@@ -154,10 +156,10 @@ export class HttpClient {
     if (s) return s;
     switch (status) {
       case 400: return 'Bad request.';
-      case 401: return 'Authentication token expired or invalid. Call client.auth.signIn() to refresh.';
+      case 401: return 'Authentication token expired or invalid. Call client.auth.signIn() to get a new token.';
       case 403: return 'Permission denied.';
       case 404: return 'Resource not found.';
-      case 409: return 'Conflict.';
+      case 409: return 'Conflict — a resource with this name already exists.';
       case 413: return 'File too large or storage quota exceeded.';
       case 503: return 'Storage provider unavailable.';
       default:  return `HTTP ${status} error.`;
