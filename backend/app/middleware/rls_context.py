@@ -52,6 +52,11 @@ class RLSContextMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
+        # PUBLIC endpoints — bypass all RLS checks immediately
+        PUBLIC_PATHS = {"/", "/health", "/version", "/docs", "/redoc", "/openapi.json"}
+        if request.url.path in PUBLIC_PATHS:
+            return await call_next(request)
+
         # Skip middleware for public/admin endpoints
         if any(request.url.path.startswith(path) for path in self.SKIP_PATHS):
             return await call_next(request)

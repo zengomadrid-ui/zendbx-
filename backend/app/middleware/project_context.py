@@ -55,6 +55,13 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
 
         path = request.url.path
 
+
+        # ── PUBLIC endpoints — bypass ALL project context checks ─────────────
+        # These must be checked FIRST, before any other logic.
+        PUBLIC_PATHS = {"/", "/health", "/version", "/docs", "/redoc", "/openapi.json"}
+        if path in PUBLIC_PATHS:
+            return await call_next(request)
+
         # Skip admin/auth paths
         if path in SKIP_EXACT:
             return await call_next(request)
