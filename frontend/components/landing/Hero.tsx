@@ -7,7 +7,7 @@ const CODE_LINES = [
   { tokens: [{ t: "import", c: "text-orange-400" }, { t: " { ZendBX } ", c: "text-white" }, { t: "from", c: "text-orange-400" }, { t: ' "zendbx"', c: "text-emerald-400" }] },
   { tokens: [] },
   { tokens: [{ t: "const ", c: "text-orange-400" }, { t: "db", c: "text-sky-300" }, { t: " = ", c: "text-white" }, { t: "new ", c: "text-orange-400" }, { t: "ZendBX", c: "text-orange-300" }, { t: "({", c: "text-white" }] },
-  { tokens: [{ t: "  url: ", c: "text-neutral-400" }, { t: '"https://api.zendbx.com/p/my-app"', c: "text-emerald-400" }, { t: ",", c: "text-white" }] },
+  { tokens: [{ t: "  url: ", c: "text-neutral-400" }, { t: '"https://api.zendbx.in/p/my-app"', c: "text-emerald-400" }, { t: ",", c: "text-white" }] },
   { tokens: [{ t: "  anonKey: ", c: "text-neutral-400" }, { t: "process", c: "text-sky-300" }, { t: ".env.", c: "text-white" }, { t: "ZENDBX_ANON_KEY", c: "text-sky-300" }] },
   { tokens: [{ t: "})", c: "text-white" }] },
   { tokens: [] },

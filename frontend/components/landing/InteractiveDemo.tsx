@@ -190,7 +190,7 @@ export default function InteractiveDemo() {
                   <p className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-3">Auto-Generated REST API</p>
                   <div className="bg-zinc-950 p-4 rounded-lg border-2 border-orange-500/30 font-mono text-sm flex items-center gap-3 flex-wrap">
                     <span className="px-2 py-1 bg-green-500/20 text-green-400 rounded font-bold text-xs">GET</span>
-                    <span className="text-orange-400">https://api.zendbx.com/v1/your-project</span>
+                    <span className="text-orange-400">https://api.zendbx.in/v1/your-project</span>
                     <span className="text-gray-400">{apiUrl}</span>
                   </div>
                 </div>

@@ -582,7 +582,7 @@ export default function AIBuilderDemo() {
                   <div className="mt-3 px-4 py-3 bg-orange-500/5 border border-orange-500/20 rounded-xl">
                     <p className="text-xs text-zinc-500">
                       <span className="text-orange-400 font-semibold">Base URL: </span>
-                      <span className="font-mono text-zinc-400">https://api.zendbx.com/v1/your-project</span>
+                      <span className="font-mono text-zinc-400">https://api.zendbx.in/v1/your-project</span>
                     </p>
                   </div>
                 </div>

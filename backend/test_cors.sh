@@ -9,7 +9,7 @@ echo "======================================"
 echo ""
 
 # Configuration
-BACKEND_URL="https://zendbx-2-zpp9.onrender.com"
+BACKEND_URL="https://api.zendbx.in"
 FRONTEND_ORIGIN="http://localhost:5173"
 PROJECT_SLUG="zenhire-718af5ef"
 PROJECT_ID="718af5ef-8ffb-49ba-b54a-26cc37755d2c"

@@ -54,7 +54,7 @@ if settings.ENVIRONMENT == "production":
         "https://devapp.zendbx.in",
         "https://zendbx.in",
         "https://www.zendbx.in",
-        "https://zendbx-2-zpp9.onrender.com",  # Backend itself for testing
+        "https://zendbx-2-zpp9.onrender.com",  # Legacy Render URL (keep for backwards compat)
         "http://localhost:5173",  # CRITICAL: Allow localhost for development testing
         "http://localhost:3000",  # Alternative frontend port
     ]

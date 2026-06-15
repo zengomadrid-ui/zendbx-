@@ -642,7 +642,7 @@ export default function AIBuilderPage() {
                 <div className="mt-3 px-4 py-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
                   <p className="text-xs text-blue-400">
                     <span className="font-semibold">Base URL: </span>
-                    <span className="font-mono">https://api.zendbx.com/v1/your-project</span>
+                    <span className="font-mono">https://api.zendbx.in/v1/your-project</span>
                   </p>
                   <p className="text-xs text-[#6b6b6b] mt-1">
                     All write endpoints require{' '}
