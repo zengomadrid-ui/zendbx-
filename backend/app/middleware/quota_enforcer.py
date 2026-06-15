@@ -26,6 +26,9 @@ class QuotaEnforcerMiddleware(BaseHTTPMiddleware):
         
         # Endpoints that should be excluded from API quota checks
         self.excluded_paths = [
+            "/",
+            "/health",
+            "/version",
             "/docs",
             "/redoc",
             "/openapi.json",
@@ -33,8 +36,7 @@ class QuotaEnforcerMiddleware(BaseHTTPMiddleware):
             "/api/auth/register",
             "/api/auth/refresh",
             "/api/billing",  # Allow access to billing page
-            "/health",
-            "/metrics"
+            "/metrics",
         ]
         
         # Endpoints that require specific quota checks

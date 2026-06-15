@@ -205,21 +205,33 @@ async def shutdown():
 
 @app.get("/")
 async def root():
-    """Health check endpoint"""
+    """Public root endpoint — no authentication required"""
     return {
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
-        "status": "running"
+        "status": "running",
+        "environment": settings.ENVIRONMENT,
+        "docs": "https://docs.zendbx.in",
+        "dashboard": "https://app.zendbx.in",
     }
 
 @app.get("/health")
 async def health_check():
-    """Detailed health check"""
+    """Public health check — no authentication required"""
     return {
         "status": "healthy",
-        "database": "connected",
-        "cors_fix": "deployed_v3_with_localhost",  # Updated marker
-        "timestamp": "2024-03-30T00:00:00Z"
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "environment": settings.ENVIRONMENT,
+    }
+
+@app.get("/version")
+async def version():
+    """Public version endpoint — no authentication required"""
+    return {
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "environment": settings.ENVIRONMENT,
     }
 
 # Import and include routers

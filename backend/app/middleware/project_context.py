@@ -37,7 +37,7 @@ SKIP_PREFIXES = [
     # Matched via regex in dispatch to handle /p/{any-slug}/storage
 ]
 
-SKIP_EXACT = {"/", "/health", "/docs", "/openapi.json"}
+SKIP_EXACT = {"/", "/health", "/version", "/docs", "/openapi.json", "/redoc"}
 
 # Regex patterns to skip (can't do substring match cleanly in prefix list)
 import re as _re

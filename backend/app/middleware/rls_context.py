@@ -39,8 +39,10 @@ class RLSContextMiddleware(BaseHTTPMiddleware):
         "/api/admin",
         "/api/ai/",  # AI endpoints (admin only)
         "/docs",
+        "/redoc",
         "/openapi.json",
         "/health",
+        "/version",
         "/v1/auth/",  # Public auth endpoints
         "/"
     ]
