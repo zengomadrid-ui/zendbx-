@@ -475,16 +475,16 @@ async def get_project_api_urls(
     )
 
 # ============================================
-# GET PROJECT KEYS (anon and service_role)
+# GET PROJECT KEYS
 # ============================================
 
 @router.get("/{project_id}/keys", response_model=dict)
 async def get_project_keys(
     project_id: UUID,
     current_user: dict = Depends(get_current_user),
-    reveal: bool = False  # Query parameter to reveal full keys
+    reveal: bool = True  # Default to True to always return full keys
 ):
-    """Get project API keys (anon and service_role) - keys are masked by default"""
+    """Get project API keys (anon and service_role) - returns FULL keys by default for production use"""
     
     # Verify ownership
     result = await execute_on_main_db(
@@ -512,20 +512,15 @@ async def get_project_keys(
     
     keys = {}
     for key in keys_result:
-        # Always return the full encrypted_key when reveal=True
-        if reveal:
-            display_key = key["encrypted_key"] if key["encrypted_key"] else key["key_prefix"]
-        else:
-            # Show only key_prefix when not revealing
-            display_key = key["key_prefix"]
+        # ALWAYS return the complete encrypted_key - this is the working credential
+        full_working_key = key["encrypted_key"] if key["encrypted_key"] else key["key_prefix"]
         
         key_data = {
             "id": str(key["id"]),
             "name": key["name"],
-            "key_prefix": key["key_prefix"],
-            "full_key": display_key,  # Full encrypted_key when reveal=True, prefix when False
-            "encrypted_key": key["encrypted_key"] if reveal else None,  # Include encrypted_key field when revealing
-            "masked": not reveal,  # Indicate if key is masked
+            "key_prefix": key["key_prefix"],  # Keep for display purposes
+            "full_key": full_working_key,  # ALWAYS the complete working key
+            "encrypted_key": key["encrypted_key"],  # ALWAYS include the full encrypted key
             "role": key["role"],
             "is_active": key["is_active"],
             "created_at": key["created_at"].isoformat()
@@ -538,6 +533,92 @@ async def get_project_keys(
     
     return {
         "project_id": str(project_id),
-        "keys": keys,
-        "masked": not reveal
+        "keys": keys
+    }
+
+# ============================================
+# REGENERATE PROJECT KEYS
+# ============================================
+
+@router.post("/{project_id}/regenerate-keys", response_model=dict)
+async def regenerate_project_keys(
+    project_id: UUID,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Regenerate anon and service_role JWT keys for a project.
+    Deletes existing anon/service_role keys and creates fresh ones
+    signed with the project's jwt_secret.
+    """
+    import jwt as pyjwt
+    from datetime import datetime
+
+    # Verify ownership and fetch jwt_secret + slug
+    result = await execute_on_main_db(
+        "SELECT id, slug, jwt_secret FROM projects WHERE id = $1 AND user_id = $2",
+        project_id,
+        current_user["id"]
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+
+    project = dict(result[0])
+    jwt_secret = project.get("jwt_secret")
+    slug = project.get("slug", "")
+
+    if not jwt_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project has no JWT secret — cannot regenerate keys. Please contact support."
+        )
+
+    now_ts = int(datetime.utcnow().timestamp())
+
+    anon_key = pyjwt.encode(
+        {"iss": "zendbx", "project_id": str(project_id), "project_slug": slug, "role": "anon", "iat": now_ts},
+        jwt_secret,
+        algorithm="HS256"
+    )
+    service_key = pyjwt.encode(
+        {"iss": "zendbx", "project_id": str(project_id), "project_slug": slug, "role": "service_role", "iat": now_ts},
+        jwt_secret,
+        algorithm="HS256"
+    )
+
+    anon_hash    = hashlib.sha256(anon_key.encode()).hexdigest()
+    service_hash = hashlib.sha256(service_key.encode()).hexdigest()
+
+    # Delete old anon / service_role keys for this project
+    await execute_on_main_db(
+        "DELETE FROM api_keys WHERE project_id = $1 AND key_type IN ('anon', 'service_role')",
+        project_id
+    )
+
+    # Insert fresh keys
+    await execute_on_main_db(
+        """
+        INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        """,
+        current_user["id"], project_id, "anon (public)",
+        anon_hash, anon_key[:20] + "...", anon_key, "read", "anon", True
+    )
+    await execute_on_main_db(
+        """
+        INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        """,
+        current_user["id"], project_id, "service_role (secret)",
+        service_hash, service_key[:20] + "...", service_key, "admin", "service_role", True
+    )
+
+    return {
+        "project_id": str(project_id),
+        "anon_key": anon_key,
+        "service_role_key": service_key,
+        "message": "Keys regenerated successfully"
     }

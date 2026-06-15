@@ -12,6 +12,7 @@ import { apiFetch } from '@/lib/fetch-utils';
 interface Project {
   id: string;
   name: string;
+  slug: string;
   description?: string;
   storage_used: number;
   max_storage: number;
@@ -185,7 +186,7 @@ export default function ProjectSettingsPage() {
             <>
               {activeTab === 'general' && <GeneralSettings project={project} onUpdate={fetchProject} />}
               {activeTab === 'usage' && <UsageSettings projectId={projectId} project={project} />}
-              {activeTab === 'api-keys' && <ApiKeysSettings projectId={projectId} />}
+              {activeTab === 'api-keys' && <ApiKeysSettings projectId={projectId} project={project} />}
               {activeTab === 'backups' && <BackupsSettings projectId={projectId} />}
               {activeTab === 'configuration' && <ConfigurationSettings projectId={projectId} />}
               {activeTab === 'database' && <DatabaseSettings projectId={projectId} />}
@@ -372,22 +373,272 @@ function UsageSettings({ projectId, project }: { projectId: string; project: Pro
 }
 
 // API Keys Settings Component
-function ApiKeysSettings({ projectId }: { projectId: string }) {
+function ApiKeysSettings({ projectId, project }: { projectId: string; project: Project | null }) {
+  const [keys, setKeys] = useState<{ anon?: any; service_role?: any } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
+  const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
+  const [copiedKeys, setCopiedKeys] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    fetchKeys();
+  }, [projectId]);
+
+  async function fetchKeys() {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`api/projects/${projectId}/keys?reveal=true`);
+      if (res.ok) {
+        const data = await res.json();
+        const norm = (k: any) => k ? { ...k, full_key: k.encrypted_key || k.full_key || k.key_prefix } : undefined;
+        setKeys({ anon: norm(data.keys?.anon), service_role: norm(data.keys?.service_role) });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function regenerateKeys() {
+    if (!confirm('Regenerate API keys? Your existing keys will stop working immediately. Make sure to update any apps using the old keys.')) return;
+    setRegenerating(true);
+    try {
+      const res = await apiFetch(`api/projects/${projectId}/regenerate-keys`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        // Show the fresh keys directly from the response (no need to re-fetch)
+        const norm = (key: string, name: string, role: string, keyType: string) => ({
+          full_key: key, encrypted_key: key, key_prefix: key.substring(0, 20) + '...',
+          name, role, key_type: keyType, is_active: true,
+        });
+        setKeys({
+          anon: norm(data.anon_key, 'anon (public)', 'read', 'anon'),
+          service_role: norm(data.service_role_key, 'service_role (secret)', 'admin', 'service_role'),
+        });
+        // Auto-reveal so user can see & copy the new keys
+        setVisibleKeys({ anon: true, service_role: true });
+      } else {
+        const err = await res.json();
+        alert('Failed to regenerate keys: ' + (err.detail || 'Unknown error'));
+      }
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  const copyKey = (key: string, id: string) => {
+    navigator.clipboard.writeText(key);
+    setCopiedKeys(prev => ({ ...prev, [id]: true }));
+    setTimeout(() => setCopiedKeys(prev => ({ ...prev, [id]: false })), 2000);
+  };
+
+  const previewKey = (key: string) => {
+    if (!key || key.length <= 30) return key;
+    return key.substring(0, 24) + '…' + key.substring(key.length - 10);
+  };
+
+  const apiUrl = `${process.env.NEXT_PUBLIC_API_URL || ''}/p/${project?.slug || projectId}`;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-white mb-1">API Keys</h2>
-          <p className="text-sm text-gray-400">Manage API keys for this project</p>
+          <p className="text-sm text-gray-400">Your project credentials — use these with the ZendBX SDK or REST API</p>
         </div>
-        <button className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-lg transition-colors">
-          + Create New Key
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={fetchKeys}
+            className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#242424] border border-[#2a2a2a] text-gray-300 text-xs font-medium rounded-lg transition-colors"
+          >
+            Refresh
+          </button>
+          <button
+            onClick={regenerateKeys}
+            disabled={regenerating}
+            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 hover:text-red-300 text-xs font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {regenerating ? 'Regenerating…' : '⟳ Regenerate Keys'}
+          </button>
+        </div>
       </div>
 
-      <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl p-6">
-        <p className="text-sm text-gray-400 text-center py-8">No API keys created yet</p>
+      <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4">
+        <p className="text-xs text-yellow-400">
+          <span className="font-semibold">Warning:</span> Regenerating keys invalidates all existing keys immediately. Update every app and service that uses these credentials before regenerating.
+        </p>
       </div>
+
+      {/* Project URL */}
+      <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl p-5">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Project URL</p>
+        <div className="flex items-center space-x-2">
+          <code className="flex-1 text-sm text-orange-400 font-mono bg-[#1a1a1a] px-3 py-2 rounded-lg border border-[#2a2a2a] overflow-x-auto whitespace-nowrap">
+            {apiUrl}
+          </code>
+          <button
+            onClick={() => copyKey(apiUrl, 'url')}
+            className="p-2 rounded-lg hover:bg-[#2a2a2a] text-gray-400 hover:text-white transition-colors flex-shrink-0"
+            title="Copy URL"
+          >
+            {copiedKeys['url'] ? (
+              <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            )}
+          </button>
+        </div>
+        <p className="text-xs text-gray-600 mt-2">The base URL for all API requests to this project</p>
+      </div>
+
+      {loading ? (
+        <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl p-8 text-center">
+          <p className="text-sm text-gray-400">Loading credentials…</p>
+        </div>
+      ) : !keys ? (
+        <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-6">
+          <p className="text-sm text-red-400">Could not load keys.{' '}
+            <button onClick={fetchKeys} className="underline hover:text-red-300">Try again</button>
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Anon key */}
+          {keys.anon && (
+            <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <p className="text-sm font-semibold text-white">anon</p>
+                    <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-xs rounded-full font-medium">public</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">Safe for use in browser / mobile apps</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <code className="flex-1 text-sm text-green-400 font-mono bg-[#1a1a1a] px-3 py-2 rounded-lg border border-[#2a2a2a] overflow-x-auto whitespace-nowrap">
+                  {visibleKeys['anon'] ? keys.anon.full_key : previewKey(keys.anon.full_key)}
+                </code>
+                <button
+                  onClick={() => setVisibleKeys(prev => ({ ...prev, anon: !prev['anon'] }))}
+                  className="p-2 rounded-lg hover:bg-[#2a2a2a] text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                  title={visibleKeys['anon'] ? 'Hide' : 'Reveal full key'}
+                >
+                  {visibleKeys['anon'] ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={() => copyKey(keys.anon!.full_key, 'anon')}
+                  className="p-2 rounded-lg hover:bg-[#2a2a2a] text-gray-400 hover:text-green-400 transition-colors flex-shrink-0"
+                  title="Copy full anon key"
+                >
+                  {copiedKeys['anon'] ? (
+                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Service role key */}
+          {keys.service_role && (
+            <div className="bg-[#0f0f0f] border border-orange-500/20 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <p className="text-sm font-semibold text-white">service_role</p>
+                    <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 text-xs rounded-full font-medium">secret</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5">Bypasses RLS — never expose in client-side code</p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <code className="flex-1 text-sm text-orange-400 font-mono bg-[#1a1a1a] px-3 py-2 rounded-lg border border-orange-500/20 overflow-x-auto whitespace-nowrap">
+                  {visibleKeys['service_role'] ? keys.service_role.full_key : previewKey(keys.service_role.full_key)}
+                </code>
+                <button
+                  onClick={() => setVisibleKeys(prev => ({ ...prev, service_role: !prev['service_role'] }))}
+                  className="p-2 rounded-lg hover:bg-[#2a2a2a] text-gray-400 hover:text-white transition-colors flex-shrink-0"
+                  title={visibleKeys['service_role'] ? 'Hide' : 'Reveal full key'}
+                >
+                  {visibleKeys['service_role'] ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={() => copyKey(keys.service_role!.full_key, 'service_role')}
+                  className="p-2 rounded-lg hover:bg-[#2a2a2a] text-gray-400 hover:text-orange-400 transition-colors flex-shrink-0"
+                  title="Copy full service_role key"
+                >
+                  {copiedKeys['service_role'] ? (
+                    <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* .env snippet */}
+          <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl p-5">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">.env snippet</p>
+            <code className="block text-xs font-mono text-gray-300 bg-[#1a1a1a] p-4 rounded-lg overflow-x-auto whitespace-pre">
+{`NEXT_PUBLIC_ZENDBX_URL=${apiUrl}
+NEXT_PUBLIC_ZENDBX_ANON_KEY=${keys.anon?.full_key || ''}
+ZENDBX_SERVICE_ROLE_KEY=${keys.service_role?.full_key || ''}`}
+            </code>
+            <button
+              onClick={() =>
+                copyKey(
+                  `NEXT_PUBLIC_ZENDBX_URL=${apiUrl}\nNEXT_PUBLIC_ZENDBX_ANON_KEY=${keys.anon?.full_key || ''}\nZENDBX_SERVICE_ROLE_KEY=${keys.service_role?.full_key || ''}`,
+                  'env'
+                )
+              }
+              className="mt-3 flex items-center space-x-1.5 text-xs text-gray-400 hover:text-white transition-colors"
+            >
+              {copiedKeys['env'] ? (
+                <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              )}
+              <span>{copiedKeys['env'] ? 'Copied!' : 'Copy .env snippet'}</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

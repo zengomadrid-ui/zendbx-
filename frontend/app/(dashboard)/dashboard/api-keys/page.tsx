@@ -19,14 +19,17 @@ interface APIKey {
 interface Project {
   id: string;
   name: string;
+  slug?: string;
 }
 
 export default function APIKeysPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
+  const [copiedKeys, setCopiedKeys] = useState<Set<string>>(new Set());
   const [apiKeys, setApiKeys] = useState<APIKey[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
+  const [projectSlug, setProjectSlug] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newKey, setNewKey] = useState<APIKey | null>(null);
@@ -68,6 +71,7 @@ export default function APIKeysPage() {
       
       if (data.length > 0 && !selectedProject) {
         setSelectedProject(data[0].id);
+        setProjectSlug(data[0].slug || '');
       }
     } catch (err: any) {
       setError(err.message);
@@ -249,20 +253,18 @@ export default function APIKeysPage() {
     });
   };
 
+  // Visual-only preview — full key is always in apiKey.key for copy
   const maskKey = (key: string) => {
-    // For JWT tokens (start with eyJ), show first 20 chars
-    if (key.startsWith('eyJ')) {
-      return key.substring(0, 20) + '••••••••••••••••';
-    }
-    // For regular keys
-    if (key.length <= 20) {
-      return key.substring(0, 8) + '••••••••';
-    }
-    return key.substring(0, 20) + '••••••••••••••••';
+    if (!key || key.length <= 30) return key;
+    return key.substring(0, 20) + '…' + key.substring(key.length - 8);
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = (text: string, keyId?: string) => {
     navigator.clipboard.writeText(text);
+    if (keyId) {
+      setCopiedKeys(prev => { const s = new Set(prev); s.add(keyId); return s; });
+      setTimeout(() => setCopiedKeys(prev => { const s = new Set(prev); s.delete(keyId); return s; }), 2000);
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -296,7 +298,11 @@ export default function APIKeysPage() {
           {projects.length > 0 && (
             <select
               value={selectedProject}
-              onChange={(e) => setSelectedProject(e.target.value)}
+              onChange={(e) => {
+                setSelectedProject(e.target.value);
+                const proj = projects.find(p => p.id === e.target.value);
+                setProjectSlug(proj?.slug || '');
+              }}
               className="px-3 py-1.5 bg-[#1c1c1c] border border-[#2a2a2a] rounded text-xs text-[#ededed] focus:outline-none focus:border-orange-600"
             >
               <option value="">Select Project</option>
@@ -362,34 +368,62 @@ export default function APIKeysPage() {
         </div>
       )}
 
-      {/* Project ID Section */}
+      {/* Project URL + Project ID */}
       {selectedProject && (
-        <div className="bg-[#181818] border border-[#2a2a2a] rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <p className="text-xs font-semibold text-[#ededed] mb-1">Project ID</p>
-              <p className="text-[10px] text-[#a1a1a1] mb-2">
-                Use this ID when calling authentication endpoints
-              </p>
-              <div className="flex items-center space-x-2">
-                <code className="text-xs text-orange-500 font-mono bg-black px-3 py-1.5 rounded">
-                  {selectedProject}
-                </code>
-                <button
-                  onClick={() => copyToClipboard(selectedProject)}
-                  className="p-1.5 rounded hover:bg-[#2a2a2a] text-[#a1a1a1] hover:text-[#ededed] transition-colors"
-                  title="Copy Project ID"
-                >
+        <div className="space-y-3">
+          {/* Project URL */}
+          <div className="bg-[#181818] border border-[#2a2a2a] rounded-lg p-4">
+            <p className="text-xs font-semibold text-[#ededed] mb-1">Project URL</p>
+            <p className="text-[10px] text-[#a1a1a1] mb-2">
+              Base URL for all API requests to this project
+            </p>
+            <div className="flex items-center space-x-2">
+              <code className="flex-1 text-xs text-orange-400 font-mono bg-black px-3 py-1.5 rounded overflow-x-auto whitespace-nowrap">
+                {`${API_URL}/p/${projectSlug || selectedProject}`}
+              </code>
+              <button
+                onClick={() => copyToClipboard(`${API_URL}/p/${projectSlug || selectedProject}`, 'project-url')}
+                className="p-1.5 rounded hover:bg-[#2a2a2a] text-[#a1a1a1] hover:text-[#ededed] transition-colors flex-shrink-0"
+                title="Copy Project URL"
+              >
+                {copiedKeys.has('project-url') ? (
+                  <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
-                </button>
-              </div>
+                )}
+              </button>
             </div>
-            <div className="ml-4">
-              <svg className="w-12 h-12 text-[#2a2a2a]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-              </svg>
+          </div>
+
+          {/* Project ID */}
+          <div className="bg-[#181818] border border-[#2a2a2a] rounded-lg p-4">
+            <p className="text-xs font-semibold text-[#ededed] mb-1">Project ID</p>
+            <p className="text-[10px] text-[#a1a1a1] mb-2">
+              Use this ID when calling authentication endpoints
+            </p>
+            <div className="flex items-center space-x-2">
+              <code className="text-xs text-[#a1a1a1] font-mono bg-black px-3 py-1.5 rounded">
+                {selectedProject}
+              </code>
+              <button
+                onClick={() => copyToClipboard(selectedProject, 'project-id')}
+                className="p-1.5 rounded hover:bg-[#2a2a2a] text-[#a1a1a1] hover:text-[#ededed] transition-colors"
+                title="Copy Project ID"
+              >
+                {copiedKeys.has('project-id') ? (
+                  <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -459,10 +493,10 @@ export default function APIKeysPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center space-x-2">
                         <div className="flex-1 min-w-0">
-                          <code className="text-[#a1a1a1] font-mono text-[10px] break-all block">
-                            {visibleKeys.has(apiKey.id) 
+                          <code className="text-[#a1a1a1] font-mono text-[10px] block overflow-x-auto whitespace-nowrap">
+                            {visibleKeys.has(apiKey.id)
                               ? (apiKey.key || 'No key available')
-                              : (apiKey.key_prefix + '••••••••••••••••')
+                              : maskKey(apiKey.key || apiKey.key_prefix)
                             }
                           </code>
                         </div>
@@ -484,13 +518,19 @@ export default function APIKeysPage() {
                             )}
                           </button>
                           <button
-                            onClick={() => copyToClipboard(apiKey.key || '')}
+                            onClick={() => copyToClipboard(apiKey.key || '', apiKey.id)}
                             className="p-1 rounded hover:bg-[#3a3a3a] text-[#a1a1a1] hover:text-[#ededed] transition-colors"
                             title="Copy full key"
                           >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
+                            {copiedKeys.has(apiKey.id) ? (
+                              <svg className="w-3 h-3 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
                           </button>
                         </div>
                       </div>
