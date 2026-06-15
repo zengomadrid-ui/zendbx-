@@ -62,6 +62,11 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
         if path in PUBLIC_PATHS:
             return await call_next(request)
 
+        # /p/{slug} with NO sub-path is a public info endpoint — no API key needed
+        import re as _re2
+        if _re2.match(r"^/p/[^/]+$", path):
+            return await call_next(request)
+
         # Skip admin/auth paths
         if path in SKIP_EXACT:
             return await call_next(request)

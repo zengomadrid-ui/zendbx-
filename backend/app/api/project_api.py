@@ -17,13 +17,39 @@ router = APIRouter()
 
 @router.get("/p/{slug}")
 async def project_api_info(slug: str):
-    """Show API info - always returns same response"""
-    return {
-        "message": "Zendbx API",
-        "version": "1.0.0",
-        "health": "/health",
-        "documentation": "http://localhost:8000/docs"
-    }
+    """Public project info endpoint — no API key required"""
+    try:
+        result = await execute_on_main_db(
+            """
+            SELECT name, slug, status, created_at
+            FROM projects
+            WHERE slug = $1
+            """,
+            slug
+        )
+        if not result:
+            raise HTTPException(status_code=404, detail=f"Project '{slug}' not found")
+        
+        project = dict(result[0])
+        return {
+            "project": project["name"],
+            "slug": project["slug"],
+            "status": project["status"],
+            "api_url": f"https://api.zendbx.in/p/{project['slug']}",
+            "docs": "https://docs.zendbx.in",
+            "usage": {
+                "list_rows":   f"GET  /p/{project['slug']}/{{table}}",
+                "get_row":     f"GET  /p/{project['slug']}/{{table}}/{{id}}",
+                "create_row":  f"POST /p/{project['slug']}/{{table}}",
+                "update_row":  f"PUT  /p/{project['slug']}/{{table}}/{{id}}",
+                "delete_row":  f"DELETE /p/{project['slug']}/{{table}}/{{id}}",
+            },
+            "auth": "Include 'apikey: <your-anon-key>' header for data access",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
 # HELPER: Extract Project Slug
