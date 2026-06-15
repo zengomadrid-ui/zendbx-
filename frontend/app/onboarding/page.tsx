@@ -69,7 +69,7 @@ export default function OnboardingPage() {
         throw new Error(data.detail || 'Failed to create project');
       }
 
-      router.push('/dashboard');
+      router.push('/select-project');
     } catch (err: any) {
       setError(err.message || 'Failed to create project');
       setIsLoading(false);
