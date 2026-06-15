@@ -1,155 +1,219 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { useEffect, useRef } from 'react';
 
-const features = [
+function useReveal(delay = 0) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(28px)';
+    el.style.transition = `opacity 0.65s ease ${delay}ms, transform 0.65s ease ${delay}ms`;
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) {
+        el.style.opacity = '1';
+        el.style.transform = 'translateY(0)';
+        obs.disconnect();
+      }
+    }, { threshold: 0.12 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [delay]);
+  return ref;
+}
+
+/* ──────────────── Visual mockups ──────────────── */
+
+function DBMockup() {
+  return (
+    <div className="font-mono text-xs space-y-1 select-none">
+      <div className="flex items-center gap-2 text-neutral-600 mb-3">
+        <span className="text-orange-500">›</span>
+        <span className="text-neutral-300">CREATE TABLE orders (…)</span>
+      </div>
+      {[
+        { col: 'id',         type: 'uuid',        val: 'gen_random_uuid()',  c: 'text-sky-400' },
+        { col: 'user_id',    type: 'uuid',        val: 'NOT NULL',           c: 'text-neutral-500' },
+        { col: 'total',      type: 'numeric',     val: '0',                  c: 'text-emerald-400' },
+        { col: 'created_at', type: 'timestamptz', val: 'NOW()',              c: 'text-orange-400' },
+      ].map(r => (
+        <div key={r.col} className="flex items-center gap-3 px-3 py-1.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+          <span className="text-white w-20 shrink-0">{r.col}</span>
+          <span className="text-purple-400 w-24 shrink-0">{r.type}</span>
+          <span className={r.c}>{r.val}</span>
+        </div>
+      ))}
+      <div className="flex items-center gap-2 mt-3">
+        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+        <span className="text-emerald-400">Table ready · REST API live</span>
+      </div>
+    </div>
+  );
+}
+
+function AuthMockup() {
+  return (
+    <div className="space-y-2.5 font-mono text-xs select-none">
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+        <div className="text-neutral-600 mb-1.5">POST /v1/auth/{'{projectId}'}/signup</div>
+        <div className="text-orange-300">{'{ "email": "dev@acme.com", "password": "…" }'}</div>
+      </div>
+      <div className="flex items-center gap-1.5 text-neutral-700">
+        <div className="h-px flex-1 bg-white/5" />
+        <span className="text-[10px]">200 OK · 11ms</span>
+        <div className="h-px flex-1 bg-white/5" />
+      </div>
+      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-3">
+        <div className="text-neutral-600 mb-1.5">Response</div>
+        <div className="text-emerald-400">access_token: <span className="text-neutral-500">eyJhbGci…</span></div>
+        <div className="text-emerald-400">user: <span className="text-neutral-500">{'{ id, email, … }'}</span></div>
+      </div>
+      <div className="flex gap-2 flex-wrap mt-1">
+        {['Email', 'Google', 'GitHub', 'MFA'].map(p => (
+          <span key={p} className="px-2 py-0.5 rounded-full border border-orange-500/20 text-orange-400 text-[10px] font-semibold">{p}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function APIMockup() {
+  return (
+    <div className="space-y-2 font-mono text-xs select-none">
+      {[
+        { m: 'GET',    path: '/rest/v1/orders',           c: 'text-sky-400',     bg: 'bg-sky-400/5 border-sky-500/15' },
+        { m: 'POST',   path: '/rest/v1/orders',           c: 'text-emerald-400', bg: 'bg-emerald-400/5 border-emerald-500/15' },
+        { m: 'PATCH',  path: '/rest/v1/orders?id=eq.1',  c: 'text-amber-400',   bg: 'bg-amber-400/5 border-amber-500/15' },
+        { m: 'DELETE', path: '/rest/v1/orders?id=eq.1',  c: 'text-red-400',     bg: 'bg-red-400/5 border-red-500/15' },
+      ].map(({ m, path, c, bg }) => (
+        <div key={m} className={`flex items-center gap-3 rounded-lg px-3 py-2 border ${bg}`}>
+          <span className={`font-bold w-12 shrink-0 ${c}`}>{m}</span>
+          <span className="text-neutral-500">{path}</span>
+        </div>
+      ))}
+      <div className="pt-1 text-neutral-700 text-[10px]">Auto-generated · RLS enforced · Realtime ready</div>
+    </div>
+  );
+}
+
+function AIMockup() {
+  return (
+    <div className="space-y-2.5 text-xs select-none">
+      <div className="flex gap-2">
+        <div className="w-6 h-6 rounded-full bg-neutral-800 border border-white/5 flex items-center justify-center text-[9px] text-neutral-400 shrink-0 mt-0.5">You</div>
+        <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl rounded-tl-none px-3 py-2 text-neutral-300">
+          Show me all orders over $1000 from this week
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <div className="w-6 h-6 rounded-full bg-orange-500/10 border border-orange-500/25 flex items-center justify-center text-[9px] text-orange-400 shrink-0 mt-0.5">AI</div>
+        <div className="bg-orange-500/[0.05] border border-orange-500/15 rounded-2xl rounded-tl-none px-3 py-2 font-mono text-[11px] text-neutral-400">
+          <span className="text-orange-300">SELECT</span> * <span className="text-orange-300">FROM</span> orders
+          <br />
+          <span className="text-orange-300">WHERE</span> total {'>'} <span className="text-sky-400">1000</span>
+          <br />
+          <span className="text-orange-300">AND</span> created_at {'>'} <span className="text-emerald-400">NOW() - INTERVAL '7d'</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────── Feature cards ──────────────── */
+
+const FEATURES = [
   {
-    icon: (
-      <svg className="w-12 h-12 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-      </svg>
-    ),
-    title: 'Auto Database Creation',
-    description: 'Instantly generates isolated PostgreSQL database for each project. Complete multi-tenant architecture out of the box.',
+    tag: 'Database',
+    title: 'Instant PostgreSQL.\nZero config.',
+    body: 'Every project gets an isolated, production-grade PostgreSQL database provisioned in seconds. Schema migrations, RLS, and backups are handled automatically.',
+    visual: <DBMockup />,
+    span: 'md:col-span-1',
   },
   {
-    icon: (
-      <svg className="w-12 h-12 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    ),
-    title: 'Instant REST APIs',
-    description: 'Every table automatically becomes a fully functional API endpoint. No coding required, just create and use.',
+    tag: 'Auth',
+    title: 'JWT auth\nthat just works.',
+    body: 'Signup, login, OAuth, MFA, and session management — all built in. Ship authentication before your first commit.',
+    visual: <AuthMockup />,
+    span: 'md:col-span-1',
   },
   {
-    icon: (
-      <svg className="w-12 h-12 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-      </svg>
-    ),
-    title: 'Built-in Authentication',
-    description: 'JWT, OAuth, and session tracking ready out of the box. Secure by default with zero configuration.',
+    tag: 'REST API',
+    title: 'Every table becomes\nan API endpoint.',
+    body: 'Create a table and immediately get full CRUD, filtering, pagination, and realtime subscriptions. No controllers. No serializers.',
+    visual: <APIMockup />,
+    span: 'md:col-span-1',
   },
   {
-    icon: (
-      <svg className="w-12 h-12 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-      </svg>
-    ),
-    title: 'AI-Powered Assistant',
-    description: 'Natural language to SQL. Describe what you need and AI builds your schema, queries, and logic.',
-  },
-  {
-    icon: (
-      <svg className="w-12 h-12 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-      </svg>
-    ),
-    title: 'Multi-Tenant Ready',
-    description: 'Each project gets isolated database. Perfect for SaaS applications with complete data separation.',
-  },
-  {
-    icon: (
-      <svg className="w-12 h-12 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-      </svg>
-    ),
-    title: 'Spreadsheet-Like UI',
-    description: 'Manage data with intuitive interface like Airtable, while retaining full SQL power underneath.',
+    tag: 'AI',
+    title: 'Talk to your data\nin plain English.',
+    body: 'Describe what you need — the AI assistant writes the SQL, suggests indexes, and explains your schema. Natural language becomes production queries.',
+    visual: <AIMockup />,
+    span: 'md:col-span-1',
   },
 ];
 
+const EXTRAS = ['Realtime subscriptions', 'File storage', 'RBAC permissions', 'Automated backups', 'SQL Editor', 'TypeScript SDK', 'Audit logs', 'API playground', 'CSV import'];
+
 export default function Features() {
+  const headRef = useReveal(0);
+
   return (
-    <section id="features" className="py-24 bg-black relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ea580c08_1px,transparent_1px),linear-gradient(to_bottom,#ea580c08_1px,transparent_1px)] bg-[size:40px_40px]" />
-      
-      {/* Orange glow spots */}
-      <div className="absolute top-1/4 left-0 w-96 h-96 bg-orange-600 rounded-full mix-blend-screen filter blur-[120px] opacity-20" />
-      <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-orange-500 rounded-full mix-blend-screen filter blur-[120px] opacity-20" />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="text-center mb-16">
-          <div className="inline-block mb-4">
-            <span className="px-4 py-2 bg-gradient-to-r from-orange-600/20 to-orange-500/20 border border-orange-500/30 rounded-full text-sm font-semibold text-orange-300 backdrop-blur-sm">
-              Powerful Features
-            </span>
-          </div>
-          <h2 className="text-4xl sm:text-5xl font-bold mb-4">
-            <span className="text-white">Everything You Need</span>
+    <section id="features" className="bg-[#000] py-28 relative overflow-hidden">
+      {/* Subtle horizontal line accent */}
+      <div className="absolute top-0 left-0 right-0 h-px"
+        style={{ background: 'linear-gradient(to right, transparent, rgba(249,115,22,0.2), transparent)' }} />
+
+      <div className="max-w-6xl mx-auto px-4">
+
+        {/* Section header */}
+        <div ref={headRef} className="text-center mb-16">
+          <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-orange-500 mb-4">Platform</p>
+          <h2 className="text-4xl sm:text-5xl lg:text-[56px] font-black text-white leading-[1.08] tracking-[-0.02em] mb-5">
+            Everything included.
             <br />
-            <span className="bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent">
-              Built-In and Ready
-            </span>
+            <span className="text-orange-500">Nothing to configure.</span>
           </h2>
-          <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-            Complete backend platform with database, APIs, auth, and more
+          <p className="text-neutral-500 text-lg max-w-lg mx-auto">
+            Stop stitching infrastructure together. Start shipping the product.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {features.map((feature, index) => (
-            <motion.div
-              key={feature.title}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              viewport={{ once: true }}
-              className="group relative"
-            >
-              {/* Gradient border effect */}
-              <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-600 to-orange-500 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity blur-sm" />
-              
-              <div className="relative bg-zinc-950 rounded-2xl p-8 border-2 border-orange-500/20 hover:border-orange-500/50 transition-all duration-300 h-full backdrop-blur-sm group-hover:bg-zinc-900">
-                {/* Icon with gradient background */}
-                <div className="mb-5 inline-flex p-4 rounded-xl bg-gradient-to-br from-orange-600/20 to-orange-500/10 border-2 border-orange-500/30 group-hover:border-orange-500/50 transition-all">
-                  {feature.icon}
+        {/* 2×2 bento grid */}
+        <div className="grid md:grid-cols-2 gap-3">
+          {FEATURES.map((f, i) => {
+            const ref = useReveal(i * 80);
+            return (
+              <div key={f.tag} ref={ref} className={`group relative rounded-2xl border border-white/[0.06] bg-[#080808] overflow-hidden hover:border-orange-500/20 transition-all duration-500 ${f.span}`}>
+                {/* Hover glow */}
+                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+                  style={{ background: 'radial-gradient(circle at 30% 30%, rgba(249,115,22,0.05), transparent 65%)' }} />
+
+                {/* Visual panel */}
+                <div className="relative p-6 border-b border-white/[0.04] bg-gradient-to-br from-[#0d0d0d] to-[#080808] min-h-[200px] flex items-start">
+                  <div className="w-full">{f.visual}</div>
                 </div>
-                
-                <h3 className="text-xl font-bold text-white mb-3 group-hover:text-orange-400 transition-colors">
-                  {feature.title}
-                </h3>
-                <p className="text-gray-400 leading-relaxed group-hover:text-gray-300 transition-colors">
-                  {feature.description}
-                </p>
+
+                {/* Text panel */}
+                <div className="p-6">
+                  <span className="text-[10px] font-bold tracking-[0.18em] uppercase text-orange-500 mb-3 block">{f.tag}</span>
+                  <h3 className="text-[22px] font-black text-white leading-tight mb-3 whitespace-pre-line">{f.title}</h3>
+                  <p className="text-[14px] text-neutral-500 leading-relaxed">{f.body}</p>
+                </div>
               </div>
-            </motion.div>
-          ))}
+            );
+          })}
         </div>
 
-        {/* Additional features grid */}
-        <div className="mt-16 relative">
-          <div className="absolute -inset-2 bg-gradient-to-r from-orange-600 to-orange-500 rounded-3xl blur-3xl opacity-30" />
-          
-          <div className="relative bg-zinc-950/90 backdrop-blur-xl rounded-2xl border-2 border-orange-500/30 p-10">
-            <h3 className="text-3xl font-bold text-center mb-10">
-              <span className="bg-gradient-to-r from-orange-400 via-orange-500 to-orange-600 bg-clip-text text-transparent animate-gradient">
-                Plus Many More Features
+        {/* More capabilities */}
+        <div className="mt-6 rounded-2xl border border-white/[0.06] bg-[#080808] p-6">
+          <p className="text-[11px] font-bold tracking-[0.18em] uppercase text-neutral-700 mb-4">And much more</p>
+          <div className="flex flex-wrap gap-2">
+            {EXTRAS.map(e => (
+              <span key={e} className="px-3 py-1.5 rounded-lg border border-white/[0.06] text-sm text-neutral-500 hover:text-neutral-300 hover:border-orange-500/20 transition-all duration-200 cursor-default">
+                {e}
               </span>
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[
-                'Zero configuration setup',
-                'Automatic API generation',
-                'Real-time data sync',
-                'CSV/JSON import',
-                'Role-based access control',
-                'API playground',
-                'SQL editor',
-                'Audit logging',
-                'Backup & restore',
-              ].map((feature) => (
-                <div key={feature} className="flex items-center space-x-3 p-4 rounded-xl hover:bg-orange-500/10 transition-all border border-transparent hover:border-orange-500/30 group">
-                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-orange-600 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-500/30 group-hover:shadow-orange-500/50 transition-all">
-                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <span className="text-gray-300 font-medium group-hover:text-orange-300 transition-colors">{feature}</span>
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
         </div>
       </div>

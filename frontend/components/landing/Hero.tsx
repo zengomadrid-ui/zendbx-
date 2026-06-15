@@ -1,225 +1,192 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
+const CODE_LINES = [
+  { tokens: [{ t: "import", c: "text-orange-400" }, { t: " { ZendBX } ", c: "text-white" }, { t: "from", c: "text-orange-400" }, { t: ' "zendbx"', c: "text-emerald-400" }] },
+  { tokens: [] },
+  { tokens: [{ t: "const ", c: "text-orange-400" }, { t: "db", c: "text-sky-300" }, { t: " = ", c: "text-white" }, { t: "new ", c: "text-orange-400" }, { t: "ZendBX", c: "text-orange-300" }, { t: "({", c: "text-white" }] },
+  { tokens: [{ t: "  url: ", c: "text-neutral-400" }, { t: '"https://api.zendbx.com/p/my-app"', c: "text-emerald-400" }, { t: ",", c: "text-white" }] },
+  { tokens: [{ t: "  anonKey: ", c: "text-neutral-400" }, { t: "process", c: "text-sky-300" }, { t: ".env.", c: "text-white" }, { t: "ZENDBX_ANON_KEY", c: "text-sky-300" }] },
+  { tokens: [{ t: "})", c: "text-white" }] },
+  { tokens: [] },
+  { tokens: [{ t: "// Query anything, instantly", c: "text-neutral-600 italic" }] },
+  { tokens: [{ t: "const ", c: "text-orange-400" }, { t: "{ data } ", c: "text-white" }, { t: "= await ", c: "text-orange-400" }, { t: "db", c: "text-sky-300" }] },
+  { tokens: [{ t: "  .from", c: "text-white" }, { t: "(", c: "text-white" }, { t: '"users"', c: "text-emerald-400" }, { t: ")", c: "text-white" }] },
+  { tokens: [{ t: "  .select", c: "text-white" }, { t: "(", c: "text-white" }, { t: '"*"', c: "text-emerald-400" }, { t: ")", c: "text-white" }] },
+  { tokens: [{ t: "  .eq", c: "text-white" }, { t: "(", c: "text-white" }, { t: '"role"', c: "text-emerald-400" }, { t: ", ", c: "text-white" }, { t: '"admin"', c: "text-emerald-400" }, { t: ")", c: "text-white" }] },
+];
+
+const STATS = [
+  { value: "30s", label: "Setup time" },
+  { value: "100%", label: "Auto APIs" },
+  { value: "0", label: "Config files" },
+  { value: "∞", label: "Scale" },
+];
+
 export default function Hero() {
-  const [terminalStep, setTerminalStep] = useState(0);
-  const [terminalText, setTerminalText] = useState('');
-  
-  const terminalSteps = [
-    { text: '$ zendbx create my-app', delay: 50 },
-    { text: '✓ Creating database...', delay: 800 },
-    { text: '✓ Generating APIs...', delay: 600 },
-    { text: '✓ Setting up auth...', delay: 600 },
-    { text: '✓ Done in 3.2s', delay: 400 },
-    { text: '\nYour backend is ready!', delay: 1000 },
-  ];
+  const glowRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (terminalStep >= terminalSteps.length) {
-      setTimeout(() => {
-        setTerminalStep(0);
-        setTerminalText('');
-      }, 3000);
-      return;
-    }
-
-    const currentStep = terminalSteps[terminalStep];
-    let i = 0;
-    
-    const timer = setInterval(() => {
-      if (i <= currentStep.text.length) {
-        setTerminalText(prev => prev + currentStep.text[i]);
-        i++;
-      } else {
-        clearInterval(timer);
-        setTimeout(() => {
-          setTerminalText(prev => prev + '\n');
-          setTerminalStep(prev => prev + 1);
-        }, currentStep.delay);
-      }
-    }, 30);
-
-    return () => clearInterval(timer);
-  }, [terminalStep]);
+    setMounted(true);
+    const onMove = (e: MouseEvent) => {
+      if (!glowRef.current) return;
+      const x = (e.clientX / window.innerWidth - 0.5) * 60;
+      const y = (e.clientY / window.innerHeight - 0.5) * 40;
+      glowRef.current.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+    };
+    window.addEventListener('mousemove', onMove, { passive: true });
+    return () => window.removeEventListener('mousemove', onMove);
+  }, []);
 
   return (
-    <section className="relative overflow-hidden bg-black pt-32 pb-24">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        {/* Large orange glows */}
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-orange-600 rounded-full mix-blend-screen filter blur-[120px] opacity-30 animate-blob" />
-        <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-orange-500 rounded-full mix-blend-screen filter blur-[100px] opacity-25 animate-blob animation-delay-2000" />
-        <div className="absolute -bottom-8 left-1/2 w-[700px] h-[700px] bg-orange-700 rounded-full mix-blend-screen filter blur-[140px] opacity-20 animate-blob animation-delay-4000" />
-        
-        {/* Grid pattern */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ea580c08_1px,transparent_1px),linear-gradient(to_bottom,#ea580c08_1px,transparent_1px)] bg-[size:40px_40px]" />
-        
-        {/* Radial gradient overlay */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,black_100%)]" />
-        
-        {/* Floating code symbols */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-20 left-10 text-orange-500/10 text-6xl font-bold animate-float">{'{}'}</div>
-          <div className="absolute top-40 right-20 text-orange-400/10 text-5xl font-bold animate-float animation-delay-1000">{'[]'}</div>
-          <div className="absolute bottom-40 left-1/4 text-orange-600/10 text-7xl font-bold animate-float animation-delay-2000">{'</>'}</div>
-          <div className="absolute top-1/2 right-1/3 text-orange-500/10 text-4xl font-bold animate-float animation-delay-3000">{'()'}</div>
+    <section className="relative min-h-screen bg-[#000] flex flex-col overflow-hidden">
+      {/* Radial ambient — parallax */}
+      <div
+        ref={glowRef}
+        className="pointer-events-none absolute top-1/2 left-1/2 w-[900px] h-[600px] transition-transform duration-700 ease-out"
+        style={{
+          transform: 'translate(-50%, -50%)',
+          background: 'radial-gradient(ellipse 60% 50% at 50% 40%, rgba(249,115,22,0.13) 0%, transparent 70%)',
+          willChange: 'transform',
+        }}
+      />
+
+      {/* Subtle grid */}
+      <div className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: 'linear-gradient(rgba(249,115,22,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(249,115,22,0.04) 1px, transparent 1px)',
+          backgroundSize: '48px 48px',
+          maskImage: 'radial-gradient(ellipse 80% 70% at 50% 30%, black 0%, transparent 100%)',
+        }}
+      />
+
+      {/* Hero content */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-4 pt-36 pb-20">
+
+        {/* Main headline */}
+        <h1
+          className={`max-w-4xl text-5xl sm:text-6xl lg:text-[72px] font-semibold leading-[1.08] tracking-[-0.01em] text-white mb-6 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}
+          style={{ transitionDelay: '200ms' }}
+        >
+          The instant backend
+          <br />
+          <span className="relative">
+            <span className="text-orange-500">for modern apps.</span>
+            {/* Underline accent */}
+            <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 400 12" preserveAspectRatio="none">
+              <path d="M0 8 Q100 2 200 8 Q300 14 400 8" stroke="#f97316" strokeWidth="2.5" fill="none" strokeOpacity="0.4" />
+            </svg>
+          </span>
+        </h1>
+
+        {/* Subheadline */}
+        <p
+          className={`max-w-xl text-lg text-neutral-400 leading-relaxed mb-10 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}
+          style={{ transitionDelay: '300ms' }}
+        >
+          PostgreSQL database, REST APIs, auth, realtime, and storage — provisioned in seconds, not days.
+          Zero DevOps. Just build.
+        </p>
+
+        {/* CTAs */}
+        <div
+          className={`flex flex-wrap items-center justify-center gap-3 mb-16 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}
+          style={{ transitionDelay: '400ms' }}
+        >
+          <Link
+            href="/signup"
+            className="group relative inline-flex items-center gap-2 px-7 py-3.5 font-bold text-[15px] text-black rounded-xl overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-orange-500 group-hover:bg-orange-400 transition-colors duration-200" />
+            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+              style={{ background: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.15), transparent 70%)' }} />
+            <span className="relative">Start building free</span>
+            <svg className="relative w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </Link>
+          <Link
+            href="/docs"
+            className="inline-flex items-center gap-2 px-7 py-3.5 font-semibold text-[15px] text-neutral-300 hover:text-white border border-white/10 hover:border-white/20 rounded-xl transition-all duration-200 hover:bg-white/[0.03]"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Read the docs
+          </Link>
+        </div>
+
+        {/* Code window */}
+        <div
+          className={`w-full max-w-2xl mx-auto transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}
+          style={{ transitionDelay: '500ms' }}
+        >
+          {/* Glow behind code */}
+          <div className="absolute inset-x-0 bottom-0 h-40 pointer-events-none"
+            style={{ background: 'linear-gradient(to top, rgba(249,115,22,0.08), transparent)' }} />
+
+          <div className="relative rounded-2xl overflow-hidden border border-white/8 bg-[#0a0a0a] shadow-2xl shadow-black/80">
+            {/* Chrome bar */}
+            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/5 bg-[#0d0d0d]">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+                <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+                <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
+              </div>
+              <span className="ml-2 text-[11px] font-medium text-neutral-600 font-mono">app/page.tsx</span>
+              <div className="ml-auto flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                <span className="text-[11px] text-orange-500/70 font-mono">live</span>
+              </div>
+            </div>
+
+            {/* Code */}
+            <div className="p-5 font-mono text-[13px] leading-[1.65] overflow-x-auto text-left">
+              <table className="border-collapse w-full">
+                <tbody>
+                  {CODE_LINES.map((line, i) => (
+                    <tr key={i} className="group/row">
+                      <td className="select-none pr-5 text-right text-[11px] text-neutral-700 w-5 align-top leading-[1.65]">{i + 1}</td>
+                      <td className="align-top">
+                        {line.tokens.length === 0
+                          ? <span>&nbsp;</span>
+                          : line.tokens.map((tok, j) => (
+                            <span key={j} className={tok.c}>{tok.t}</span>
+                          ))
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Status bar */}
+            <div className="flex items-center justify-between px-5 py-2.5 border-t border-white/5 bg-[#0d0d0d]">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="text-[11px] font-mono text-neutral-600">200 OK · 8ms · 47 rows returned</span>
+              </div>
+              <span className="text-[11px] font-mono text-orange-600/50">zendbx@1.1.0</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
-          {/* Left Side - Content */}
-          <div className="text-left">
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600/20 to-orange-500/20 border border-orange-500/30 rounded-full mb-8 backdrop-blur-sm">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-              </span>
-              <span className="bg-gradient-to-r from-orange-400 to-orange-300 bg-clip-text text-transparent text-sm font-semibold">
-                Backend Autopilot Platform
-              </span>
+      {/* Stats strip */}
+      <div className="relative z-10 border-t border-white/5">
+        <div className="max-w-4xl mx-auto grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0 divide-white/5">
+          {STATS.map(({ value, label }) => (
+            <div key={label} className="flex flex-col items-center py-6 px-4 gap-1 group hover:bg-orange-500/[0.03] transition-colors duration-300">
+              <span className="text-3xl font-semibold text-orange-500">{value}</span>
+              <span className="text-xs text-neutral-600 font-medium">{label}</span>
             </div>
-
-            {/* Headline */}
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
-              <span className="text-white">Build Your Backend</span>
-              <br />
-              <span className="bg-gradient-to-r from-orange-500 via-orange-400 to-orange-600 bg-clip-text text-transparent animate-gradient">
-                in 30 Seconds
-              </span>
-            </h1>
-
-            {/* Subheadline */}
-            <p className="mt-6 text-xl sm:text-2xl text-gray-400 max-w-2xl leading-relaxed">
-              No cap. AI-native platform that automatically creates database, APIs, and auth — <span className="text-orange-400 font-semibold">zero config</span>.
-            </p>
-
-            {/* CTA Buttons */}
-            <div className="mt-10 flex flex-col sm:flex-row items-start gap-4">
-              <Link
-                href="/signup"
-                className="group relative w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-orange-600 to-orange-500 text-white rounded-xl font-semibold overflow-hidden transition-all hover:scale-105 hover:shadow-2xl hover:shadow-orange-500/50"
-              >
-                <span className="relative z-10 flex items-center justify-center gap-2">
-                  Start Building Free
-                  <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                  </svg>
-                </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-orange-700 to-orange-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </Link>
-              <button className="group w-full sm:w-auto px-8 py-4 border-2 border-orange-500/50 text-orange-200 rounded-xl font-semibold hover:border-orange-400 hover:bg-orange-500/10 transition-all backdrop-blur-sm">
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Watch Demo
-                </span>
-              </button>
-            </div>
-
-            {/* Trust signals */}
-            <div className="mt-8 flex flex-wrap items-start gap-6 text-sm text-gray-400">
-              <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span>No credit card required</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                <span>2 free projects forever</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Side - Animated Terminal Demo */}
-          <div className="relative">
-            {/* Glow effect */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-orange-600 to-orange-500 rounded-3xl blur-3xl opacity-40 animate-glow" />
-            
-            <div className="relative bg-black/80 backdrop-blur-xl rounded-2xl shadow-2xl border-2 border-orange-500/30 overflow-hidden">
-              {/* Terminal Header */}
-              <div className="bg-gradient-to-r from-zinc-900 to-black px-6 py-4 border-b-2 border-orange-500/30 flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500 shadow-lg shadow-red-500/50" />
-                  <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-lg shadow-yellow-500/50" />
-                  <div className="w-3 h-3 rounded-full bg-green-500 shadow-lg shadow-green-500/50" />
-                </div>
-                <div className="flex items-center gap-2 text-sm text-orange-400 font-semibold">
-                  <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse shadow-lg shadow-orange-500/50" />
-                  <span>Live Demo</span>
-                </div>
-              </div>
-
-              {/* Terminal Content */}
-              <div className="p-8 bg-black min-h-[320px] font-mono text-sm">
-                <pre className="text-gray-300 whitespace-pre-wrap">
-                  {terminalText}
-                  <span className="animate-pulse text-orange-500">|</span>
-                </pre>
-                
-                {terminalStep >= terminalSteps.length - 1 && (
-                  <div className="mt-6 p-5 bg-gradient-to-br from-orange-600/20 to-orange-500/10 border-2 border-orange-500/40 rounded-xl backdrop-blur-sm">
-                    <div className="text-xs text-orange-400 font-semibold mb-2 uppercase tracking-wider">API Endpoint:</div>
-                    <div className="text-orange-400 mb-4 font-mono text-sm">https://api.zendbx.com/abc123</div>
-                    <button className="w-full px-4 py-2.5 bg-gradient-to-r from-orange-600 to-orange-500 text-white text-sm font-semibold rounded-lg hover:from-orange-500 hover:to-orange-400 transition-all shadow-lg shadow-orange-500/30">
-                      Copy Credentials
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
-
-      {/* Add custom animations */}
-      <style jsx>{`
-        @keyframes blob {
-          0% {
-            transform: translate(0px, 0px) scale(1);
-          }
-          33% {
-            transform: translate(30px, -50px) scale(1.1);
-          }
-          66% {
-            transform: translate(-20px, 20px) scale(0.9);
-          }
-          100% {
-            transform: translate(0px, 0px) scale(1);
-          }
-        }
-        @keyframes float {
-          0%, 100% {
-            transform: translateY(0px) rotate(0deg);
-          }
-          50% {
-            transform: translateY(-20px) rotate(5deg);
-          }
-        }
-        .animate-blob {
-          animation: blob 7s infinite;
-        }
-        .animate-float {
-          animation: float 6s ease-in-out infinite;
-        }
-        .animation-delay-1000 {
-          animation-delay: 1s;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
-        .animation-delay-4000 {
-          animation-delay: 4s;
-        }
-      `}</style>
     </section>
   );
 }

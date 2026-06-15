@@ -5,6 +5,7 @@ import SocialProof from "@/components/landing/SocialProof";
 import HowItWorks from "@/components/landing/HowItWorks";
 import Features from "@/components/landing/Features";
 import InteractiveDemo from "@/components/landing/InteractiveDemo";
+import AIBuilderDemo from "@/components/landing/AIBuilderDemo";
 import SDKSection from "@/components/landing/SDKSection";
 import Pricing from "@/components/landing/Pricing";
 import Testimonials from "@/components/landing/Testimonials";
@@ -21,6 +22,7 @@ export default function Home() {
       <HowItWorks />
       <Features />
       <InteractiveDemo />
+      <AIBuilderDemo />
       <SDKSection />
       <Pricing />
       <Testimonials />

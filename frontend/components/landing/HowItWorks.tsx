@@ -1,89 +1,116 @@
 'use client';
 
-const steps = [
+import { useEffect, useRef } from 'react';
+
+function useReveal(delay = 0) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(24px)';
+    el.style.transition = `opacity 0.6s ease ${delay}ms, transform 0.6s ease ${delay}ms`;
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; obs.disconnect(); }
+    }, { threshold: 0.12 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [delay]);
+  return ref;
+}
+
+const STEPS = [
   {
-    number: '1',
-    title: 'Upload CSV',
-    description: 'Drag and drop your CSV file. We automatically detect columns and data types.',
+    n: '01',
+    title: 'Create a project',
+    body: 'Sign up and create your first project. A dedicated PostgreSQL database is provisioned in under 5 seconds.',
     icon: (
-      <svg className="w-10 h-10 text-orange-500" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 4v16m8-8H4" />
       </svg>
     ),
   },
   {
-    number: '2',
-    title: 'Ask Questions',
-    description: 'Type your question in plain English. Our AI understands natural language.',
+    n: '02',
+    title: 'Define your schema',
+    body: 'Create tables using the visual editor, SQL editor, or CSV import. Your REST API and TypeScript types are generated instantly.',
     icon: (
-      <svg className="w-10 h-10 text-orange-500" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
       </svg>
     ),
   },
   {
-    number: '3',
-    title: 'Get Answers',
-    description: 'Receive results instantly with the generated SQL and a clear explanation.',
+    n: '03',
+    title: 'Install the SDK',
+    body: 'Run npm install zendbx. Configure with your project URL and anon key. Query your database from any frontend or backend in seconds.',
     icon: (
-      <svg className="w-10 h-10 text-orange-500" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
+    n: '04',
+    title: 'Ship to production',
+    body: 'Deploy with confidence. Your database, APIs, auth, and realtime are already production-grade with 99.9% uptime SLA.',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 3l14 9-14 9V3z" />
       </svg>
     ),
   },
 ];
 
 export default function HowItWorks() {
+  const headRef = useReveal(0);
   return (
-    <section className="py-24 bg-black relative overflow-hidden">
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ea580c06_1px,transparent_1px),linear-gradient(to_bottom,#ea580c06_1px,transparent_1px)] bg-[size:40px_40px]" />
+    <section id="how" className="bg-[#000] py-28 relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-px"
+        style={{ background: 'linear-gradient(to right, transparent, rgba(249,115,22,0.12), transparent)' }} />
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-
-        {/* Header */}
-        <div className="text-center mb-20">
-          <h2 className="text-4xl sm:text-5xl font-extrabold mb-3">
-            <span className="text-white">Get Started</span>
-            <br />
-            <span className="bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent">
-              In 3 Simple Steps
-            </span>
+      <div className="max-w-6xl mx-auto px-4">
+        <div ref={headRef} className="text-center mb-16">
+          <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-orange-500 mb-4">How it works</p>
+          <h2 className="text-4xl sm:text-5xl lg:text-[56px] font-semibold text-white leading-[1.08] tracking-[-0.01em] mb-5">
+            From idea to backend<br />
+            <span className="text-orange-500">in four steps.</span>
           </h2>
-          <p className="text-gray-400 text-lg">No complex setup. No configuration. Just build.</p>
         </div>
 
-        {/* Steps grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
+        <div className="grid md:grid-cols-4 gap-3">
+          {STEPS.map((s, i) => {
+            const ref = useReveal(i * 80);
+            return (
+              <div key={s.n} ref={ref}
+                className="group relative rounded-2xl border border-white/[0.06] bg-[#080808] p-6 hover:border-orange-500/20 transition-all duration-500 overflow-hidden">
+                {/* Hover glow */}
+                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+                  style={{ background: 'radial-gradient(circle at 50% 0%, rgba(249,115,22,0.07), transparent 65%)' }} />
 
-          {/* Connector lines between cards (desktop) */}
-          <div className="hidden md:block absolute top-[72px] left-[calc(33.33%+0px)] w-[calc(33.33%-0px)] h-px bg-gradient-to-r from-orange-500/40 to-orange-500/40 z-0" />
-          <div className="hidden md:block absolute top-[72px] left-[calc(66.66%+0px)] w-[calc(33.33%-0px)] h-px bg-gradient-to-r from-orange-500/40 to-orange-500/40 z-0" />
+                {/* Number */}
+                <div className="text-[64px] font-black text-orange-500/[0.06] leading-none mb-4 select-none">{s.n}</div>
 
-          {steps.map((step, i) => (
-            <div key={i} className="relative flex flex-col items-center pt-10">
-
-              {/* Step number circle — sits on top edge */}
-              <div className="absolute -top-0 left-1/2 -translate-x-1/2 z-20">
-                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-orange-500/50">
-                  {step.number}
-                </div>
-              </div>
-
-              {/* Card */}
-              <div className="w-full rounded-2xl border border-orange-500/30 bg-zinc-900/80 pt-12 pb-8 px-6 flex flex-col items-center text-center shadow-[0_0_30px_rgba(234,88,12,0.1)] hover:shadow-[0_0_40px_rgba(234,88,12,0.2)] hover:border-orange-500/60 transition-all duration-300">
-
-                {/* Icon box */}
-                <div className="w-16 h-16 rounded-xl bg-orange-500/10 border border-orange-500/30 flex items-center justify-center mb-5">
-                  {step.icon}
+                {/* Icon */}
+                <div className="w-9 h-9 rounded-xl bg-orange-500/8 border border-orange-500/15 flex items-center justify-center text-orange-500 mb-4 group-hover:bg-orange-500/12 transition-colors">
+                  {s.icon}
                 </div>
 
-                <h3 className="text-white text-xl font-bold mb-3">{step.title}</h3>
-                <p className="text-gray-400 text-sm leading-relaxed">{step.description}</p>
+                <h3 className="text-[16px] font-bold text-white mb-2">{s.title}</h3>
+                <p className="text-[13px] text-neutral-600 leading-relaxed">{s.body}</p>
+
+                {/* Connector arrow (desktop, not last) */}
+                {i < STEPS.length - 1 && (
+                  <div className="hidden md:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full border border-orange-500/15 bg-[#000] items-center justify-center">
+                    <svg className="w-3 h-3 text-orange-500/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-
       </div>
     </section>
   );

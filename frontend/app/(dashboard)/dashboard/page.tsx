@@ -88,7 +88,7 @@ export default function DashboardPage() {
 
   const switchProject = useCallback(async (pid: string) => {
     setLoading(true);
-    const project = projects.find(p => p.id === pid);
+    const project = projects.find((p: { id: string; name: string }) => p.id === pid);
     if (project) {
       setProjectId(pid);
       setProjectName(project.name);
@@ -126,7 +126,7 @@ export default function DashboardPage() {
         // Try to use previously selected project or fall back to first project
         const currentProjectId = localStorage.getItem('current_project_id');
         const selectedProject = currentProjectId 
-          ? projectsList.find(p => p.id === currentProjectId) || projectsList[0]
+          ? projectsList.find((p: { id: string }) => p.id === currentProjectId) || projectsList[0]
           : projectsList[0];
           
         setProjectId(selectedProject.id);

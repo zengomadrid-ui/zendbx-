@@ -1,228 +1,212 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 
-const tabs = ['Database', 'Auth', 'Realtime', 'Storage'] as const;
-type Tab = typeof tabs[number];
+type Tab = 'Database' | 'Auth' | 'Realtime' | 'Storage';
 
-const snippets: Record<Tab, { label: string; lines: { text: string; type: string }[] }> = {
+const SNIPPETS: Record<Tab, { line: string; label: string; tokens: { t: string; c: string }[][] }> = {
   Database: {
-    label: 'Query your data — fully typed.',
-    lines: [
-      { text: "import { createClient } from '@zendbx/sdk'", type: 'import' },
-      { text: '', type: '' },
-      { text: 'const db = createClient({', type: 'code' },
-      { text: "  apiUrl: process.env.ZENDBX_URL,", type: 'prop' },
-      { text: "  anonKey: process.env.ZENDBX_ANON_KEY,", type: 'prop' },
-      { text: "  projectSlug: 'my-project',", type: 'prop' },
-      { text: '})', type: 'code' },
-      { text: '', type: '' },
-      { text: '// fetch active users', type: 'comment' },
-      { text: "const { data } = await db.from('users')", type: 'code' },
-      { text: "  .select('id, name, email')", type: 'chain' },
-      { text: "  .eq('status', 'active')", type: 'chain' },
-      { text: "  .order('created_at', { ascending: false })", type: 'chain' },
-      { text: '  .limit(10)', type: 'chain' },
+    label: 'Query anything in one call',
+    line: 'db.from().select().eq().order()',
+    tokens: [
+      [{ t: 'import', c: 'text-orange-400' }, { t: ' { ZendBX } from ', c: 'text-neutral-400' }, { t: '"zendbx"', c: 'text-emerald-400' }],
+      [],
+      [{ t: 'const ', c: 'text-orange-400' }, { t: 'db', c: 'text-sky-300' }, { t: ' = new ZendBX({ url, anonKey })', c: 'text-neutral-400' }],
+      [],
+      [{ t: '// Fully typed, auto-completed', c: 'text-neutral-600 italic' }],
+      [{ t: 'const ', c: 'text-orange-400' }, { t: '{ data } ', c: 'text-white' }, { t: '= await ', c: 'text-orange-400' }, { t: 'db', c: 'text-sky-300' }],
+      [{ t: '  .from', c: 'text-white' }, { t: '(', c: 'text-white' }, { t: '"products"', c: 'text-emerald-400' }, { t: ')', c: 'text-white' }],
+      [{ t: '  .select', c: 'text-white' }, { t: '(', c: 'text-white' }, { t: '"id, name, price"', c: 'text-emerald-400' }, { t: ')', c: 'text-white' }],
+      [{ t: '  .gt', c: 'text-white' }, { t: '(', c: 'text-white' }, { t: '"price"', c: 'text-emerald-400' }, { t: ', ', c: 'text-white' }, { t: '100', c: 'text-sky-400' }, { t: ')', c: 'text-white' }],
+      [{ t: '  .order', c: 'text-white' }, { t: '(', c: 'text-white' }, { t: '"price"', c: 'text-emerald-400' }, { t: ', { ', c: 'text-white' }, { t: 'ascending', c: 'text-sky-300' }, { t: ': ', c: 'text-white' }, { t: 'false', c: 'text-amber-400' }, { t: ' })', c: 'text-white' }],
     ],
   },
   Auth: {
-    label: 'Auth in minutes, not days.',
-    lines: [
-      { text: "import { createClient } from '@zendbx/sdk'", type: 'import' },
-      { text: '', type: '' },
-      { text: 'const db = createClient({', type: 'code' },
-      { text: "  apiUrl: process.env.ZENDBX_URL,", type: 'prop' },
-      { text: "  anonKey: process.env.ZENDBX_ANON_KEY,", type: 'prop' },
-      { text: "  projectSlug: 'my-project',", type: 'prop' },
-      { text: '})', type: 'code' },
-      { text: '', type: '' },
-      { text: '// sign up a new user', type: 'comment' },
-      { text: 'const { data, error } = await db.auth.signUp({', type: 'code' },
-      { text: "  email: 'user@example.com',", type: 'prop' },
-      { text: "  password: 'supersecret123',", type: 'prop' },
-      { text: '})', type: 'code' },
-      { text: '', type: '' },
-      { text: '// sign in', type: 'comment' },
-      { text: 'await db.auth.signIn({ email, password })', type: 'code' },
+    label: 'Ship auth before your first commit',
+    line: 'db.auth.signUp() / signIn()',
+    tokens: [
+      [{ t: '// Sign up', c: 'text-neutral-600 italic' }],
+      [{ t: 'const ', c: 'text-orange-400' }, { t: '{ data } ', c: 'text-white' }, { t: '= await ', c: 'text-orange-400' }, { t: 'db', c: 'text-sky-300' }, { t: '.auth.signUp({', c: 'text-white' }],
+      [{ t: '  email', c: 'text-sky-300' }, { t: ': ', c: 'text-white' }, { t: '"user@app.com"', c: 'text-emerald-400' }, { t: ',', c: 'text-white' }],
+      [{ t: '  password', c: 'text-sky-300' }, { t: ': ', c: 'text-white' }, { t: '"s3cr3t"', c: 'text-emerald-400' }],
+      [{ t: '})', c: 'text-white' }],
+      [],
+      [{ t: '// Sign in', c: 'text-neutral-600 italic' }],
+      [{ t: 'const ', c: 'text-orange-400' }, { t: '{ user } ', c: 'text-white' }, { t: '= await ', c: 'text-orange-400' }, { t: 'db', c: 'text-sky-300' }, { t: '.auth.signIn({', c: 'text-white' }],
+      [{ t: '  email, password', c: 'text-sky-300' }],
+      [{ t: '})', c: 'text-white' }],
     ],
   },
   Realtime: {
-    label: 'Live data, zero polling.',
-    lines: [
-      { text: "import { createClient } from '@zendbx/sdk'", type: 'import' },
-      { text: '', type: '' },
-      { text: 'const db = createClient({', type: 'code' },
-      { text: "  apiUrl: process.env.ZENDBX_URL,", type: 'prop' },
-      { text: "  anonKey: process.env.ZENDBX_ANON_KEY,", type: 'prop' },
-      { text: "  projectSlug: 'my-project',", type: 'prop' },
-      { text: '})', type: 'code' },
-      { text: '', type: '' },
-      { text: '// subscribe to new messages', type: 'comment' },
-      { text: "const sub = db.realtime.from('messages')", type: 'code' },
-      { text: "  .on('INSERT', (payload) => {", type: 'chain' },
-      { text: "    console.log('new message:', payload.new)", type: 'inner' },
-      { text: '  })', type: 'chain' },
-      { text: '  .subscribe()', type: 'chain' },
-      { text: '', type: '' },
-      { text: '// unsubscribe when done', type: 'comment' },
-      { text: 'sub.unsubscribe()', type: 'code' },
+    label: 'Live updates — zero polling',
+    line: 'db.realtime.from().on().subscribe()',
+    tokens: [
+      [{ t: '// Subscribe to changes', c: 'text-neutral-600 italic' }],
+      [{ t: 'const ', c: 'text-orange-400' }, { t: 'sub ', c: 'text-white' }, { t: '= ', c: 'text-white' }, { t: 'db', c: 'text-sky-300' }, { t: '.realtime', c: 'text-white' }],
+      [{ t: '  .from', c: 'text-white' }, { t: '(', c: 'text-white' }, { t: '"messages"', c: 'text-emerald-400' }, { t: ')', c: 'text-white' }],
+      [{ t: '  .on', c: 'text-white' }, { t: '(', c: 'text-white' }, { t: '"INSERT"', c: 'text-amber-400' }, { t: ', (', c: 'text-white' }, { t: 'payload', c: 'text-sky-300' }, { t: ') => {', c: 'text-white' }],
+      [{ t: '    console', c: 'text-neutral-400' }, { t: '.log(', c: 'text-white' }, { t: 'payload.new', c: 'text-sky-300' }, { t: ')', c: 'text-white' }],
+      [{ t: '  })', c: 'text-white' }],
+      [{ t: '  .subscribe()', c: 'text-white' }],
+      [],
+      [{ t: '// Clean up', c: 'text-neutral-600 italic' }],
+      [{ t: 'sub', c: 'text-sky-300' }, { t: '.unsubscribe()', c: 'text-white' }],
     ],
   },
   Storage: {
-    label: 'File uploads, one call.',
-    lines: [
-      { text: "import { createClient } from '@zendbx/sdk'", type: 'import' },
-      { text: '', type: '' },
-      { text: 'const db = createClient({', type: 'code' },
-      { text: "  apiUrl: process.env.ZENDBX_URL,", type: 'prop' },
-      { text: "  anonKey: process.env.ZENDBX_ANON_KEY,", type: 'prop' },
-      { text: "  projectSlug: 'my-project',", type: 'prop' },
-      { text: '})', type: 'code' },
-      { text: '', type: '' },
-      { text: '// upload a file to a bucket', type: 'comment' },
-      { text: "const bucket = db.storage.bucket('avatars')", type: 'code' },
-      { text: 'const { data, error } = await bucket.upload(', type: 'code' },
-      { text: '  file,', type: 'prop' },
-      { text: "  'user-123.png',", type: 'prop' },
-      { text: ')', type: 'code' },
-      { text: '', type: '' },
-      { text: '// list files in the bucket', type: 'comment' },
-      { text: 'const { data: files } = await bucket.list()', type: 'code' },
+    label: 'File uploads in one call',
+    line: 'db.storage.bucket().upload()',
+    tokens: [
+      [{ t: '// Upload a file', c: 'text-neutral-600 italic' }],
+      [{ t: 'const ', c: 'text-orange-400' }, { t: 'bucket ', c: 'text-white' }, { t: '= ', c: 'text-white' }, { t: 'db', c: 'text-sky-300' }, { t: '.storage.bucket(', c: 'text-white' }, { t: '"avatars"', c: 'text-emerald-400' }, { t: ')', c: 'text-white' }],
+      [],
+      [{ t: 'const ', c: 'text-orange-400' }, { t: '{ data } ', c: 'text-white' }, { t: '= await ', c: 'text-orange-400' }, { t: 'bucket', c: 'text-sky-300' }, { t: '.upload(', c: 'text-white' }],
+      [{ t: '  file, ', c: 'text-sky-300' }, { t: '"profile.png"', c: 'text-emerald-400' }],
+      [{ t: ')', c: 'text-white' }],
+      [],
+      [{ t: '// Get public URL', c: 'text-neutral-600 italic' }],
+      [{ t: 'const ', c: 'text-orange-400' }, { t: '{ url } ', c: 'text-white' }, { t: '= ', c: 'text-white' }, { t: 'bucket', c: 'text-sky-300' }, { t: '.getPublicUrl(', c: 'text-white' }, { t: '"profile.png"', c: 'text-emerald-400' }, { t: ')', c: 'text-white' }],
     ],
   },
 };
 
-const features = [
-  'Auto-generated types',
-  'Built-in auth helpers',
-  'Realtime subscriptions',
-  'Zero boilerplate',
-];
-
-const frameworks = ['React', 'Next.js', 'Vue', 'Svelte', 'Node.js', 'Python', 'Go'];
-
-function getColor(type: string): string {
-  switch (type) {
-    case 'import': return 'text-orange-400';
-    case 'comment': return 'text-zinc-500 italic';
-    case 'chain': return 'text-yellow-300';
-    case 'inner': return 'text-gray-300 pl-4';
-    case 'prop': return 'text-green-400';
-    default: return 'text-gray-200';
-  }
-}
+const TABS: Tab[] = ['Database', 'Auth', 'Realtime', 'Storage'];
+const FRAMEWORKS = ['React', 'Next.js', 'Vue', 'Svelte', 'Node.js', 'Python', 'Go', 'Flutter'];
 
 export default function SDKSection() {
-  const [activeTab, setActiveTab] = useState<Tab>('Database');
-  const snippet = snippets[activeTab];
+  const [active, setActive] = useState<Tab>('Database');
+  const headRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = headRef.current;
+    if (!el) return;
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(24px)';
+    el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; obs.disconnect(); }
+    }, { threshold: 0.15 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  const { label, tokens } = SNIPPETS[active];
 
   return (
-    <section className="py-24 bg-zinc-900 relative overflow-hidden">
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ea580c06_1px,transparent_1px),linear-gradient(to_bottom,#ea580c06_1px,transparent_1px)] bg-[size:40px_40px]" />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+    <section className="bg-[#000] py-28 relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-px"
+        style={{ background: 'linear-gradient(to right, transparent, rgba(249,115,22,0.12), transparent)' }} />
+      <div className="absolute inset-0 pointer-events-none"
+        style={{ background: 'radial-gradient(ellipse 50% 40% at 20% 50%, rgba(249,115,22,0.04), transparent)' }} />
 
-          {/* Left */}
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-orange-500/10 border border-orange-500/30 rounded-full text-sm font-semibold text-orange-400 mb-6">
-              <span className="text-xs">&lt;/&gt;</span>
-              Developer Experience
-            </div>
+      <div className="max-w-6xl mx-auto px-4">
+        <div className="grid lg:grid-cols-2 gap-16 items-center">
 
-            <h2 className="text-5xl sm:text-6xl font-extrabold leading-tight mb-6">
-              <span className="text-white">From zero to</span>
-              <br />
-              <span className="bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent">backend</span>
-              <br />
-              <span className="text-white">in 3 lines.</span>
+          {/* Left — pitch */}
+          <div ref={headRef}>
+            <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-orange-500 mb-4">SDK</p>
+            <h2 className="text-4xl sm:text-5xl lg:text-[52px] font-semibold text-white leading-[1.08] tracking-[-0.01em] mb-5">
+              Backend in<br />
+              <span className="text-orange-500">3 lines of code.</span>
             </h2>
-
-            <p className="text-gray-400 text-lg mb-2 leading-relaxed">
-              No cap — init your client, query your database, ship it.
-              Works with every framework you already vibe with.
-            </p>
-            <p className="text-gray-500 text-sm mb-8">
-              Fully typed. Zero boilerplate. Lowkey the fastest way to get a backend running.
+            <p className="text-neutral-500 text-lg mb-8 leading-relaxed">
+              The ZendBX TypeScript SDK gives you a fully typed, auto-completed interface to your entire backend. Install, configure, ship.
             </p>
 
+            {/* Framework badges */}
             <div className="flex flex-wrap gap-2 mb-8">
-              {frameworks.map((fw) => (
-                <span key={fw} className="px-3 py-1.5 bg-zinc-800 border border-zinc-700 hover:border-orange-500/40 text-gray-300 text-sm rounded-lg transition-colors cursor-default">
-                  {fw}
+              {FRAMEWORKS.map(f => (
+                <span key={f} className="px-3 py-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] text-sm text-neutral-600 hover:text-neutral-300 hover:border-orange-500/20 transition-all cursor-default">
+                  {f}
                 </span>
               ))}
             </div>
 
-            <Link href="/docs/sdk" className="inline-flex items-center gap-2 text-orange-400 hover:text-orange-300 font-semibold transition-colors group">
-              Explore all SDKs
-              <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+            {/* Install command */}
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.06] bg-[#0a0a0a] mb-8 font-mono text-sm">
+              <span className="text-orange-500 select-none">$</span>
+              <span className="text-neutral-300">npm install zendbx</span>
+              <button
+                onClick={() => navigator.clipboard.writeText('npm install zendbx')}
+                className="ml-auto text-neutral-700 hover:text-white transition-colors"
+                title="Copy"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            </div>
+
+            <Link href="/docs/sdk" className="inline-flex items-center gap-2 text-orange-400 hover:text-orange-300 font-semibold text-sm transition-colors group">
+              Full SDK reference
+              <svg className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
               </svg>
             </Link>
           </div>
 
           {/* Right — code window */}
           <div className="relative">
-            <div className="absolute -inset-2 bg-gradient-to-r from-orange-600/20 to-orange-500/10 rounded-2xl blur-2xl" />
-            <div className="relative bg-zinc-950 rounded-2xl border border-zinc-800 overflow-hidden shadow-2xl">
+            <div className="absolute -inset-1 rounded-2xl opacity-40 pointer-events-none"
+              style={{ background: 'radial-gradient(ellipse at 50% 50%, rgba(249,115,22,0.12), transparent 70%)', filter: 'blur(16px)' }} />
 
-              {/* Window chrome */}
-              <div className="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-800 bg-zinc-900">
-                <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
-                <div className="w-3 h-3 rounded-full bg-green-500/80" />
-                <span className="ml-auto text-xs text-zinc-500 font-mono">zendbx-sdk</span>
+            <div className="relative rounded-2xl border border-white/[0.08] bg-[#0a0a0a] overflow-hidden">
+              {/* Chrome */}
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.05] bg-[#0d0d0d]">
+                <div className="flex gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+                  <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+                  <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
+                </div>
+                <span className="text-[11px] text-neutral-700 font-mono ml-2">zendbx-sdk · TypeScript</span>
               </div>
 
               {/* Tabs */}
-              <div className="flex border-b border-zinc-800 bg-zinc-900/50">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setActiveTab(tab)}
-                    className={`px-4 py-2.5 text-sm font-medium transition-all border-b-2 ${
-                      activeTab === tab
-                        ? 'text-white border-orange-500 bg-zinc-800/50'
-                        : 'text-zinc-500 border-transparent hover:text-zinc-300'
-                    }`}
-                  >
+              <div className="flex border-b border-white/[0.05] bg-[#0d0d0d]">
+                {TABS.map(tab => (
+                  <button key={tab} onClick={() => setActive(tab)}
+                    className={`px-4 py-2.5 text-[13px] font-medium transition-all border-b-2 ${
+                      active === tab
+                        ? 'text-white border-orange-500'
+                        : 'text-neutral-600 border-transparent hover:text-neutral-400'
+                    }`}>
                     {tab}
                   </button>
                 ))}
               </div>
 
               {/* Label */}
-              <div className="px-5 pt-4 pb-1">
-                <span className="text-xs text-orange-400 font-semibold">{snippet.label}</span>
+              <div className="px-5 pt-4">
+                <span className="text-[11px] text-orange-500/70 font-mono">{label}</span>
               </div>
 
               {/* Code */}
-              <div className="px-5 pb-5 font-mono text-sm leading-7 overflow-x-auto">
-                {snippet.lines.map((line, i) => (
-                  <div key={i} className="flex gap-4 min-w-0">
-                    <span className="select-none text-zinc-700 w-5 text-right flex-shrink-0 text-xs pt-0.5">
-                      {line.text ? i + 1 : ''}
-                    </span>
-                    <span className={`whitespace-pre ${getColor(line.type)}`}>
-                      {line.text || '\u00A0'}
-                    </span>
-                  </div>
-                ))}
+              <div className="p-5 font-mono text-[13px] leading-[1.7] overflow-x-auto min-h-[240px]">
+                <table className="border-collapse w-full">
+                  <tbody>
+                    {tokens.map((line, i) => (
+                      <tr key={i}>
+                        <td className="select-none pr-4 text-right text-[11px] text-neutral-800 w-4 align-top leading-[1.7]">{i + 1}</td>
+                        <td>
+                          {line.length === 0
+                            ? <span>&nbsp;</span>
+                            : line.map((tok, j) => <span key={j} className={tok.c}>{tok.t}</span>)
+                          }
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
               {/* Footer */}
-              <div className="px-5 py-3 border-t border-zinc-800 bg-zinc-900 flex flex-wrap gap-4">
-                {features.map((f) => (
-                  <span key={f} className="flex items-center gap-1.5 text-xs text-zinc-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500 flex-shrink-0" />
-                    {f}
-                  </span>
-                ))}
+              <div className="px-5 py-3 border-t border-white/[0.05] bg-[#0d0d0d] flex items-center justify-between">
+                <span className="text-[11px] text-neutral-700 font-mono">TypeScript · 100% typed</span>
+                <span className="text-[11px] text-orange-600/40 font-mono">zendbx@1.1.0</span>
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </section>

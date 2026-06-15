@@ -1,209 +1,145 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { useEffect, useRef } from 'react';
 import Link from 'next/link';
 
-const plans = [
+function useReveal(delay = 0) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(24px)';
+    el.style.transition = `opacity 0.6s ease ${delay}ms, transform 0.6s ease ${delay}ms`;
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { el.style.opacity = '1'; el.style.transform = 'translateY(0)'; obs.disconnect(); }
+    }, { threshold: 0.1 });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [delay]);
+  return ref;
+}
+
+const PLANS = [
   {
-    name: 'Free',
+    name: 'Hobby',
+    badge: null,
     price: '$0',
-    period: '/month',
-    description: 'Perfect for trying out ZENDBX',
-    features: [
-      '2 projects',
-      '1 GB storage per project',
-      'Community support',
-      'All core features',
-      'API access',
-    ],
-    cta: 'Start Free',
-    highlighted: false,
+    per: 'forever',
+    desc: 'Perfect for personal projects and prototypes.',
+    features: ['2 projects', '1 GB database storage', 'Unlimited API requests', 'Built-in auth & OAuth', 'Community support'],
+    cta: 'Start for free',
+    href: '/signup',
+    style: 'border-white/[0.08] bg-[#080808]',
+    ctaStyle: 'bg-white/[0.06] hover:bg-white/[0.10] text-white border border-white/10',
   },
   {
     name: 'Pro',
+    badge: 'Most popular',
     price: '$29',
-    period: '/month',
-    description: 'For professionals and small teams',
-    features: [
-      'Unlimited projects',
-      '10 GB storage per project',
-      'Priority support',
-      'Advanced features',
-      'Custom domains',
-      'Team collaboration',
-      'API rate limits: 10k/day',
-    ],
-    cta: 'Start Pro Trial',
-    highlighted: true,
+    per: 'per month',
+    desc: 'For professional developers shipping real products.',
+    features: ['Unlimited projects', '10 GB database storage', 'Priority support', 'Custom domains', 'Team collaboration', 'Advanced RBAC', 'Audit logs', '10k API req/day'],
+    cta: 'Start Pro — free 14 days',
+    href: '/signup?plan=pro',
+    style: 'border-orange-500/40 bg-[#0d0a06] shadow-2xl shadow-orange-900/20',
+    ctaStyle: 'bg-orange-500 hover:bg-orange-400 text-black font-bold',
   },
   {
     name: 'Team',
+    badge: null,
     price: '$99',
-    period: '/month',
-    description: 'For growing teams and organizations',
-    features: [
-      'Everything in Pro',
-      '100 GB storage per project',
-      'Dedicated support',
-      'SSO authentication',
-      'Advanced RBAC',
-      'Audit logs',
-      'API rate limits: 100k/day',
-      'SLA guarantee',
-    ],
-    cta: 'Start Team Trial',
-    highlighted: false,
+    per: 'per month',
+    desc: 'For growing teams that need scale and reliability.',
+    features: ['Everything in Pro', '100 GB storage', 'SSO / SAML', '99.9% SLA', 'Dedicated support', '100k API req/day', 'Advanced analytics'],
+    cta: 'Start Team trial',
+    href: '/signup?plan=team',
+    style: 'border-white/[0.08] bg-[#080808]',
+    ctaStyle: 'bg-white/[0.06] hover:bg-white/[0.10] text-white border border-white/10',
   },
 ];
 
 export default function Pricing() {
+  const headRef = useReveal(0);
+
   return (
-    <section id="pricing" className="py-24 bg-black relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#ea580c08_1px,transparent_1px),linear-gradient(to_bottom,#ea580c08_1px,transparent_1px)] bg-[size:40px_40px]" />
-      <div className="absolute top-0 right-1/4 w-96 h-96 bg-orange-600 rounded-full mix-blend-screen filter blur-[120px] opacity-20" />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="text-center mb-16">
-          <div className="inline-block mb-4">
-            <span className="px-4 py-2 bg-gradient-to-r from-orange-600/20 to-orange-500/20 border border-orange-500/30 rounded-full text-sm font-semibold text-orange-300 backdrop-blur-sm">
-              Pricing Plans
-            </span>
-          </div>
-          <h2 className="text-4xl sm:text-5xl font-bold mb-4">
-            <span className="text-white">Simple, Transparent</span>
-            <br />
-            <span className="bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent">
-              Pricing
-            </span>
+    <section id="pricing" className="bg-[#000] py-28 relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-px"
+        style={{ background: 'linear-gradient(to right, transparent, rgba(249,115,22,0.15), transparent)' }} />
+
+      {/* Soft ambient */}
+      <div className="absolute inset-0 pointer-events-none"
+        style={{ background: 'radial-gradient(ellipse 60% 40% at 50% 0%, rgba(249,115,22,0.05), transparent)' }} />
+
+      <div className="max-w-6xl mx-auto px-4">
+
+        <div ref={headRef} className="text-center mb-16">
+          <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-orange-500 mb-4">Pricing</p>
+          <h2 className="text-4xl sm:text-5xl lg:text-[56px] font-semibold text-white leading-[1.08] tracking-[-0.01em] mb-5">
+            Simple pricing.<br />
+            <span className="text-orange-500">No surprises.</span>
           </h2>
-          <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-            Start free, upgrade as you grow. No hidden fees.
+          <p className="text-neutral-500 text-lg max-w-md mx-auto">
+            Start free. Upgrade when you're ready. Cancel anytime — no lock-in.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {plans.map((plan, index) => (
-            <motion.div
-              key={plan.name}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              viewport={{ once: true }}
-              className={`relative bg-zinc-950 rounded-2xl shadow-lg border-2 p-8 ${
-                plan.highlighted
-                  ? 'border-orange-500 shadow-2xl shadow-orange-500/30 scale-105'
-                  : 'border-orange-500/20'
-              }`}
-            >
-              {plan.highlighted && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                  <span className="bg-gradient-to-r from-orange-600 to-orange-500 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
-                    Most Popular
-                  </span>
-                </div>
-              )}
+        {/* Cards */}
+        <div className="grid md:grid-cols-3 gap-3 items-start">
+          {PLANS.map((plan, i) => {
+            const cardRef = useReveal(i * 80);
+            return (
+              <div key={plan.name} ref={cardRef}
+                className={`relative rounded-2xl border p-7 flex flex-col ${plan.style}`}
+              >
+                {plan.badge && (
+                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 z-10">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500 text-black text-[11px] font-bold tracking-wide">
+                      <span className="w-1.5 h-1.5 rounded-full bg-black/40" />
+                      {plan.badge.toUpperCase()}
+                    </span>
+                  </div>
+                )}
 
-              <div className="text-center mb-6">
-                <h3 className="text-2xl font-bold text-white mb-2">
-                  {plan.name}
-                </h3>
-                <p className="text-gray-400 text-sm mb-4">{plan.description}</p>
-                <div className="flex items-baseline justify-center">
-                  <span className="text-5xl font-bold text-white">
-                    {plan.price}
-                  </span>
-                  <span className="text-gray-400 ml-2">{plan.period}</span>
+                <div className="mb-6">
+                  <p className="text-[11px] font-bold tracking-[0.15em] uppercase text-neutral-600 mb-3">{plan.name}</p>
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-[44px] font-semibold text-white leading-none">{plan.price}</span>
+                    <span className="text-sm text-neutral-600">{plan.per}</span>
+                  </div>
+                  <p className="text-sm text-neutral-600">{plan.desc}</p>
                 </div>
+
+                <ul className="space-y-3 mb-8 flex-1">
+                  {plan.features.map(f => (
+                    <li key={f} className="flex items-start gap-2.5">
+                      <svg className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-sm text-neutral-400">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Link href={plan.href}
+                  className={`block text-center py-3 rounded-xl text-[14px] font-bold transition-all duration-200 ${plan.ctaStyle}`}>
+                  {plan.cta}
+                </Link>
               </div>
-
-              <ul className="space-y-4 mb-8">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start">
-                    <svg
-                      className="w-5 h-5 text-orange-500 mr-3 flex-shrink-0 mt-0.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                    <span className="text-gray-300">{feature}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <Link
-                href="/signup"
-                className={`block w-full py-3 px-6 rounded-lg font-semibold text-center transition-colors ${
-                  plan.highlighted
-                    ? 'bg-gradient-to-r from-orange-600 to-orange-500 text-white hover:opacity-90 shadow-lg shadow-orange-600/30'
-                    : 'bg-zinc-700 text-gray-300 hover:bg-zinc-600 border border-gray-600'
-                }`}
-              >
-                {plan.cta}
-              </Link>
-            </motion.div>
-          ))}
+            );
+          })}
         </div>
 
-        {/* Enterprise CTA */}
-        <div className="mt-16 text-center">
-          <div className="relative inline-block max-w-2xl">
-            <div className="absolute -inset-2 bg-gradient-to-r from-orange-600 to-orange-500 rounded-3xl blur-2xl opacity-30" />
-            <div className="relative bg-zinc-950 rounded-2xl shadow-lg border-2 border-orange-500/30 p-8">
-              <h3 className="text-2xl font-bold text-white mb-2">
-                Need more? Talk to us about Enterprise
-              </h3>
-              <p className="text-gray-400 mb-6">
-                Custom limits, dedicated infrastructure, and premium support for large organizations.
-              </p>
-              <Link
-                href="/contact"
-                className="inline-block px-8 py-3 border-2 border-orange-500 text-orange-400 rounded-lg font-semibold hover:bg-orange-500 hover:text-white transition-all shadow-lg shadow-orange-500/20"
-              >
-                Contact Sales
-              </Link>
-            </div>
+        {/* Enterprise bar */}
+        <div className="mt-4 rounded-2xl border border-white/[0.06] bg-[#080808] px-8 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
+            <p className="text-white font-bold text-[15px] mb-0.5">Need enterprise scale?</p>
+            <p className="text-sm text-neutral-600">Custom limits, dedicated infra, SLA guarantees, and white-glove onboarding.</p>
           </div>
-        </div>
-
-        {/* FAQ */}
-        <div className="mt-16 max-w-3xl mx-auto">
-          <h3 className="text-2xl font-bold text-white mb-6 text-center">
-            Frequently Asked Questions
-          </h3>
-          <div className="space-y-4">
-            {[
-              {
-                q: 'Can I change plans later?',
-                a: 'Yes, you can upgrade or downgrade at any time. Changes take effect immediately.',
-              },
-              {
-                q: 'What happens if I exceed my storage limit?',
-                a: "You'll be notified when you reach 80% of your limit. You can upgrade or optimize your data usage.",
-              },
-              {
-                q: 'Is there a free trial for paid plans?',
-                a: 'Yes, all paid plans come with a 14-day free trial. No credit card required.',
-              },
-            ].map((faq) => (
-              <details
-                key={faq.q}
-                className="bg-zinc-950 rounded-lg border-2 border-orange-500/20 p-4 cursor-pointer hover:border-orange-500/50 transition-colors"
-              >
-                <summary className="font-semibold text-white">
-                  {faq.q}
-                </summary>
-                <p className="mt-2 text-gray-400">{faq.a}</p>
-              </details>
-            ))}
-          </div>
+          <Link href="/contact"
+            className="shrink-0 px-5 py-2.5 rounded-xl border border-orange-500/30 text-orange-400 hover:text-orange-300 hover:border-orange-400 text-sm font-bold transition-all whitespace-nowrap">
+            Talk to sales →
+          </Link>
         </div>
       </div>
     </section>
