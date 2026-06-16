@@ -63,9 +63,14 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # /p/{slug} with NO sub-path is a public info endpoint — no API key needed
+        # /p/{slug}/docs redirects to the main /docs Swagger UI
         import re as _re2
         if _re2.match(r"^/p/[^/]+$", path):
             return await call_next(request)
+        _slug_sub = _re2.match(r"^/p/[^/]+(/docs|/redoc|/openapi\.json)$", path)
+        if _slug_sub:
+            from starlette.responses import RedirectResponse
+            return RedirectResponse(url=_slug_sub.group(1), status_code=302)
 
         # Skip admin/auth paths
         if path in SKIP_EXACT:
