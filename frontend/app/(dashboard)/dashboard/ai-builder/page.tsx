@@ -328,6 +328,7 @@ export default function AIBuilderPage() {
   const [activeTableIdx, setActiveTableIdx] = useState(0);
   const [thinkDots, setThinkDots]     = useState('');
   const [copiedIdx, setCopiedIdx]     = useState<number | null>(null);
+  const [apiError, setApiError]       = useState('');
 
   useEffect(() => {
     if (phase !== 'thinking') return;
@@ -344,9 +345,93 @@ export default function AIBuilderPage() {
     setVisibleCols({});
     setActiveTab('tables');
     setActiveTableIdx(0);
+    setApiError('');
 
-    await delay(1200);
+    const projectId = typeof window !== 'undefined' ? localStorage.getItem('current_project_id') : null;
+    const token     = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
 
+    // ── Try real backend first ──────────────────────────────────────────────
+    if (projectId && token) {
+      try {
+        const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
+        const res = await fetch(`${apiBase}/api/ai/${projectId}/generate-backend`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ description: text }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const plan = data.plan ?? {};
+          const execution = data.execution ?? {};
+
+          // Map backend response → UI shape
+          const mapped: GeneratedResult = {
+            tables: (plan.tables ?? []).map((t: any) => ({
+              name: t.name,
+              columns: (t.columns ?? []).map((c: any) => ({
+                name: c.name,
+                type: (c.type ?? 'text').toLowerCase(),
+                constraint: [
+                  c.primary_key ? 'PRIMARY KEY' : '',
+                  c.default ? `DEFAULT ${c.default}` : '',
+                  c.nullable === false ? 'NOT NULL' : '',
+                  c.unique ? 'UNIQUE' : '',
+                ].filter(Boolean).join(' '),
+              })),
+            })),
+            sqlStatements: (plan.tables ?? []).map((t: any) => {
+              const cols = (t.columns ?? []).map((c: any) => {
+                let def = `  "${c.name}" ${c.type ?? 'TEXT'}`;
+                if (c.primary_key) def += ' PRIMARY KEY';
+                if (c.default)     def += ` DEFAULT ${c.default}`;
+                if (c.nullable === false) def += ' NOT NULL';
+                if (c.unique)      def += ' UNIQUE';
+                return def;
+              }).join(',\n');
+              return `CREATE TABLE IF NOT EXISTS "${t.name}" (\n${cols}\n);`;
+            }),
+            apiRoutes: [
+              ...(plan.tables ?? []).flatMap((t: any) => [
+                `GET    /p/${execution.slug ?? '{slug}'}/${t.name}    — List ${t.name}`,
+                `POST   /p/${execution.slug ?? '{slug}'}/${t.name}    — Create ${t.name.slice(0,-1)}`,
+                `PATCH  /p/${execution.slug ?? '{slug}'}/${t.name}/:id — Update`,
+                `DELETE /p/${execution.slug ?? '{slug}'}/${t.name}/:id — Delete`,
+              ]),
+            ],
+            summary: data.summary ?? `${(plan.tables ?? []).length} tables created in your project.`,
+          };
+
+          setResult(mapped);
+          setPhase('building');
+
+          for (let t = 0; t < mapped.tables.length; t++) {
+            const table = mapped.tables[t];
+            setActiveTableIdx(t);
+            for (let c = 0; c <= table.columns.length; c++) {
+              setVisibleCols(prev => ({ ...prev, [table.name]: c }));
+              await delay(120);
+            }
+            await delay(180);
+          }
+
+          setPhase('done');
+          return; // ← real API succeeded, skip demo fallback
+        } else {
+          const err = await res.json().catch(() => ({}));
+          setApiError(err.detail ?? `API error ${res.status}`);
+        }
+      } catch (e: any) {
+        setApiError(e.message ?? 'Network error');
+      }
+    } else {
+      setApiError('No project selected. Select a project first to generate real tables.');
+    }
+
+    // ── Fallback: demo mode ─────────────────────────────────────────────────
     const parsed = parsePrompt(text);
     setResult(parsed);
     setPhase('building');
@@ -482,6 +567,19 @@ export default function AIBuilderPage() {
             <div className="flex items-start gap-3 bg-gradient-to-r from-orange-500/10 to-transparent border border-orange-500/30 rounded-xl px-5 py-4">
               <IconCheck className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
               <p className="text-sm text-[#ededed] leading-relaxed">{result.summary}</p>
+            </div>
+          )}
+
+          {/* API error notice — shown when backend failed and we fell back to demo */}
+          {phase === 'done' && apiError && (
+            <div className="flex items-start gap-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-5 py-3">
+              <svg className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              <div>
+                <p className="text-sm text-yellow-300 font-medium">Demo mode — tables were NOT created in your project</p>
+                <p className="text-xs text-yellow-400/70 mt-0.5">{apiError}</p>
+              </div>
             </div>
           )}
 
@@ -658,7 +756,11 @@ export default function AIBuilderPage() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-gradient-to-r from-orange-500/10 to-transparent border border-orange-500/20 rounded-xl px-5 py-4">
               <div>
                 <p className="text-sm font-semibold text-[#ededed]">Like what you see?</p>
-                <p className="text-xs text-[#6b6b6b] mt-0.5">Connect a real project to create these tables instantly with one click.</p>
+                <p className="text-xs text-[#6b6b6b] mt-0.5">
+                  {apiError
+                    ? 'Select a project to create these tables for real.'
+                    : 'Tables have been created in your project. Head to the Table Editor to see them.'}
+                </p>
               </div>
               <div className="flex gap-3">
                 <button onClick={reset}
@@ -666,7 +768,13 @@ export default function AIBuilderPage() {
                   Try another
                 </button>
                 <button
-                  onClick={() => { window.location.href = '/onboarding'; }}
+                  onClick={() => {
+                    if (apiError) {
+                      window.location.href = '/onboarding';
+                    } else {
+                      window.location.href = '/dashboard/database/tables';
+                    }
+                  }}
                   className="px-5 py-2 bg-gradient-to-r from-orange-600 to-orange-500 text-white rounded-lg text-sm font-semibold hover:from-orange-500 hover:to-orange-400 transition-all shadow-lg shadow-orange-500/20 whitespace-nowrap">
                   Create real tables
                 </button>
