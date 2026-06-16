@@ -8,7 +8,11 @@ import traceback
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    debug=settings.DEBUG
+    debug=settings.DEBUG,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    description="ZendBX — instant backend platform. Postgres, REST APIs, auth, storage and realtime in one.",
 )
 
 # Global exception handler — re-raise HTTPException so FastAPI handles it correctly,
@@ -211,7 +215,7 @@ async def root():
         "version": settings.APP_VERSION,
         "status": "running",
         "environment": settings.ENVIRONMENT,
-        "docs": "https://docs.zendbx.in",
+        "docs": "https://api.zendbx.in/docs",
         "dashboard": "https://app.zendbx.in",
     }
 
