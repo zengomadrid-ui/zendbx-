@@ -70,6 +70,12 @@ class BackendGeneratorService:
                 user_id=user_id
             )
             
+            # Treat as success if any tables were created, even if optional steps (realtime, indexes) failed
+            tables_created = execution_result.get("tables_created", [])
+            if tables_created and not execution_result.get("success"):
+                execution_result["success"] = True
+                print(f"✅ Partial success: created {len(tables_created)} tables, some optional steps had warnings")
+            
             print(f"✅ Execution complete. Success: {execution_result['success']}")
             
             # Step 3: Generate summary
@@ -554,16 +560,17 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             unique = "UNIQUE" if index_def.get("unique", False) else ""
             index_name = f"idx_{table_name}_{'_'.join(columns)}_{idx}"
             
-            # Use explicit schema prefix
+            # NOTE: Index names are NOT schema-qualified in the CREATE INDEX name
+            # but the ON clause uses schema-qualified table name
             create_index_sql = f"""
-            CREATE {unique} INDEX IF NOT EXISTS "{schema_name}"."{index_name}"
+            CREATE {unique} INDEX IF NOT EXISTS "{index_name}"
             ON "{schema_name}"."{table_name}" ({', '.join(f'"{col}"' for col in columns)});
             """
             
             async with pool.acquire() as conn:
                 await conn.execute(f'SET search_path TO "{schema_name}", public')
                 await conn.execute(create_index_sql)
-                print(f"✅ Created index '{schema_name}'.'{index_name}'")
+                print(f"✅ Created index '{index_name}' on '{schema_name}'.'{table_name}'")
     
     async def _enable_auth(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
         """Enable RLS and create basic auth policy"""
@@ -619,44 +626,33 @@ Adapt the table name and columns to match the description. Keep it minimal."""
         async with pool.acquire() as conn:
             await conn.execute(f'SET search_path TO "{schema_name}", public')
             
-            # First check if the notify function exists
-            check_function = await conn.fetchval(
-                f"""
-                SELECT EXISTS (
-                    SELECT 1 FROM pg_proc p
-                    JOIN pg_namespace n ON p.pronamespace = n.oid
-                    WHERE n.nspname = '{schema_name}' AND p.proname = 'notify_database_change'
-                )
-                """
-            )
-            
-            if not check_function:
-                # Create the notify function if it doesn't exist
-                try:
-                    await conn.execute("""
-                        CREATE OR REPLACE FUNCTION notify_database_change()
-                        RETURNS TRIGGER AS $$
-                        BEGIN
-                            PERFORM pg_notify(
-                                'database_changes',
-                                json_build_object(
-                                    'table', TG_TABLE_NAME,
-                                    'action', TG_OP,
-                                    'data', row_to_json(NEW)
-                                )::text
-                            );
-                            RETURN NEW;
-                        END;
-                        $$ LANGUAGE plpgsql;
-                    """)
-                except Exception as e:
-                    print(f"Warning: Could not create notify function: {str(e)}")
-                    return
-            
-            # Create trigger for realtime notifications with explicit schema prefix
+            # Always (re)create the notify function in the schema
+            try:
+                await conn.execute(f"""
+                    CREATE OR REPLACE FUNCTION "{schema_name}".notify_database_change()
+                    RETURNS TRIGGER AS $$
+                    BEGIN
+                        PERFORM pg_notify(
+                            'database_changes',
+                            json_build_object(
+                                'table', TG_TABLE_NAME,
+                                'action', TG_OP,
+                                'data', row_to_json(NEW)
+                            )::text
+                        );
+                        RETURN NEW;
+                    END;
+                    $$ LANGUAGE plpgsql;
+                """)
+            except Exception as e:
+                print(f"Warning: Could not create notify function: {str(e)}")
+                return
+
+            # Create trigger using the schema-qualified function
             trigger_sql = f"""
             CREATE TRIGGER "{table_name}_realtime_trigger"
-            AFTER INSERT OR UPDATE OR DELETE ON "{schema_name}"."{table_name}"
+            AFTER INSERT OR UPDATE OR DELETE
+            ON "{schema_name}"."{table_name}"
             FOR EACH ROW
             EXECUTE FUNCTION "{schema_name}".notify_database_change();
             """
@@ -664,10 +660,11 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             try:
                 await conn.execute(trigger_sql)
                 print(f"✅ Enabled realtime on '{schema_name}'.'{table_name}'")
-            except asyncpg.DuplicateObjectError:
-                pass  # Trigger already exists
             except Exception as e:
-                print(f"Warning: Could not create realtime trigger: {str(e)}")
+                if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
+                    pass  # Trigger already exists, that's fine
+                else:
+                    print(f"Warning: Could not create realtime trigger: {str(e)}")
     
     # ============================================
     # SUMMARY GENERATION

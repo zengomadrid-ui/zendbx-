@@ -390,12 +390,20 @@ async def generate_backend(
         )
         
         if not result["success"]:
-            error_msg = result.get("error", "Failed to generate backend")
-            print(f"❌ Backend generation failed: {error_msg}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=error_msg
-            )
+            # Check if tables were actually created despite other failures
+            if result.get("tables_created"):
+                # Partial success — tables created but some optional features failed
+                print(f"⚠️ Partial success: tables created but some optional steps failed")
+                print(f"   Tables: {result['tables_created']}")
+                print(f"   Errors: {result.get('errors', [])}")
+                result["success"] = True  # Treat as success if core tables were created
+            else:
+                error_msg = result.get("error", "Failed to generate backend")
+                print(f"❌ Backend generation failed: {error_msg}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=error_msg
+                )
         
         return {
             "success": True,
