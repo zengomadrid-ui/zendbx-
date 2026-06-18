@@ -30,6 +30,7 @@ SKIP_PREFIXES = [
     "/api/admin",
     "/api/ai/",
     "/api/oauth",       # OAuth provider config — uses project_id as query param
+    "/oauth",           # OAuth login flow — /oauth/{provider}/{project_ref}
     "/api/billing",
     "/api/analytics",
     "/api/backups",

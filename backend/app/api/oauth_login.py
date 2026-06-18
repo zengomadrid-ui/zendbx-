@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Request, Query
 from fastapi.responses import RedirectResponse
 from typing import Optional
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 import httpx
 
@@ -115,7 +115,7 @@ async def oauth_login(
         
         # Generate state token for CSRF protection
         state_token = generate_oauth_state()
-        expires_at = datetime.utcnow() + timedelta(minutes=10)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
         
         # Store state session
         await conn.execute(
@@ -196,7 +196,14 @@ async def oauth_callback(
         if not session:
             raise HTTPException(status_code=400, detail="Invalid or expired state token")
         
-        if session["expires_at"] < datetime.utcnow():
+        # Compare expiry — handle both timezone-aware and naive datetimes from DB
+        expires_at = session["expires_at"]
+        now = datetime.now(timezone.utc)
+        if expires_at.tzinfo is None:
+            # naive datetime from DB — treat as UTC
+            from datetime import timezone as _tz
+            expires_at = expires_at.replace(tzinfo=_tz.utc)
+        if expires_at < now:
             await conn.execute("DELETE FROM oauth_state_sessions WHERE state_token = $1", state)
             raise HTTPException(status_code=400, detail="State token expired")
         
