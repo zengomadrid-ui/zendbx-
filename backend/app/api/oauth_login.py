@@ -392,11 +392,13 @@ async def oauth_callback(
             final_url = f"{redirect_url}?{urlencode(params)}"
             return RedirectResponse(url=final_url)
         else:
-            # No redirect URL - return JSON response
-            return {
-                "success": True,
-                "token": jwt_token,
-                "refresh_token": refresh_token,
-                "user_id": str(user_id),
-                "email": email
+            # No redirect URL configured — fall back to frontend callback
+            frontend_url = settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else "http://localhost:3000"
+            params = {
+                'token': jwt_token,
+                'refresh_token': refresh_token,
+                'user_id': str(user_id),
+                'email': email
             }
+            final_url = f"{frontend_url}/callback?{urlencode(params)}"
+            return RedirectResponse(url=final_url)
