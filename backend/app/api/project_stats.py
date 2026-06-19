@@ -166,31 +166,23 @@ async def get_project_overview_stats(
         storage_limit_mb = storage_limit_bytes / (1024 * 1024)
         storage_percentage = (db_size / storage_limit_bytes) * 100
         
-        # Calculate real memory usage from PostgreSQL
+        # Calculate real memory usage from PostgreSQL and process
         try:
-            async with pool.acquire() as conn:
-                # Get database memory usage (shared buffers + temp buffers + work mem)
-                memory_stats = await conn.fetchrow("""
-                    SELECT 
-                        -- Shared buffers allocated to this database
-                        pg_size_pretty(pg_database_size(current_database())) as db_size,
-                        -- Active connections memory estimate
-                        (SELECT COUNT(*) * 10 FROM pg_stat_activity WHERE datname = current_database()) as connection_memory_mb,
-                        -- Cache hit ratio (indicates memory efficiency)
-                        ROUND(100.0 * sum(blks_hit) / NULLIF(sum(blks_hit) + sum(blks_read), 0), 2) as cache_hit_ratio
-                    FROM pg_stat_database
-                    WHERE datname = current_database()
-                """)
-                
-                # Estimate memory: base (10MB) + connections (10MB each) + cache (based on db size)
-                connection_memory = memory_stats["connection_memory_mb"] if memory_stats else 10
-                base_memory = 10.0  # Base PostgreSQL overhead
-                cache_memory = min(storage_used_mb * 0.25, 100)  # Estimate 25% of DB size cached, max 100MB
-                
-                memory_used_mb = base_memory + connection_memory + cache_memory
-        except Exception as e:
-            # Fallback to basic estimate
-            memory_used_mb = 10.0 + (storage_used_mb * 0.1)  # 10MB base + 10% of storage
+            import resource
+            import psutil
+
+            # Actual process memory (RSS - Resident Set Size)
+            process = psutil.Process()
+            mem_info = process.memory_info()
+            memory_used_mb = mem_info.rss / (1024 * 1024)
+        except ImportError:
+            # psutil not available — fall back to resource module
+            try:
+                usage = resource.getrusage(resource.RUSAGE_SELF)
+                # maxrss is in KB on Linux
+                memory_used_mb = usage.ru_maxrss / 1024.0
+            except Exception:
+                memory_used_mb = 10.0 + (storage_used_mb * 0.1)
         
         memory_limit_mb = 512.0
         memory_percentage = (memory_used_mb / memory_limit_mb) * 100
