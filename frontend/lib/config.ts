@@ -1,84 +1,86 @@
 /**
  * Application Configuration
  * Centralized configuration for API endpoints and app settings
+ *
+ * NEXT_PUBLIC_* variables are inlined at build time by Next.js.
+ * On Vercel, these come from the Vercel Dashboard env vars or vercel.json.
+ * Locally they come from .env.local.
+ *
+ * We use a hardcoded production fallback so the app never falls back to
+ * localhost in a deployed environment, even if the env var is missing.
  */
 
-// Helper to get environment variable with fallback
-const getEnvVar = (key: string, fallback: string): string => {
-  if (typeof window === 'undefined') {
-    // Server-side
-    return process.env[key] || fallback;
-  }
-  // Client-side - Next.js injects NEXT_PUBLIC_ vars
-  return process.env[key] || fallback;
-};
+const PROD_API_URL = 'https://api.zendbx.in';
+const PROD_WS_URL  = 'wss://api.zendbx.in';
+const PROD_APP_URL = 'https://zendbx.in';
 
-// Check if we're in production
-// NOTE: Do NOT use NODE_ENV here — Next.js sets NODE_ENV='production' for any
-// production build, including when running locally with `npm run build && npm start`.
-// We rely exclusively on NEXT_PUBLIC_ENVIRONMENT which is explicitly set per deployment.
-const isProduction = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
+// Resolve API base URL:
+//   - Use NEXT_PUBLIC_API_URL if explicitly set (covers both Vercel and local)
+//   - Otherwise fall back to production URL (safe default for any deployed build)
+//   - localhost is only used when explicitly set via .env.local
+const resolvedApiUrl: string =
+  (process.env.NEXT_PUBLIC_API_URL && process.env.NEXT_PUBLIC_API_URL.trim() !== '')
+    ? process.env.NEXT_PUBLIC_API_URL
+    : PROD_API_URL;
+
+const resolvedWsUrl: string =
+  (process.env.NEXT_PUBLIC_WS_URL && process.env.NEXT_PUBLIC_WS_URL.trim() !== '')
+    ? process.env.NEXT_PUBLIC_WS_URL
+    : PROD_WS_URL;
+
+const resolvedAppUrl: string =
+  (process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL.trim() !== '')
+    ? process.env.NEXT_PUBLIC_APP_URL
+    : PROD_APP_URL;
+
+// isProduction: true when running on any deployed instance (not localhost)
+// Used only for feature flags, not URL resolution.
+export const isProduction =
+  resolvedApiUrl.startsWith('https://') && !resolvedApiUrl.includes('localhost');
 
 export const config = {
-  // API Configuration
   api: {
-    // Resolution order:
-    //   1. Explicit NEXT_PUBLIC_API_URL env var (set in vercel.json or .env.local)
-    //   2. Production default (api.zendbx.in) when NEXT_PUBLIC_ENVIRONMENT=production
-    //   3. Local development fallback
-    baseUrl: process.env.NEXT_PUBLIC_API_URL
-      ? process.env.NEXT_PUBLIC_API_URL
-      : isProduction
-        ? 'https://api.zendbx.in'
-        : getEnvVar('NEXT_PUBLIC_API_URL', 'http://localhost:8000'),
-    wsUrl: process.env.NEXT_PUBLIC_WS_URL
-      ? process.env.NEXT_PUBLIC_WS_URL
-      : isProduction
-        ? 'wss://api.zendbx.in'
-        : getEnvVar('NEXT_PUBLIC_WS_URL', 'ws://localhost:8001'),
-    timeout: 30000, // 30 seconds
+    baseUrl: resolvedApiUrl,
+    wsUrl:   resolvedWsUrl,
+    timeout: 30000,
   },
 
-  // App Configuration
   app: {
     name: 'ZenDBX',
     description: 'Backend-as-a-Service with AI-powered database management',
-    url: isProduction
-      ? (process.env.NEXT_PUBLIC_APP_URL || 'https://devapp.zendbx.in')
-      : getEnvVar('NEXT_PUBLIC_APP_URL', 'http://localhost:3000'),
+    url: resolvedAppUrl,
   },
 
-  // Feature Flags
   features: {
     oauth: true,
     mfa: true,
     aiFeatures: true,
-    analytics: getEnvVar('NEXT_PUBLIC_ENABLE_ANALYTICS', 'false') === 'true',
+    analytics: process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === 'true',
   },
 
-  // Storage Keys
   storage: {
-    token: 'token',
-    userId: 'user_id',
+    token:     'token',
+    userId:    'user_id',
     userEmail: 'user_email',
-    user: 'user',
-    theme: 'theme',
+    user:      'user',
+    theme:     'theme',
   },
 };
 
-// API Helper
+// API URL builder
 export const getApiUrl = (path: string): string => {
-  const baseUrl = config.api.baseUrl.replace(/\/$/, '');
-  const cleanPath = path.replace(/^\//, '');
-  const fullUrl = `${baseUrl}/${cleanPath}`;
-  // Debug: log the resolved URL so you can verify in the browser console
+  const base = config.api.baseUrl.replace(/\/$/, '');
+  const clean = path.replace(/^\//, '');
+  const url = `${base}/${clean}`;
   if (typeof window !== 'undefined') {
-    console.log('[ZenDBX] API URL:', fullUrl);
+    console.log('[ZenDBX] API URL:', url);
   }
-  return fullUrl;
+  return url;
 };
 
-// WebSocket Helper
-export const getWsUrl = (): string => {
-  return config.api.wsUrl;
-};
+// Legacy helper kept for compatibility
+export const getEnvVar = (key: string, fallback: string): string =>
+  process.env[key] || fallback;
+
+// WebSocket URL
+export const getWsUrl = (): string => config.api.wsUrl;
