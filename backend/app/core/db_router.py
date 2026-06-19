@@ -7,10 +7,57 @@ from typing import Dict, Optional
 from fastapi import HTTPException
 import logging
 import jwt as pyjwt
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
 _main_pool: Optional[asyncpg.Pool] = None
+
+# Bad hostnames that will never resolve in production
+_INVALID_HOSTS = {"postgres", "db", "localhost", "127.0.0.1", "::1", ""}
+
+
+def _diagnose_database_url(url: str) -> None:
+    """Parse and log DATABASE_URL details (no password logged)."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        port = parsed.port or 5432
+        dbname = (parsed.path or "").lstrip("/")
+        user = parsed.username or ""
+
+        print("\n" + "=" * 60)
+        print("DATABASE_URL DIAGNOSTICS")
+        print("=" * 60)
+        print(f"  hostname : {host}")
+        print(f"  port     : {port}")
+        print(f"  database : {dbname}")
+        print(f"  username : {user}")
+        print(f"  scheme   : {parsed.scheme}")
+        print("=" * 60 + "\n")
+
+        if host in _INVALID_HOSTS:
+            raise ValueError(
+                f"\n🚨 DATABASE_URL has an invalid hostname: '{host}'\n"
+                f"   This hostname cannot be resolved in production.\n"
+                f"   Expected a Render PostgreSQL hostname like:\n"
+                f"   dpg-xxxxxxxxxxxxxxx-a.oregon-postgres.render.com\n"
+                f"\n   Fix: Set DATABASE_URL in the Render Dashboard → Environment\n"
+                f"   Use the EXTERNAL Database URL from your Render PostgreSQL service."
+            )
+
+        if host == parsed.hostname and "." not in host:
+            # Short hostname with no dots — this is a Render internal hostname.
+            # It only resolves from within the same Render region.
+            print(
+                f"⚠️  WARNING: DATABASE_URL uses a short internal hostname '{host}'\n"
+                f"   This only resolves from within the same Render region.\n"
+                f"   If the service is in a different region, use the EXTERNAL URL."
+            )
+    except ValueError:
+        raise
+    except Exception as e:
+        logger.warning(f"Could not parse DATABASE_URL for diagnostics: {e}")
 
 
 async def get_main_db_pool() -> asyncpg.Pool:
@@ -21,7 +68,13 @@ async def get_main_db_pool() -> asyncpg.Pool:
         from .config import settings
 
         if not settings.DATABASE_URL:
-            raise ValueError("DATABASE_URL environment variable is required")
+            raise ValueError(
+                "DATABASE_URL environment variable is not set.\n"
+                "Set it in Render Dashboard → Environment with the External Database URL."
+            )
+
+        # Log diagnostics and validate hostname before attempting connection
+        _diagnose_database_url(settings.DATABASE_URL)
 
         logger.info("🔄 Creating main database pool")
         try:

@@ -113,9 +113,13 @@ class Settings(BaseSettings):
     ENABLE_SUBDOMAIN_ROUTING: bool = True  # Enable project.zendbx.in routing
     
     class Config:
-        # Only load .env file in development
-        # In production (Docker/Render), use environment variables only
-        env_file = ".env" if os.getenv("ENVIRONMENT", "development") == "development" else None
+        # Never load a .env file in production.
+        # Check both the raw os.environ AND the default — if ENVIRONMENT is
+        # explicitly set to "production" OR if we're clearly not in a local dev
+        # environment (no .env file exists), skip .env loading entirely.
+        # This prevents a stale .env with localhost from overriding Render env vars.
+        _env = os.getenv("ENVIRONMENT", "")
+        env_file = ".env" if _env not in ("production", "prod") and os.path.exists(".env") else None
         env_file_encoding = 'utf-8'
         case_sensitive = True
         extra = "ignore"
@@ -150,6 +154,17 @@ print("="*60)
 print(f"ENVIRONMENT: {settings.ENVIRONMENT}")
 print(f"DATABASE_URL exists: {bool(settings.DATABASE_URL)}")
 print(f"DATABASE_URL length: {len(settings.DATABASE_URL) if settings.DATABASE_URL else 0}")
+
+# Parse and show hostname only (never log password)
+if settings.DATABASE_URL:
+    try:
+        from urllib.parse import urlparse as _urlparse
+        _p = _urlparse(settings.DATABASE_URL)
+        print(f"DATABASE_URL hostname: {_p.hostname}")
+        print(f"DATABASE_URL port: {_p.port or 5432}")
+    except Exception:
+        print("DATABASE_URL: (could not parse)")
+
 print(f"SECRET_KEY exists: {bool(settings.SECRET_KEY)}")
 print(f"SECRET_KEY length: {len(settings.SECRET_KEY) if settings.SECRET_KEY else 0}")
 print(f"APP_NAME: {settings.APP_NAME}")

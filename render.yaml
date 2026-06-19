@@ -1,5 +1,7 @@
 services:
   # Backend API Service
+  # DATABASE_URL and SECRET_KEY must be set manually in Render Dashboard → Environment
+  # Use the External Database URL from your Render PostgreSQL service.
   - type: web
     name: zendbx-backend
     runtime: docker
@@ -13,14 +15,6 @@ services:
         value: "8000"
       - key: ENVIRONMENT
         value: production
-      # DATABASE_URL must be set in Render Dashboard → Environment
-      # Use the Internal Connection String from your Render PostgreSQL service.
-      # Format: postgresql://user:password@hostname/dbname
-      # DO NOT use localhost — use the Render internal hostname.
-      - key: DATABASE_URL
-        sync: false   # marks it as a secret — set value in Render dashboard
-      - key: SECRET_KEY
-        sync: false   # set in Render dashboard
       - key: FRONTEND_URL
         value: "https://devapp.zendbx.in"
       - key: BACKEND_URL
