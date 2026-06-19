@@ -2,6 +2,7 @@
 
 
 import { useState, useEffect } from 'react';
+import { apiFetch } from '@/lib/fetch-utils';
 
 interface Provider {
   id: string;
@@ -94,22 +95,15 @@ export default function ProvidersPage() {
     // Load all projects and selected project
     const loadProjects = async () => {
       try {
-        const token = localStorage.getItem('token');
-        
         // Load all projects
-        const projectsResponse = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/projects`,
-          {
-            headers: { 'Authorization': `Bearer ${token}` },
-          }
-        );
+        const projectsResponse = await apiFetch('api/projects');
         
         if (projectsResponse.ok) {
           const projects = await projectsResponse.json();
           setAllProjects(projects);
           
           // Load selected project
-          const projectId = localStorage.getItem('selectedProject');
+          const projectId = localStorage.getItem('current_project_id');
           if (projectId) {
             const selected = projects.find((p: any) => p.id === projectId);
             if (selected) {
@@ -190,7 +184,8 @@ export default function ProvidersPage() {
 
   const handleProjectChange = (project: any) => {
     setSelectedProject(project);
-    localStorage.setItem('selectedProject', project.id);
+    localStorage.setItem('current_project_id', project.id);
+    if (project.slug) localStorage.setItem('current_project_slug', project.slug);
     setShowProjectDropdown(false);
     // Reload providers for new project
     window.location.reload();
