@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiFetch } from '@/lib/fetch-utils';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -10,12 +11,6 @@ export default function OnboardingPage() {
   const [region, setRegion] = useState('ap-south-1');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showKeys, setShowKeys] = useState(false);
-  const [projectKeys, setProjectKeys] = useState<{
-    anon_key?: string;
-    service_role_key?: string;
-    api_url?: string;
-  }>({});
 
   const regions = [
     { value: 'ap-south-1', label: 'Asia Pacific (Mumbai)' },
@@ -45,19 +40,11 @@ export default function OnboardingPage() {
     setError('');
 
     try {
-      const token = localStorage.getItem('token');
-      
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects`, {
+      // Use the shared apiFetch utility — it reads the correct baseUrl from
+      // config.ts (respects NEXT_PUBLIC_ENVIRONMENT, not NODE_ENV).
+      const response = await apiFetch('api/projects', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: projectName,
           description: 'My first project',
@@ -65,8 +52,8 @@ export default function OnboardingPage() {
       });
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || 'Failed to create project');
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `Failed to create project (${response.status})`);
       }
 
       router.push('/select-project');
@@ -103,7 +90,11 @@ export default function OnboardingPage() {
               <label htmlFor="projectName" className="block text-sm font-medium text-[#ededed] mb-2">
                 Project Name <span className="text-red-500">*</span>
               </label>
+              {/* suppressHydrationWarning prevents false hydration errors from
+                  browser password-manager extensions that inject attributes like
+                  fdprocessedid into input elements. */}
               <input
+                suppressHydrationWarning
                 id="projectName"
                 type="text"
                 required
@@ -123,6 +114,7 @@ export default function OnboardingPage() {
               </label>
               <div className="flex space-x-2">
                 <input
+                  suppressHydrationWarning
                   id="dbPassword"
                   type="text"
                   required
@@ -132,6 +124,7 @@ export default function OnboardingPage() {
                   className="flex-1 px-4 py-3 bg-[#1c1c1c] border border-[#2a2a2a] text-white placeholder-[#6b6b6b] rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent font-mono text-sm"
                 />
                 <button
+                  suppressHydrationWarning
                   type="button"
                   onClick={generatePassword}
                   className="px-4 py-3 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#ededed] rounded-lg transition-colors text-sm font-medium"
@@ -149,6 +142,7 @@ export default function OnboardingPage() {
                 Region <span className="text-red-500">*</span>
               </label>
               <select
+                suppressHydrationWarning
                 id="region"
                 value={region}
                 onChange={(e) => setRegion(e.target.value)}

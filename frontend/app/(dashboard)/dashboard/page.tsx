@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
+import { apiFetch } from '@/lib/fetch-utils';
 
 interface Project {
   id: string;
@@ -68,13 +69,9 @@ export default function DashboardPage() {
   const [loading, setLoading]         = useState(true);
   const [showProjectSelector, setShowProjectSelector] = useState(false);
 
-  const token = () => localStorage.getItem('token') ?? '';
-
   const fetchProjects = useCallback(async () => {
     try {
-      const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
+      const r = await apiFetch('api/projects');
       if (r.ok) {
         const data = await r.json();
         setProjects(data);
@@ -101,18 +98,14 @@ export default function DashboardPage() {
 
   const fetchStats = useCallback(async (pid: string) => {
     try {
-      const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects/${pid}/overview`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
+      const r = await apiFetch(`api/projects/${pid}/overview`);
       if (r.ok) setStats(await r.json());
     } catch { /* silent */ }
   }, []);
 
   const fetchQueries = useCallback(async (pid: string) => {
     try {
-      const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/projects/${pid}/query/history?limit=8`, {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
+      const r = await apiFetch(`api/projects/${pid}/query/history?limit=8`);
       if (r.ok) setQueries(await r.json());
     } catch { /* silent */ }
   }, []);
