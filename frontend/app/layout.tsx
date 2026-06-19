@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(PRODUCTION_URL),
 
   title: {
-    default: "Zendbx — Open Source Backend Platform",
+    default: "Zendbx — AI-Native Backend Platform",
     template: "%s | Zendbx",
   },
   description:
@@ -71,7 +71,7 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: PRODUCTION_URL,
     siteName: "Zendbx",
-    title: "Zendbx — Open Source Backend Platform",
+    title: "Zendbx — AI-Native Backend Platform",
     description:
       "Zendbx is an AI-native Backend-as-a-Service providing PostgreSQL, Authentication, Storage, Realtime APIs, and Serverless Functions for developers.",
     images: [
@@ -79,7 +79,7 @@ export const metadata: Metadata = {
         url: `${PRODUCTION_URL}/og-image.png`,
         width: 1200,
         height: 630,
-        alt: "Zendbx — Open Source Backend Platform",
+        alt: "Zendbx — AI-Native Backend Platform",
       },
     ],
   },
@@ -89,7 +89,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     site: "@zendbx",
     creator: "@zendbx",
-    title: "Zendbx — Open Source Backend Platform",
+    title: "Zendbx — AI-Native Backend Platform",
     description:
       "AI-native BaaS: PostgreSQL, Auth, Storage, Realtime APIs, and Serverless Functions for developers.",
     images: [`${PRODUCTION_URL}/og-image.png`],
