@@ -1,8 +1,22 @@
-# Environment variables
+# Environment variables — NEVER commit these
 .env
 .env.local
+.env.production
+.env.development
+.env.staging
+.env*.local
+
+# Backend env files
 backend/.env
+backend/.env.local
+backend/.env.production
+backend/.env.development
+
+# Frontend env files
+frontend/.env
 frontend/.env.local
+frontend/.env.production
+frontend/.env.development
 
 # Python
 __pycache__/
@@ -54,6 +68,40 @@ DEPLOYMENT_STATUS.md
 ROOT_CAUSE_FOUND.md
 WAITING_FOR_RENDER.md
 SECURITY_FIX_*.md
+CORS_FIX_COMPLETE.md
+FRONTEND_URL_FIX.md
+DATABASE_CONNECTION_FIX.md
+PRODUCTION_DEPLOYMENT_STEPS.md
+*_FIX.md
+*_FIX_*.md
+
+# One-off SQL scripts (not migrations)
+GENERATE_PROJECT_KEYS.sql
+
+# Test / debug artifacts
+login_test.txt
+response.txt
+backend/test_cors.sh
+backend/test_api*.py
+backend/test_*.sh
+backend/test_*.py
+
+# Root-level package files (project uses frontend/ and sdk/ separately)
+/package.json
+/package-lock.json
+/node_modules/
+
+# Test / debug artifacts
+login_test.txt
+response.txt
+backend/test_cors.sh
+backend/test_*.sh
+backend/test_*.py
+
+# Root-level package files (not part of any sub-project)
+/package.json
+/package-lock.json
+/node_modules/
 
 # Build artifacts
 sdk/*.tgz
