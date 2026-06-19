@@ -172,20 +172,49 @@ async def oauth_login(
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
         # Store state session — include external client context when present
-        await conn.execute(
-            """
-            INSERT INTO oauth_state_sessions
-              (state_token, project_id, provider, redirect_url, expires_at,
-               external_client_id, external_redirect_uri, external_state)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            """,
-            state_token, project_id, provider,
-            redirect_url if not is_external_client else None,
-            expires_at,
-            client_id if is_external_client else None,
-            redirect_uri if is_external_client else None,
-            state if is_external_client else None,
-        )
+        # Use try/except to handle case where new columns don't exist yet
+        # (migration not yet run — falls back to basic insert)
+        try:
+            await conn.execute(
+                """
+                INSERT INTO oauth_state_sessions
+                  (state_token, project_id, provider, redirect_url, expires_at,
+                   external_client_id, external_redirect_uri, external_state)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                """,
+                state_token, project_id, provider,
+                redirect_url if not is_external_client else None,
+                expires_at,
+                client_id if is_external_client else None,
+                redirect_uri if is_external_client else None,
+                state if is_external_client else None,
+            )
+        except Exception as col_err:
+            if "external_client_id" in str(col_err):
+                # Migration not yet run — add columns on the fly then retry
+                logger.warning("oauth_state_sessions missing new columns, running migration...")
+                await conn.execute("""
+                    ALTER TABLE oauth_state_sessions
+                        ADD COLUMN IF NOT EXISTS external_client_id    TEXT,
+                        ADD COLUMN IF NOT EXISTS external_redirect_uri  TEXT,
+                        ADD COLUMN IF NOT EXISTS external_state         TEXT
+                """)
+                await conn.execute(
+                    """
+                    INSERT INTO oauth_state_sessions
+                      (state_token, project_id, provider, redirect_url, expires_at,
+                       external_client_id, external_redirect_uri, external_state)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    """,
+                    state_token, project_id, provider,
+                    redirect_url if not is_external_client else None,
+                    expires_at,
+                    client_id if is_external_client else None,
+                    redirect_uri if is_external_client else None,
+                    state if is_external_client else None,
+                )
+            else:
+                raise
 
         # Build Google/GitHub authorization URL
         oauth_config = OAUTH_CONFIGS[provider]
@@ -244,15 +273,38 @@ async def project_oauth_callback(
     pool = await get_main_db_pool()
     async with pool.acquire() as conn:
         # Validate & load state session
-        session = await conn.fetchrow(
-            """
-            SELECT project_id, provider, redirect_url, expires_at,
-                   external_client_id, external_redirect_uri, external_state
-            FROM oauth_state_sessions
-            WHERE state_token = $1
-            """,
-            state
-        )
+        # Try with new columns first; fall back to basic select if migration not run
+        try:
+            session = await conn.fetchrow(
+                """
+                SELECT project_id, provider, redirect_url, expires_at,
+                       external_client_id, external_redirect_uri, external_state
+                FROM oauth_state_sessions
+                WHERE state_token = $1
+                """,
+                state
+            )
+        except Exception as col_err:
+            if "external_client_id" in str(col_err):
+                # Migration not run yet — select without new columns
+                session_basic = await conn.fetchrow(
+                    """
+                    SELECT project_id, provider, redirect_url, expires_at
+                    FROM oauth_state_sessions
+                    WHERE state_token = $1
+                    """,
+                    state
+                )
+                # Augment with None values for new columns
+                if session_basic:
+                    session = dict(session_basic)
+                    session["external_client_id"] = None
+                    session["external_redirect_uri"] = None
+                    session["external_state"] = None
+                else:
+                    session = None
+            else:
+                raise
         if not session:
             raise HTTPException(status_code=400, detail="Invalid or expired state token")
 
