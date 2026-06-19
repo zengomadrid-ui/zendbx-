@@ -8,17 +8,19 @@ const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: '--font-jet
 
 const PRODUCTION_URL = "https://zendbx.in";
 
-// Detect if we're on the production domain at runtime
-// This is used server-side for metadata generation
-const isProduction = process.env.NEXT_PUBLIC_APP_URL === "https://zendbx.in"
-  || process.env.VERCEL_URL === "zendbx.in"
-  || process.env.NODE_ENV === "production";
+// Only allow search engine indexing on the real production domain.
+// NEXT_PUBLIC_API_URL is set to https://api.zendbx.in on Vercel; on any other
+// host (devapp, staging, localhost) it will be falsy or a different URL.
+const isProduction =
+  process.env.NEXT_PUBLIC_APP_URL === "https://zendbx.in";
+
+const TITLE = "Zendbx \u2014 AI-Native Backend Platform";
 
 export const metadata: Metadata = {
   metadataBase: new URL(PRODUCTION_URL),
 
   title: {
-    default: "Zendbx — AI-Native Backend Platform",
+    default: TITLE,
     template: "%s | Zendbx",
   },
   description:
@@ -41,12 +43,10 @@ export const metadata: Metadata = {
   creator: "Zendbx",
   publisher: "Zendbx",
 
-  // Canonical & alternates
   alternates: {
     canonical: PRODUCTION_URL,
   },
 
-  // Only allow indexing on the real production domain
   robots: isProduction
     ? {
         index: true,
@@ -65,13 +65,12 @@ export const metadata: Metadata = {
         googleBot: { index: false, follow: false },
       },
 
-  // Open Graph
   openGraph: {
     type: "website",
     locale: "en_US",
     url: PRODUCTION_URL,
     siteName: "Zendbx",
-    title: "Zendbx — AI-Native Backend Platform",
+    title: TITLE,
     description:
       "Zendbx is an AI-native Backend-as-a-Service providing PostgreSQL, Authentication, Storage, Realtime APIs, and Serverless Functions for developers.",
     images: [
@@ -79,23 +78,21 @@ export const metadata: Metadata = {
         url: `${PRODUCTION_URL}/og-image.png`,
         width: 1200,
         height: 630,
-        alt: "Zendbx — AI-Native Backend Platform",
+        alt: TITLE,
       },
     ],
   },
 
-  // Twitter / X Cards
   twitter: {
     card: "summary_large_image",
     site: "@zendbx",
     creator: "@zendbx",
-    title: "Zendbx — AI-Native Backend Platform",
+    title: TITLE,
     description:
       "AI-native BaaS: PostgreSQL, Auth, Storage, Realtime APIs, and Serverless Functions for developers.",
     images: [`${PRODUCTION_URL}/og-image.png`],
   },
 
-  // Icons
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
@@ -104,22 +101,14 @@ export const metadata: Metadata = {
     apple: "/logo.png",
     shortcut: "/favicon.ico",
   },
-
-  // Verification (add values when you have them)
-  // verification: {
-  //   google: "YOUR_GOOGLE_SITE_VERIFICATION_TOKEN",
-  //   yandex: "YOUR_YANDEX_VERIFICATION_TOKEN",
-  // },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
       <head>
-        {/* Canonical URL — always points to production */}
         <link rel="canonical" href={PRODUCTION_URL} />
 
-        {/* Structured Data — Organization */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -139,7 +128,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           }}
         />
 
-        {/* Structured Data — SoftwareApplication */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
