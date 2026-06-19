@@ -22,14 +22,20 @@ const isProduction = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
 export const config = {
   // API Configuration
   api: {
-    // Use env var if set; otherwise fall back by environment.
-    // IMPORTANT: The hardcoded production fallback MUST be the active Render backend.
-    baseUrl: isProduction
-      ? (process.env.NEXT_PUBLIC_API_URL || 'https://zendbx-2-zpp9.onrender.com')
-      : getEnvVar('NEXT_PUBLIC_API_URL', 'http://localhost:8080'),
-    wsUrl: isProduction
-      ? (process.env.NEXT_PUBLIC_WS_URL || 'wss://zendbx-2-zpp9.onrender.com')
-      : getEnvVar('NEXT_PUBLIC_WS_URL', 'http://localhost:8001'),
+    // Resolution order:
+    //   1. Explicit NEXT_PUBLIC_API_URL env var (set in vercel.json or .env.local)
+    //   2. Production default (api.zendbx.in) when NEXT_PUBLIC_ENVIRONMENT=production
+    //   3. Local development fallback
+    baseUrl: process.env.NEXT_PUBLIC_API_URL
+      ? process.env.NEXT_PUBLIC_API_URL
+      : isProduction
+        ? 'https://api.zendbx.in'
+        : getEnvVar('NEXT_PUBLIC_API_URL', 'http://localhost:8000'),
+    wsUrl: process.env.NEXT_PUBLIC_WS_URL
+      ? process.env.NEXT_PUBLIC_WS_URL
+      : isProduction
+        ? 'wss://api.zendbx.in'
+        : getEnvVar('NEXT_PUBLIC_WS_URL', 'ws://localhost:8001'),
     timeout: 30000, // 30 seconds
   },
 
