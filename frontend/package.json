@@ -1,6 +1,6 @@
 {
-  "name": "nexora-ai-frontend",
-  "version": "1.0.0",
+  "name": "zendbx-frontend",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "dev": "next dev",

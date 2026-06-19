@@ -14,7 +14,8 @@ const PRODUCTION_URL = "https://zendbx.in";
 const isProduction =
   process.env.NEXT_PUBLIC_APP_URL === "https://zendbx.in";
 
-const TITLE = "Zendbx \u2014 AI-Native Backend Platform";
+// Build version: 1.0.1 — AI-Native
+const TITLE = "Zendbx " + "\u2014" + " AI-Native Backend Platform";
 
 export const metadata: Metadata = {
   metadataBase: new URL(PRODUCTION_URL),

@@ -10,9 +10,26 @@ services:
     dockerContext: .
     envVars:
       - key: PORT
-        value: 8000
+        value: "8000"
       - key: ENVIRONMENT
         value: production
-    envVars:
-      - key: PORT
-        value: 8000
+      # DATABASE_URL must be set in Render Dashboard → Environment
+      # Use the Internal Connection String from your Render PostgreSQL service.
+      # Format: postgresql://user:password@hostname/dbname
+      # DO NOT use localhost — use the Render internal hostname.
+      - key: DATABASE_URL
+        sync: false   # marks it as a secret — set value in Render dashboard
+      - key: SECRET_KEY
+        sync: false   # set in Render dashboard
+      - key: FRONTEND_URL
+        value: "https://devapp.zendbx.in"
+      - key: BACKEND_URL
+        value: "https://api.zendbx.in"
+      - key: OAUTH_REDIRECT_URI
+        value: "https://devapp.zendbx.in/callback"
+      - key: ALLOWED_ORIGINS
+        value: '["https://devapp.zendbx.in","https://zendbx.in","https://www.zendbx.in","https://api.zendbx.in"]'
+      - key: BASE_DOMAIN
+        value: "zendbx.in"
+      - key: ENABLE_SUBDOMAIN_ROUTING
+        value: "true"
