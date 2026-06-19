@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiFetch } from '@/lib/fetch-utils';
+import { config } from '@/lib/config';
 
 interface Provider {
   id: string;
@@ -89,7 +90,7 @@ export default function ProvidersPage() {
   const enabledProviders = providers.filter(p => p.enabled).length;
   const configurableProviders = providers.filter(p => p.canDisable).length;
 
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+  const baseUrl = config.api.baseUrl;
 
   useEffect(() => {
     // Load all projects and selected project
