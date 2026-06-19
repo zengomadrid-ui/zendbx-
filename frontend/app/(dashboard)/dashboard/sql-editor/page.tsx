@@ -2,6 +2,7 @@
 
 
 import { useState, useEffect } from 'react';
+import { apiFetch } from '@/lib/fetch-utils';
 
 export default function SQLEditorPage() {
   const [sql, setSql] = useState('');
@@ -111,11 +112,10 @@ export default function SQLEditorPage() {
     setShowExplanation(false);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/query`, {
+      const res = await apiFetch(`api/projects/${projectId}/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({ 
           sql,
@@ -157,11 +157,10 @@ export default function SQLEditorPage() {
     setAiLoading(true);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/ai/${projectId}/explain-error`, {
+      const res = await apiFetch(`api/ai/${projectId}/explain-error`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({ 
           sql: sql,
@@ -201,11 +200,10 @@ export default function SQLEditorPage() {
     setAiResponse(null);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/ai/${projectId}/query`, {
+      const res = await apiFetch(`api/ai/${projectId}/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({ 
           question: aiQuestion,
@@ -236,11 +234,10 @@ export default function SQLEditorPage() {
     setExplanation(null);
 
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/ai/${projectId}/explain`, {
+      const res = await apiFetch(`api/ai/${projectId}/explain`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({ sql }),
       });
