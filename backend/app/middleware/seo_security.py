@@ -46,8 +46,10 @@ class SEOSecurityMiddleware(BaseHTTPMiddleware):
         response.headers["X-Robots-Tag"] = _ROBOTS_NOINDEX
 
         # ── Remove server-fingerprinting headers ─────────────────────────────
-        response.headers.pop("server", None)
-        response.headers.pop("x-powered-by", None)
+        if "server" in response.headers:
+            del response.headers["server"]
+        if "x-powered-by" in response.headers:
+            del response.headers["x-powered-by"]
 
         # ── Additional security headers ───────────────────────────────────────
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
