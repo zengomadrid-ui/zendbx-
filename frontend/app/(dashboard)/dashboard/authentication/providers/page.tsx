@@ -129,57 +129,27 @@ export default function ProvidersPage() {
   // Load provider configurations when project changes
   useEffect(() => {
     const loadProviderConfigs = async () => {
-      if (!selectedProject) {
-        console.log('⚠️ No project selected, skipping provider config load');
-        return;
-      }
-      
+      if (!selectedProject) return;
+
       try {
-        const token = localStorage.getItem('token');
-        
-        // Check if backend is accessible
-        if (!process.env.NEXT_PUBLIC_API_URL) {
-          console.warn('NEXT_PUBLIC_API_URL not configured');
-          return;
-        }
-        
-        console.log('📡 Loading provider configs for project:', selectedProject.id);
-        
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/oauth/providers?project_id=${selectedProject.id}`,
-          {
-            headers: { 'Authorization': `Bearer ${token}` },
-          }
+        const response = await apiFetch(
+          `api/oauth/providers?project_id=${selectedProject.id}`
         );
-        
-        console.log('📡 Provider configs response status:', response.status);
-        
+
         if (response.ok) {
           const configs = await response.json();
-          console.log('✅ Loaded provider configs:', configs);
-          
-          // Update providers state with configured status
-          setProviders(prevProviders => 
+          setProviders(prevProviders =>
             prevProviders.map(p => {
-              const config = configs.find((c: any) => c.provider === p.id);
-              if (config) {
-                console.log(`✅ Provider ${p.id} is configured and ${config.enabled ? 'enabled' : 'disabled'}`);
-                return { ...p, configured: true, enabled: config.enabled };
-              }
-              console.log(`⚠️ Provider ${p.id} is NOT configured`);
-              return p;
+              const cfg = configs.find((c: any) => c.provider === p.id);
+              return cfg ? { ...p, configured: true, enabled: cfg.enabled } : p;
             })
           );
-        } else {
-          console.error('❌ Failed to load provider configs:', response.status, response.statusText);
         }
       } catch (error) {
-        console.error('❌ Error loading provider configurations:', error);
-        // Don't show error to user - just log it
-        // The page will still work, just won't show configured status
+        console.error('Error loading provider configurations:', error);
       }
     };
-    
+
     loadProviderConfigs();
   }, [selectedProject]);
 
@@ -240,39 +210,26 @@ export default function ProvidersPage() {
     console.log('✅ Provider is configured, proceeding with toggle');
     
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/oauth/providers/${providerId}/toggle?project_id=${selectedProject.id}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        }
+      const response = await apiFetch(
+        `api/oauth/providers/${providerId}/toggle?project_id=${selectedProject.id}`,
+        { method: 'PATCH' }
       );
-
-      console.log('🔄 Toggle response status:', response.status);
 
       if (response.ok) {
         const updated = await response.json();
-        console.log('✅ Toggle successful:', updated);
-        setProviders(prevProviders => prevProviders.map(p => 
+        setProviders(prevProviders => prevProviders.map(p =>
           p.id === providerId ? { ...p, enabled: updated.enabled, configured: true } : p
         ));
-        
-        // Show success message
         const providerName = providers.find(p => p.id === providerId)?.name || 'Provider';
         setSuccessMessage(`${providerName} ${updated.enabled ? 'enabled' : 'disabled'} successfully!`);
         setShowSuccessPopup(true);
         setTimeout(() => setShowSuccessPopup(false), 2000);
       } else {
-        console.error('❌ Failed to toggle provider:', response.status);
         setSuccessMessage('❌ Failed to toggle provider');
         setShowSuccessPopup(true);
         setTimeout(() => setShowSuccessPopup(false), 3000);
       }
     } catch (error) {
-      console.error('❌ Error toggling provider:', error);
       setSuccessMessage('❌ Cannot connect to backend server');
       setShowSuccessPopup(true);
       setTimeout(() => setShowSuccessPopup(false), 3000);
@@ -282,29 +239,12 @@ export default function ProvidersPage() {
   const handleSave = async () => {
     if (selectedProvider && clientId && clientSecret && selectedProject) {
       try {
-        const token = localStorage.getItem('token');
-        
-        console.log('=== SAVING OAUTH CONFIGURATION ===');
-        console.log('Provider:', selectedProvider);
-        console.log('Project ID:', selectedProject.id);
-        console.log('Project Slug:', selectedProject.slug);
-        console.log('Client ID:', clientId);
-        console.log('API URL:', `${process.env.NEXT_PUBLIC_API_URL}/api/oauth/providers?project_id=${selectedProject.id}`);
-        
-        // Check if backend URL is configured
-        if (!process.env.NEXT_PUBLIC_API_URL) {
-          throw new Error('Backend API URL not configured. Check NEXT_PUBLIC_API_URL environment variable.');
-        }
-        
         // Call backend API to save OAuth provider configuration
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/oauth/providers?project_id=${selectedProject.id}`,
+        const response = await apiFetch(
+          `api/oauth/providers?project_id=${selectedProject.id}`,
           {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               provider: selectedProvider,
               client_id: clientId,
@@ -314,58 +254,38 @@ export default function ProvidersPage() {
           }
         );
 
-        console.log('Response status:', response.status);
-        
         if (!response.ok) {
-          const error = await response.json();
-          console.error('API Error:', error);
+          const error = await response.json().catch(() => ({}));
           throw new Error(error.detail || 'Failed to save provider configuration');
         }
 
-        const result = await response.json();
-        console.log('API Success:', result);
+        await response.json();
 
-        // Update local state on success - use functional update to avoid stale closure
-        console.log('📝 Updating provider state: setting', selectedProvider, 'to configured=true, enabled=true');
-        setProviders(prevProviders => {
-          const updated = prevProviders.map(p => 
-            p.id === selectedProvider 
-              ? { ...p, configured: true, enabled: true } 
-              : p
-          );
-          console.log('📝 Updated providers state:', updated);
-          return updated;
-        });
+        setProviders(prevProviders =>
+          prevProviders.map(p =>
+            p.id === selectedProvider ? { ...p, configured: true, enabled: true } : p
+          )
+        );
         setShowConfigModal(false);
-        
-        // Show success popup
+        setClientId('');
+        setClientSecret('');
+
         const providerName = providers.find(p => p.id === selectedProvider)?.name || 'Provider';
         setSuccessMessage(`${providerName} configured successfully! ✓`);
         setShowSuccessPopup(true);
-        
-        // Reset fields
-        setClientId('');
-        setClientSecret('');
-        
-        // Hide success popup after 3 seconds
-        setTimeout(() => {
-          setShowSuccessPopup(false);
-        }, 3000);
+        setTimeout(() => setShowSuccessPopup(false), 3000);
       } catch (error) {
         console.error('Failed to save provider configuration:', error);
-        
-        let errorMessage = 'Failed to save configuration';
-        if (error instanceof TypeError && error.message === 'Failed to fetch') {
-          errorMessage = 'Cannot connect to backend server. Make sure the backend is running.';
-        } else if (error instanceof Error) {
-          errorMessage = error.message;
-        }
-        
+        const errorMessage =
+          error instanceof TypeError && error.message === 'Failed to fetch'
+            ? 'Cannot connect to backend server.'
+            : error instanceof Error
+            ? error.message
+            : 'Failed to save configuration';
+
         setSuccessMessage(`❌ ${errorMessage}`);
         setShowSuccessPopup(true);
-        setTimeout(() => {
-          setShowSuccessPopup(false);
-        }, 5000);
+        setTimeout(() => setShowSuccessPopup(false), 5000);
       }
     } else {
       console.error('Missing required fields:', {
