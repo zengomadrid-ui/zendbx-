@@ -1,7 +1,20 @@
 import Link from 'next/link';
 import { CodeBlock, Note } from './components';
+import type { Metadata } from 'next';
 
-export const metadata = { title: 'ZendBX Documentation' };
+export const metadata: Metadata = {
+  title: 'Zendbx Documentation — Open Source Backend Platform',
+  description:
+    'Complete documentation for Zendbx: PostgreSQL, Authentication, Storage, Realtime APIs, REST, SDK, and CLI.',
+  alternates: { canonical: 'https://zendbx.in/docs' },
+  openGraph: {
+    title: 'Zendbx Documentation',
+    description: 'Complete docs for Zendbx BaaS: PostgreSQL, Auth, Storage, Realtime, REST API, SDK.',
+    url: 'https://zendbx.in/docs',
+    siteName: 'Zendbx',
+    type: 'website',
+  },
+};
 
 const cards = [
   { label: 'Authentication', desc: 'Email, OAuth, sessions, JWT, and MFA.', href: '/docs/auth' },

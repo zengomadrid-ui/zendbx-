@@ -5,13 +5,18 @@ from app.core.config import settings
 from app.core.database import close_all_pools
 import traceback
 
+# Disable Swagger / ReDoc / OpenAPI schema in production so they are never
+# indexed or discovered by search engines.
+_is_production = settings.ENVIRONMENT == "production"
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     debug=settings.DEBUG,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    # Docs are disabled in production; available only in development
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
     description="ZendBX — instant backend platform. Postgres, REST APIs, auth, storage and realtime in one.",
 )
 
@@ -98,6 +103,10 @@ app.add_middleware(
     https_only=settings.ENVIRONMENT == "production"
 )
 print(f"🔐 Session middleware enabled for OAuth")
+
+# SEO & Security middleware — attaches X-Robots-Tag and blocks docs in production
+from app.middleware.seo_security import SEOSecurityMiddleware
+app.add_middleware(SEOSecurityMiddleware, environment=settings.ENVIRONMENT)
 
 # Add Project Context Middleware for multi-tenant support
 from app.middleware.project_context import ProjectContextMiddleware
@@ -210,14 +219,16 @@ async def shutdown():
 @app.get("/")
 async def root():
     """Public root endpoint — no authentication required"""
-    return {
+    response = {
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "status": "running",
-        "environment": settings.ENVIRONMENT,
-        "docs": "https://api.zendbx.in/docs",
-        "dashboard": "https://app.zendbx.in",
+        "dashboard": "https://zendbx.in",
     }
+    # Only expose docs link in non-production environments
+    if settings.ENVIRONMENT != "production":
+        response["docs"] = "/docs"
+    return response
 
 @app.get("/health")
 async def health_check():
@@ -226,7 +237,6 @@ async def health_check():
         "status": "healthy",
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
-        "environment": settings.ENVIRONMENT,
     }
 
 @app.get("/version")
@@ -235,7 +245,6 @@ async def version():
     return {
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
-        "environment": settings.ENVIRONMENT,
     }
 
 # Import and include routers

@@ -1,0 +1,29 @@
+# robots.txt for https://zendbx.in
+# Only the production website (zendbx.in) uses this file.
+# All development/staging/preview domains serve their own robots.txt
+# that disallows everything (handled via middleware X-Robots-Tag headers).
+
+User-agent: *
+
+# Public marketing & docs pages — allow indexing
+Allow: /
+Allow: /docs
+Allow: /docs/
+Allow: /community
+Allow: /community/
+
+# Private / authenticated routes — never index
+Disallow: /dashboard/
+Disallow: /api/
+Disallow: /login
+Disallow: /signup
+Disallow: /onboarding
+Disallow: /select-project
+Disallow: /callback
+Disallow: /forgot-password
+Disallow: /reset-password
+
+# Internal Next.js paths
+Disallow: /_next/
+
+Sitemap: https://zendbx.in/sitemap.xml
