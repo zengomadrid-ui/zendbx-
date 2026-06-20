@@ -53,7 +53,9 @@ class DatabaseInitializer:
             'usage_records',
             'quota_overrides',
             'backup_schedules',
-            'backup_history'
+            'backup_history',
+            'storage_buckets',
+            'storage_objects',
         ]
         
         missing = []
@@ -252,8 +254,76 @@ async def initialize_database_on_startup(database_url: str) -> bool:
 
     # Step 4: Fix any projects missing JWT secrets (permanent fix for existing projects)
     await fix_projects_missing_jwt_secrets(database_url)
-    
+
+    # Step 5: Ensure storage columns exist on projects table (Neon migration fix)
+    await ensure_storage_columns(database_url)
+
     return True
+
+
+async def ensure_storage_columns(database_url: str):
+    """
+    Ensure storage_used and max_storage columns exist on projects table.
+    Also ensures storage_buckets and storage_objects tables exist.
+    Idempotent — safe to run on every startup.
+    """
+    try:
+        conn = await asyncpg.connect(database_url)
+        try:
+            await conn.execute("""
+                ALTER TABLE projects ADD COLUMN IF NOT EXISTS storage_used BIGINT DEFAULT 0;
+                ALTER TABLE projects ADD COLUMN IF NOT EXISTS max_storage BIGINT DEFAULT 1073741824;
+            """)
+
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS storage_buckets (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    slug VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    is_public BOOLEAN DEFAULT FALSE,
+                    storage_used BIGINT DEFAULT 0,
+                    file_count INTEGER DEFAULT 0,
+                    created_by UUID,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW(),
+                    deleted_at TIMESTAMP NULL,
+                    UNIQUE(project_id, slug)
+                );
+                CREATE INDEX IF NOT EXISTS idx_storage_buckets_project_id ON storage_buckets(project_id);
+                CREATE INDEX IF NOT EXISTS idx_storage_buckets_deleted_at ON storage_buckets(deleted_at);
+                CREATE INDEX IF NOT EXISTS idx_storage_buckets_project_slug ON storage_buckets(project_id, slug) WHERE deleted_at IS NULL;
+            """)
+
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS storage_objects (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    bucket_id UUID NOT NULL REFERENCES storage_buckets(id) ON DELETE CASCADE,
+                    file_name TEXT,
+                    original_name TEXT,
+                    file_size BIGINT,
+                    mime_type TEXT,
+                    storage_key TEXT,
+                    version INTEGER DEFAULT 1,
+                    uploaded_by UUID,
+                    download_count BIGINT DEFAULT 0,
+                    last_downloaded_at TIMESTAMP NULL,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW(),
+                    deleted_at TIMESTAMP NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_storage_objects_bucket_id   ON storage_objects(bucket_id);
+                CREATE INDEX IF NOT EXISTS idx_storage_objects_project_id  ON storage_objects(project_id);
+                CREATE INDEX IF NOT EXISTS idx_storage_objects_storage_key ON storage_objects(storage_key);
+            """)
+
+            print("✅ Storage schema ensured (columns + tables)")
+        finally:
+            await conn.close()
+    except Exception as e:
+        print(f"⚠️  Could not ensure storage schema: {str(e)}")
 
 
 async def fix_projects_missing_jwt_secrets(database_url: str):

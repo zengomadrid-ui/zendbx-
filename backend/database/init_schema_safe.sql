@@ -52,9 +52,15 @@ CREATE TABLE IF NOT EXISTS projects (
     jwt_secret TEXT,
     anon_key TEXT,
     service_role_key TEXT,
+    storage_used BIGINT DEFAULT 0,
+    max_storage BIGINT DEFAULT 1073741824,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Add storage columns if they don't exist (idempotent upgrade)
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS storage_used BIGINT DEFAULT 0;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS max_storage BIGINT DEFAULT 1073741824;
 
 -- ============================================
 -- USER_TABLES
@@ -376,6 +382,55 @@ CREATE TABLE IF NOT EXISTS backup_history (
     expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================
+-- STORAGE_BUCKETS
+-- ============================================
+CREATE TABLE IF NOT EXISTS storage_buckets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) NOT NULL,
+    description TEXT,
+    is_public BOOLEAN DEFAULT FALSE,
+    storage_used BIGINT DEFAULT 0,
+    file_count INTEGER DEFAULT 0,
+    created_by UUID,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    deleted_at TIMESTAMP NULL,
+    UNIQUE(project_id, slug)
+);
+
+CREATE INDEX IF NOT EXISTS idx_storage_buckets_project_id ON storage_buckets(project_id);
+CREATE INDEX IF NOT EXISTS idx_storage_buckets_deleted_at ON storage_buckets(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_storage_buckets_project_slug ON storage_buckets(project_id, slug) WHERE deleted_at IS NULL;
+
+-- ============================================
+-- STORAGE_OBJECTS
+-- ============================================
+CREATE TABLE IF NOT EXISTS storage_objects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    bucket_id UUID NOT NULL REFERENCES storage_buckets(id) ON DELETE CASCADE,
+    file_name TEXT,
+    original_name TEXT,
+    file_size BIGINT,
+    mime_type TEXT,
+    storage_key TEXT,
+    version INTEGER DEFAULT 1,
+    uploaded_by UUID,
+    download_count BIGINT DEFAULT 0,
+    last_downloaded_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    deleted_at TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_storage_objects_bucket_id   ON storage_objects(bucket_id);
+CREATE INDEX IF NOT EXISTS idx_storage_objects_project_id  ON storage_objects(project_id);
+CREATE INDEX IF NOT EXISTS idx_storage_objects_deleted_at  ON storage_objects(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_storage_objects_storage_key ON storage_objects(storage_key);
 
 -- ============================================
 -- INDEXES
