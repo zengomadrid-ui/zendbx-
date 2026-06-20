@@ -63,7 +63,7 @@ export default function APIPlaygroundPage() {
     setLoadingProjects(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/api/projects`, {
+      const res = await fetch(`https://api.zendbx.in/api/projects`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -92,7 +92,7 @@ export default function APIPlaygroundPage() {
   const fetchAPIKeys = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/api/projects/${selectedProject}/api-keys`, {
+      const res = await fetch(`https://api.zendbx.in/api/projects/${selectedProject}/api-keys`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -116,7 +116,7 @@ export default function APIPlaygroundPage() {
   const fetchTables = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/api/projects/${selectedProject}/tables`, {
+      const res = await fetch(`https://api.zendbx.in/api/projects/${selectedProject}/tables`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -149,7 +149,7 @@ export default function APIPlaygroundPage() {
     const startTime = performance.now();
 
     try {
-      const url = `${API_URL}${endpoint}${queryParams ? '?' + queryParams : ''}`;
+      const url = `https://api.zendbx.in${endpoint}${queryParams ? '?' + queryParams : ''}`;
       
       const options: RequestInit = {
         method,
