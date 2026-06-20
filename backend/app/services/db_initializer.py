@@ -329,62 +329,108 @@ async def ensure_storage_columns(database_url: str):
 async def fix_projects_missing_jwt_secrets(database_url: str):
     """
     Fix any existing projects that are missing JWT secrets or API keys.
+    Also regenerates anon/service_role keys as real JWTs signed with jwt_secret.
     This runs on every startup and is idempotent.
     """
     import secrets as secrets_module
     import hashlib
-    
+    import jwt as pyjwt
+    import time
+
     try:
         conn = await asyncpg.connect(database_url)
         try:
-            # Fix projects missing jwt_secret - use encode+digest which doesn't need pgcrypto
+            # Step 1: Ensure every project has a jwt_secret
             projects_fixed = await conn.execute("""
                 UPDATE projects
                 SET jwt_secret = md5(random()::text) || md5(random()::text),
                     updated_at = NOW()
                 WHERE jwt_secret IS NULL OR jwt_secret = ''
             """)
-            
             if projects_fixed != "UPDATE 0":
                 print(f"✅ Fixed JWT secrets: {projects_fixed}")
-            
-            # Fix projects missing API keys
-            projects_without_keys = await conn.fetch("""
-                SELECT p.id, p.user_id
+
+            # Step 2: Get ALL projects with their jwt_secret
+            all_projects = await conn.fetch("""
+                SELECT p.id, p.user_id, p.jwt_secret
                 FROM projects p
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM api_keys k 
-                    WHERE k.project_id = p.id 
-                    AND k.key_type = 'anon' 
-                    AND k.is_active = true
-                )
+                WHERE p.jwt_secret IS NOT NULL AND p.jwt_secret != ''
             """)
-            
-            for project in projects_without_keys:
+
+            for project in all_projects:
                 project_id = project['id']
                 user_id = project['user_id']
-                
-                # Generate anon key
-                anon_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + secrets_module.token_hex(32)
-                anon_hash = hashlib.sha256(anon_key.encode()).hexdigest()
-                
-                # Generate service_role key
-                service_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' + secrets_module.token_hex(32)
-                service_hash = hashlib.sha256(service_key.encode()).hexdigest()
-                
+                jwt_secret = project['jwt_secret']
+
+                # Check if this project has valid anon/service_role keys
+                # A key is valid if it can be decoded with the current jwt_secret
+                existing_keys = await conn.fetch("""
+                    SELECT id, encrypted_key, key_type
+                    FROM api_keys
+                    WHERE project_id = $1 AND is_active = true
+                    AND key_type IN ('anon', 'service_role')
+                """, project_id)
+
+                has_valid_anon = False
+                has_valid_service = False
+
+                for key in existing_keys:
+                    enc = key['encrypted_key'] or ''
+                    try:
+                        payload = pyjwt.decode(enc, jwt_secret, algorithms=["HS256"])
+                        if key['key_type'] == 'anon' and payload.get('role') == 'anon':
+                            has_valid_anon = True
+                        if key['key_type'] == 'service_role' and payload.get('role') == 'service_role':
+                            has_valid_service = True
+                    except Exception:
+                        pass  # key doesn't match current jwt_secret
+
+                if has_valid_anon and has_valid_service:
+                    continue  # keys are fine
+
+                # Deactivate stale keys
                 await conn.execute("""
-                    INSERT INTO api_keys (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
-                    VALUES ($1, $2, 'anon (public)', $3, $4, $5, 'read', 'anon', true),
-                           ($1, $2, 'service_role (secret)', $6, $7, $8, 'admin', 'service_role', true)
+                    UPDATE api_keys SET is_active = false
+                    WHERE project_id = $1 AND key_type IN ('anon', 'service_role')
+                """, project_id)
+
+                # Generate real JWTs signed with the project's jwt_secret
+                now = int(time.time())
+                anon_payload = {
+                    "iss": "zendbx",
+                    "project_id": str(project_id),
+                    "role": "anon",
+                    "iat": now,
+                }
+                service_payload = {
+                    "iss": "zendbx",
+                    "project_id": str(project_id),
+                    "role": "service_role",
+                    "iat": now,
+                }
+
+                anon_key = pyjwt.encode(anon_payload, jwt_secret, algorithm="HS256")
+                service_key = pyjwt.encode(service_payload, jwt_secret, algorithm="HS256")
+
+                anon_hash = hashlib.sha256(anon_key.encode()).hexdigest()
+                service_hash = hashlib.sha256(service_key.encode()).hexdigest()
+
+                await conn.execute("""
+                    INSERT INTO api_keys
+                        (user_id, project_id, name, key_hash, key_prefix, encrypted_key, role, key_type, is_active)
+                    VALUES
+                        ($1, $2, 'anon (public)',         $3, $4, $5, 'read',  'anon',         true),
+                        ($1, $2, 'service_role (secret)', $6, $7, $8, 'admin', 'service_role', true)
                     ON CONFLICT DO NOTHING
-                """, user_id, project_id,
-                    anon_hash, anon_key[:17] + '...', anon_key,
-                    service_hash, service_key[:17] + '...', service_key)
-                
-                print(f"✅ Generated API keys for project {project_id}")
-                
+                """,
+                    user_id, project_id,
+                    anon_hash,    anon_key[:20] + '...',    anon_key,
+                    service_hash, service_key[:20] + '...', service_key,
+                )
+                print(f"✅ Regenerated JWT API keys for project {project_id}")
+
         finally:
             await conn.close()
-            
+
     except Exception as e:
         print(f"⚠️  Could not fix project secrets: {str(e)}")
