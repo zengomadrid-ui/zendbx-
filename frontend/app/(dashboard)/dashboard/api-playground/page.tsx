@@ -1,6 +1,7 @@
 'use client';
 
-import { apiFetch, getApiUrl } from '@/lib/fetch-utils';
+import { apiFetch } from '@/lib/fetch-utils'
+import { getApiUrl } from '@/lib/config';
 import { useState, useEffect } from 'react';
 
 interface Project {

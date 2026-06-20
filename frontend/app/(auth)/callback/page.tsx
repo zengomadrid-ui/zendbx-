@@ -45,7 +45,7 @@ function CallbackContent() {
       try {
         localStorage.setItem('token', token);
 
-        const apiUrl = "https://api.zendbx.in" || 'http://localhost:8000';
+        const apiUrl = "https://api.zendbx.in";
         const response = await fetch(`${apiUrl}/api/auth/me`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });

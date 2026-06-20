@@ -5,6 +5,9 @@
 
 import { config, getApiUrl, getWsUrl } from './config';
 
+// Re-export getApiUrl so pages can import it from a single location
+export { getApiUrl };
+
 /**
  * Get auth headers for API requests
  * Safe for SSR - returns empty object on server

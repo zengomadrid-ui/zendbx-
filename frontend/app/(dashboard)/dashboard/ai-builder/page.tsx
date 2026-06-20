@@ -353,7 +353,7 @@ export default function AIBuilderPage() {
     // ── Try real backend first ──────────────────────────────────────────────
     if (projectId && token) {
       try {
-        const apiBase = "https://api.zendbx.in" || 'https://api.zendbx.in';
+        const apiBase = "https://api.zendbx.in";
         const res = await fetch(`${apiBase}/api/ai/${projectId}/generate-backend`, {
           method: 'POST',
           headers: {
