@@ -1,9 +1,7 @@
 'use client';
 
-
+import { apiFetch, getApiUrl } from '@/lib/fetch-utils';
 import { useState, useEffect } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
 interface APIKey {
   id: string;
@@ -54,7 +52,7 @@ export default function APIKeysPage() {
     try {
       const token = localStorage.getItem('token');
       
-      const url = `${API_URL}/api/projects`;
+      const url = getApiUrl('api/projects');
       
       const response = await fetch(url, {
         headers: {
@@ -88,7 +86,7 @@ export default function APIKeysPage() {
       const token = localStorage.getItem('token');
       
       // Use the /keys endpoint with reveal=true to get FULL keys
-      const url = `${API_URL}/api/projects/${selectedProject}/keys?reveal=true`;
+      const url = getApiUrl(`api/projects/${selectedProject}/keys?reveal=true`);
       
       console.log('Fetching FULL API keys from:', url);
       
@@ -162,7 +160,7 @@ export default function APIKeysPage() {
     try {
       const token = localStorage.getItem('token');
       
-      const url = `${API_URL}/api/projects/${selectedProject}/api-keys`;
+      const url = getApiUrl(`api/projects/${selectedProject}/api-keys`);
       
       const body = {
         name: keyName,
@@ -203,7 +201,7 @@ export default function APIKeysPage() {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${API_URL}/api/projects/${selectedProject}/api-keys/${keyId}`,
+        getApiUrl(`api/projects/${selectedProject}/api-keys/${keyId}`),
         {
           method: 'DELETE',
           headers: {
@@ -224,7 +222,7 @@ export default function APIKeysPage() {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${API_URL}/api/projects/${selectedProject}/api-keys/${keyId}/toggle`,
+        getApiUrl(`api/projects/${selectedProject}/api-keys/${keyId}/toggle`),
         {
           method: 'PATCH',
           headers: {
@@ -379,10 +377,10 @@ export default function APIKeysPage() {
             </p>
             <div className="flex items-center space-x-2">
               <code className="flex-1 text-xs text-orange-400 font-mono bg-black px-3 py-1.5 rounded overflow-x-auto whitespace-nowrap">
-                {`${API_URL}/p/${projectSlug || selectedProject}`}
+                {getApiUrl(`p/${projectSlug || selectedProject}`)}
               </code>
               <button
-                onClick={() => copyToClipboard(`${API_URL}/p/${projectSlug || selectedProject}`, 'project-url')}
+                onClick={() => copyToClipboard(getApiUrl(`p/${projectSlug || selectedProject}`), 'project-url')}
                 className="p-1.5 rounded hover:bg-[#2a2a2a] text-[#a1a1a1] hover:text-[#ededed] transition-colors flex-shrink-0"
                 title="Copy Project URL"
               >

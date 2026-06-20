@@ -1,9 +1,9 @@
 'use client';
 
-// Force dynamic rendering - prevent static generation
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+import { apiFetch } from '@/lib/fetch-utils';
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -32,38 +32,17 @@ export default function ProjectAuthPage() {
 
   const fetchProjectInfo = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setProjectName(data.name);
-      }
-    } catch (error) {
-      console.error('Failed to fetch project:', error);
-    }
+      const res = await apiFetch(`api/projects/${projectId}`);
+      if (res.ok) { const data = await res.json(); setProjectName(data.name); }
+    } catch (error) { console.error('Failed to fetch project:', error); }
   };
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/auth/stats`,
-        {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }
-      );
-
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
-    } finally {
-      setLoading(false);
-    }
+      const res = await apiFetch(`api/projects/${projectId}/auth/stats`);
+      if (res.ok) { setStats(await res.json()); }
+    } catch (error) { console.error('Failed to fetch stats:', error); }
+    finally { setLoading(false); }
   };
 
   const tabs = [

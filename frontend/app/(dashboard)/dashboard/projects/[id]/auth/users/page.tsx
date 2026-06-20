@@ -1,9 +1,9 @@
 'use client';
 
-// Force dynamic rendering - prevent static generation
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+import { apiFetch } from '@/lib/fetch-utils';
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 
@@ -37,8 +37,6 @@ export default function ProjectUsersPage() {
 
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem('token');
-      
       // Query the project database directly for users table
       const sql = `
         SELECT 
@@ -58,12 +56,9 @@ export default function ProjectUsersPage() {
         ORDER BY created_at DESC
       `;
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/query`, {
+      const res = await apiFetch(`api/projects/${projectId}/query`, {
         method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql })
       });
 

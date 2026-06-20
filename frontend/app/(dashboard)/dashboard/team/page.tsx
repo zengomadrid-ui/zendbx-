@@ -1,6 +1,6 @@
 "use client";
 
-
+import { apiFetch } from '@/lib/fetch-utils';
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
@@ -39,52 +39,24 @@ export default function TeamOverviewPage() {
 
   const fetchProjectsWithTeamInfo = async () => {
     try {
-      const token = localStorage.getItem("token");
-      
-      // Fetch all projects
-      const projectsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (!projectsRes.ok) {
-        throw new Error("Failed to fetch projects");
-      }
-      
+      const projectsRes = await apiFetch(`api/projects`);
+      if (!projectsRes.ok) throw new Error("Failed to fetch projects");
       const projectsData = await projectsRes.json();
-      
-      // Fetch team members for each project
+
       const projectsWithMembers = await Promise.all(
         projectsData.map(async (project: Project) => {
           try {
-            const membersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${project.id}/members`,
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
-            
+            const membersRes = await apiFetch(`api/projects/${project.id}/members`);
             if (membersRes.ok) {
               const members = await membersRes.json();
               const currentUserId = localStorage.getItem("user_id");
               const myMembership = members.find((m: Member) => m.user_id === currentUserId);
-              
-              return {
-                ...project,
-                members,
-                memberCount: members.length,
-                myRole: myMembership?.role || "unknown"
-              };
+              return { ...project, members, memberCount: members.length, myRole: myMembership?.role || "unknown" };
             }
-          } catch (error) {
-            console.error(`Failed to fetch members for project ${project.id}:`, error);
-          }
-          
-          return {
-            ...project,
-            members: [],
-            memberCount: 0,
-            myRole: "owner"
-          };
+          } catch (error) { console.error(`Failed to fetch members for project ${project.id}:`, error); }
+          return { ...project, members: [], memberCount: 0, myRole: "owner" };
         })
       );
-      
       setProjects(projectsWithMembers);
     } catch (error) {
       console.error("Failed to fetch projects:", error);

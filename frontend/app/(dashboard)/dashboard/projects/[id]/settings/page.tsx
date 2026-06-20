@@ -436,7 +436,7 @@ function ApiKeysSettings({ projectId, project }: { projectId: string; project: P
     return key.substring(0, 24) + '…' + key.substring(key.length - 10);
   };
 
-  const apiUrl = `${process.env.NEXT_PUBLIC_API_URL || ''}/p/${project?.slug || projectId}`;
+  const apiUrl = `https://api.zendbx.in/p/${project?.slug || projectId}`;
 
   return (
     <div className="space-y-6">

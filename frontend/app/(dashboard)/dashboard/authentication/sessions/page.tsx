@@ -1,6 +1,6 @@
 'use client';
 
-
+import { apiFetch } from '@/lib/fetch-utils';
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 
@@ -29,7 +29,7 @@ export default function SessionsPage() {
   const fetchSessions = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/sessions`, {
+      const res = await fetch(`${"https://api.zendbx.in"}/api/auth/sessions`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -50,7 +50,7 @@ export default function SessionsPage() {
     setDeletingId(sessionId);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/sessions/${sessionId}`, {
+      const res = await fetch(`${"https://api.zendbx.in"}/api/auth/sessions/${sessionId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -70,7 +70,7 @@ export default function SessionsPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/sessions`, {
+      const res = await fetch(`${"https://api.zendbx.in"}/api/auth/sessions`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });

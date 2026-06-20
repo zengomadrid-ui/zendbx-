@@ -98,7 +98,7 @@ export default function BucketDetailPage() {
       fd.append('file', file);
 
       const token = localStorage.getItem('token');
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const apiUrl = 'https://api.zendbx.in';
       const res = await fetch(`${apiUrl}/p/${projectSlug}/storage/buckets/${bucketSlug}/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },

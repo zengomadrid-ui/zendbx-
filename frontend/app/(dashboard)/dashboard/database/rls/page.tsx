@@ -1,6 +1,6 @@
 "use client";
 
-
+import { apiFetch } from '@/lib/fetch-utils';
 import { useState, useEffect } from "react";
 
 interface RLSTable {
@@ -36,7 +36,6 @@ export default function RLSPage() {
   const fetchRLSStatus = async () => {
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
       
       // Query to get RLS status and policies
       const sql = `
@@ -63,13 +62,9 @@ export default function RLSPage() {
         ORDER BY t.tablename;
       `;
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/query`, {
+      const response = await apiFetch(`api/projects/${projectId}/query`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "x-project-id": projectId || ""
-        },
+        headers: { "Content-Type": "application/json", "x-project-id": projectId || "" },
         body: JSON.stringify({ sql })
       });
       
@@ -106,53 +101,28 @@ export default function RLSPage() {
   const enableRLS = async (tableName: string) => {
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
-      
       const sql = `ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;`;
-      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/query`, {
+      const response = await apiFetch(`api/projects/${projectId}/query`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "x-project-id": projectId || ""
-        },
+        headers: { "Content-Type": "application/json", "x-project-id": projectId || "" },
         body: JSON.stringify({ sql })
       });
-      
-      if (response.ok) {
-        fetchRLSStatus();
-      }
-    } catch (error) {
-      console.error("Failed to enable RLS:", error);
-    }
+      if (response.ok) { fetchRLSStatus(); }
+    } catch (error) { console.error("Failed to enable RLS:", error); }
   };
 
   const disableRLS = async (tableName: string) => {
     if (!confirm(`Disable RLS on table "${tableName}"? This will remove security restrictions.`)) return;
-    
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
-      
       const sql = `ALTER TABLE ${tableName} DISABLE ROW LEVEL SECURITY;`;
-      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/query`, {
+      const response = await apiFetch(`api/projects/${projectId}/query`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "x-project-id": projectId || ""
-        },
+        headers: { "Content-Type": "application/json", "x-project-id": projectId || "" },
         body: JSON.stringify({ sql })
       });
-      
-      if (response.ok) {
-        fetchRLSStatus();
-      }
-    } catch (error) {
-      console.error("Failed to disable RLS:", error);
-    }
+      if (response.ok) { fetchRLSStatus(); }
+    } catch (error) { console.error("Failed to disable RLS:", error); }
   };
 
   if (loading) {

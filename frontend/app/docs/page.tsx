@@ -3,7 +3,7 @@ import { CodeBlock, Note } from './components';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Zendbx Documentation — Open Source Backend Platform',
+  title: 'Zendbx Documentation — AI-Native Backend Platform',
   description:
     'Complete documentation for Zendbx: PostgreSQL, Authentication, Storage, Realtime APIs, REST, SDK, and CLI.',
   alternates: { canonical: 'https://zendbx.in/docs' },

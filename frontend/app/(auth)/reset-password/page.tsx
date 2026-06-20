@@ -27,7 +27,7 @@ function ResetPasswordForm() {
       }
 
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/verify-reset-token/${token}`);
+        const response = await fetch(`${"https://api.zendbx.in"}/api/auth/verify-reset-token/${token}`);
         const data = await response.json();
 
         if (response.ok) {
@@ -64,7 +64,7 @@ function ResetPasswordForm() {
     }
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/reset-password`, {
+      const response = await fetch(`${"https://api.zendbx.in"}/api/auth/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

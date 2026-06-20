@@ -1,6 +1,6 @@
 'use client';
 
-
+import { apiFetch, getApiUrl } from '@/lib/fetch-utils';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -55,9 +55,7 @@ export default function BillingPage() {
       }
       
       // Fetch current subscription and usage
-      const subRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/billing/subscription`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const subRes = await apiFetch(`api/billing/subscription`);
       
       if (!subRes.ok) {
         console.error('Failed to fetch subscription:', subRes.status);
@@ -70,9 +68,7 @@ export default function BillingPage() {
       setSubscription(subData);
 
       // Fetch available plans
-      const plansRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/billing/plans`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const plansRes = await apiFetch(`api/billing/plans`);
       
       if (!plansRes.ok) {
         console.error('Failed to fetch plans:', plansRes.status);
@@ -98,7 +94,7 @@ export default function BillingPage() {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/billing/upgrade`, {
+      const res = await apiFetch(`api/billing/upgrade`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

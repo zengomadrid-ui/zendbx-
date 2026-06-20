@@ -225,7 +225,7 @@ export default function ProjectsPage() {
   };
 
   const getApiUrl = (slug?: string) =>
-    slug ? `${process.env.NEXT_PUBLIC_API_URL!}/p/${slug}` : null;
+    slug ? `https://api.zendbx.in/p/${slug}` : null;
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();

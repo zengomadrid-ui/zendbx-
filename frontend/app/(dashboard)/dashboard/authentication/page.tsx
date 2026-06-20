@@ -1,6 +1,6 @@
 'use client';
 
-
+import { apiFetch, getApiUrl } from '@/lib/fetch-utils';
 import { useState, useEffect } from 'react';
 
 interface OAuthConnection {
@@ -22,7 +22,7 @@ export default function AuthenticationPage() {
   const fetchUserData = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/auth/me`, {
+      const response = await fetch(`${"https://api.zendbx.in"}/api/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -56,7 +56,7 @@ export default function AuthenticationPage() {
   };
 
   const connectOAuth = (provider: string) => {
-    window.location.href = `${process.env.NEXT_PUBLIC_API_URL!}/api/auth/oauth/${provider}/login`;
+    window.location.href = `${"https://api.zendbx.in"}/api/auth/oauth/${provider}/login`;
   };
 
   const getProviderIcon = (provider: string) => {

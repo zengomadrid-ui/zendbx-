@@ -1,6 +1,6 @@
 "use client";
 
-
+import { apiFetch } from '@/lib/fetch-utils';
 import { useState, useEffect } from "react";
 
 interface Trigger {
@@ -44,16 +44,11 @@ export default function TriggersPage() {
   const fetchData = async () => {
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
-      const headers = {
-        "Authorization": `Bearer ${token}`,
-        "x-project-id": projectId || ""
-      };
 
       const [triggersRes, functionsRes, tablesRes] = await Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/db/triggers`, { headers }),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/db/functions`, { headers }),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/db/tables`, { headers })
+        apiFetch(`api/projects/${projectId}/db/triggers`, { headers: { "x-project-id": projectId || "" } }),
+        apiFetch(`api/projects/${projectId}/db/functions`, { headers: { "x-project-id": projectId || "" } }),
+        apiFetch(`api/projects/${projectId}/db/tables`, { headers: { "x-project-id": projectId || "" } })
       ]);
 
       if (triggersRes.ok) {
@@ -81,15 +76,9 @@ export default function TriggersPage() {
   const createTrigger = async () => {
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
-      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/db/triggers`, {
+      const response = await apiFetch(`api/projects/${projectId}/db/triggers`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-          "x-project-id": projectId || ""
-        },
+        headers: { "Content-Type": "application/json", "x-project-id": projectId || "" },
         body: JSON.stringify(newTrigger)
       });
       
@@ -115,19 +104,11 @@ export default function TriggersPage() {
 
   const deleteTrigger = async (triggerName: string, tableName: string) => {
     if (!confirm(`Delete trigger "${triggerName}"? This action cannot be undone.`)) return;
-    
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
-      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/db/triggers/${triggerName}?table_name=${tableName}`,
-        {
-          method: "DELETE",
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "x-project-id": projectId || ""
-          }
-        }
+      const response = await apiFetch(
+        `api/projects/${projectId}/db/triggers/${triggerName}?table_name=${tableName}`,
+        { method: "DELETE", headers: { "x-project-id": projectId || "" } }
       );
       
       if (response.ok) {

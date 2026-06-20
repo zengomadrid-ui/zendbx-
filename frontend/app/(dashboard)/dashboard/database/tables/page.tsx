@@ -1,6 +1,6 @@
 "use client";
 
-
+import { apiFetch } from '@/lib/fetch-utils';
 import { useState, useEffect } from "react";
 
 interface Column {
@@ -35,11 +35,9 @@ export default function TablesPage() {
   const fetchTables = async () => {
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/db/tables`, {
+      const response = await apiFetch(`api/projects/${projectId}/db/tables`, {
         headers: {
-          "Authorization": `Bearer ${token}`,
           "x-project-id": projectId || ""
         }
       });
@@ -70,7 +68,6 @@ export default function TablesPage() {
   const fetchRLSStatus = async (tablesList: Table[]) => {
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
       
       // Query to check RLS status
       const sql = `
@@ -85,11 +82,10 @@ export default function TablesPage() {
         ORDER BY t.tablename;
       `;
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/query`, {
+      const response = await apiFetch(`api/projects/${projectId}/query`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
           "x-project-id": projectId || ""
         },
         body: JSON.stringify({ sql })
@@ -119,13 +115,11 @@ export default function TablesPage() {
   const createTable = async () => {
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/db/tables`, {
+      const response = await apiFetch(`api/projects/${projectId}/db/tables`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
           "x-project-id": projectId || ""
         },
         body: JSON.stringify(newTable)
@@ -149,12 +143,10 @@ export default function TablesPage() {
     
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/db/tables/${tableName}`, {
+      const response = await apiFetch(`api/projects/${projectId}/db/tables/${tableName}`, {
         method: "DELETE",
         headers: {
-          "Authorization": `Bearer ${token}`,
           "x-project-id": projectId || ""
         }
       });

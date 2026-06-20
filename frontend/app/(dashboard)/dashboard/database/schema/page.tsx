@@ -1,6 +1,6 @@
 "use client";
 
-
+import { apiFetch } from '@/lib/fetch-utils';
 import { useState, useEffect } from "react";
 
 interface Column {
@@ -40,13 +40,8 @@ export default function SchemaVisualizerPage() {
   const fetchSchema = async () => {
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const token = localStorage.getItem("token");
-      
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/db/schema`, {
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "x-project-id": projectId || ""
-        }
+      const response = await apiFetch(`api/projects/${projectId}/db/schema`, {
+        headers: { "x-project-id": projectId || "" }
       });
       
       if (response.ok) {

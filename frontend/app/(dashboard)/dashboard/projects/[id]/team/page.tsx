@@ -1,9 +1,9 @@
 "use client";
 
-// Force dynamic rendering - prevent static generation
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+import { apiFetch } from '@/lib/fetch-utils';
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { io, Socket } from "socket.io-client";
@@ -53,38 +53,18 @@ export default function TeamPage() {
     scrollToBottom();
   }, [messages]);
 
-  // Fetch members
   const fetchMembers = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/members`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setMembers(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch members:", error);
-    }
+      const res = await apiFetch(`api/projects/${projectId}/members`);
+      if (res.ok) { setMembers(await res.json()); }
+    } catch (error) { console.error("Failed to fetch members:", error); }
   };
 
-  // Fetch messages
   const fetchMessages = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/messages`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch messages:", error);
-    }
+      const res = await apiFetch(`api/projects/${projectId}/messages`);
+      if (res.ok) { setMessages(await res.json()); }
+    } catch (error) { console.error("Failed to fetch messages:", error); }
   };
 
   // Initialize
@@ -142,118 +122,55 @@ export default function TeamPage() {
     };
   }, [projectId]);
 
-  // Send message
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!newMessage.trim() || sending) return;
-    
     setSending(true);
-    
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/messages`, {
+      const res = await apiFetch(`api/projects/${projectId}/messages`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: newMessage })
       });
-      
-      if (res.ok) {
-        setNewMessage("");
-        await fetchMessages();
-        messageInputRef.current?.focus();
-      } else {
-        const error = await res.json();
-        alert(error.detail || "Failed to send message");
-      }
-    } catch (error) {
-      console.error("Failed to send message:", error);
-      alert("Failed to send message");
-    } finally {
-      setSending(false);
-    }
+      if (res.ok) { setNewMessage(""); await fetchMessages(); messageInputRef.current?.focus(); }
+      else { const error = await res.json(); alert(error.detail || "Failed to send message"); }
+    } catch (error) { alert("Failed to send message"); }
+    finally { setSending(false); }
   };
 
-  // Invite member
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!inviteEmail.trim()) return;
-    
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/invite`, {
+      const res = await apiFetch(`api/projects/${projectId}/invite`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: inviteEmail, role: inviteRole })
       });
-      
-      if (res.ok) {
-        alert("Member invited successfully!");
-        setInviteEmail("");
-        await fetchMembers();
-      } else {
-        const error = await res.json();
-        alert(error.detail || "Failed to invite member");
-      }
-    } catch (error) {
-      console.error("Failed to invite:", error);
-      alert("Failed to invite member");
-    }
+      if (res.ok) { alert("Member invited successfully!"); setInviteEmail(""); await fetchMembers(); }
+      else { const error = await res.json(); alert(error.detail || "Failed to invite member"); }
+    } catch (error) { alert("Failed to invite member"); }
   };
 
-  // Remove member
   const handleRemoveMember = async (userId: string) => {
     if (!confirm("Are you sure you want to remove this member?")) return;
-    
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/members/${userId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      if (res.ok) {
-        await fetchMembers();
-      } else {
-        const error = await res.json();
-        alert(error.detail || "Failed to remove member");
-      }
-    } catch (error) {
-      console.error("Failed to remove member:", error);
-      alert("Failed to remove member");
-    }
+      const res = await apiFetch(`api/projects/${projectId}/members/${userId}`, { method: "DELETE" });
+      if (res.ok) await fetchMembers();
+      else { const error = await res.json(); alert(error.detail || "Failed to remove member"); }
+    } catch (error) { alert("Failed to remove member"); }
   };
 
-  // Update role
   const handleUpdateRole = async (userId: string, newRole: string) => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL!}/api/projects/${projectId}/members/${userId}`, {
+      const res = await apiFetch(`api/projects/${projectId}/members/${userId}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: newRole })
       });
-      
-      if (res.ok) {
-        await fetchMembers();
-      } else {
-        const error = await res.json();
-        alert(error.detail || "Failed to update role");
-      }
-    } catch (error) {
-      console.error("Failed to update role:", error);
-      alert("Failed to update role");
-    }
+      if (res.ok) await fetchMembers();
+      else { const error = await res.json(); alert(error.detail || "Failed to update role"); }
+    } catch (error) { alert("Failed to update role"); }
   };
 
   if (loading) {

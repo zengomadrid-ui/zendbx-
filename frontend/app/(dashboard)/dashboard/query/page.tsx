@@ -26,12 +26,10 @@ export default function SQLQueryPage() {
     setResult(null);
 
     try {
-      const res = await fetch(`http://localhost:8000/api/projects/${projectId}/query`, {
+      const { apiFetch } = await import('@/lib/fetch-utils');
+      const res = await apiFetch(`api/projects/${projectId}/query`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql }),
       });
 
