@@ -11,6 +11,125 @@ interface User {
   id: string; email: string; full_name: string; avatar_url?: string; plan: string; role?: string;
 }
 
+interface Notification {
+  id: string;
+  event_type: string;
+  success: boolean;
+  created_at: string;
+  event_data?: Record<string, unknown>;
+  user_email?: string;
+}
+
+/** SVG icon component for notifications — no emojis */
+function NotifIcon({ type, success }: { type: string; success: boolean }) {
+  const cls = `w-4 h-4 flex-shrink-0 mt-0.5 ${success ? 'text-[#A1A1AA]' : 'text-red-400'}`;
+  switch (type) {
+    case 'login':
+    case 'logout':
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      );
+    case 'signup':
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+        </svg>
+      );
+    case 'password_reset':
+    case 'api_key_created':
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+        </svg>
+      );
+    case 'project_created':
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+        </svg>
+      );
+    case 'project_deleted':
+    case 'user_deleted':
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      );
+    case 'backup_created':
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+        </svg>
+      );
+    case 'storage_upload':
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+        </svg>
+      );
+    case 'user_suspended':
+    case 'role_changed':
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+      );
+    default:
+      return success ? (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ) : (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      );
+  }
+}
+
+/** Map an audit event_type to a readable title and description */
+function notifMeta(n: Notification): { title: string; desc: string } {
+  const data = n.event_data ?? {};
+  switch (n.event_type) {
+    case 'login':
+      return { title: n.success ? 'Login successful' : 'Failed login attempt', desc: n.user_email ?? '' };
+    case 'logout':
+      return { title: 'Signed out', desc: n.user_email ?? '' };
+    case 'signup':
+      return { title: 'Account created', desc: n.user_email ?? '' };
+    case 'password_reset':
+      return { title: 'Password reset', desc: 'Password was changed successfully' };
+    case 'project_created':
+      return { title: 'New project created', desc: String((data as Record<string,unknown>).project_name ?? '') };
+    case 'project_deleted':
+      return { title: 'Project deleted', desc: String((data as Record<string,unknown>).project_name ?? '') };
+    case 'api_key_created':
+      return { title: 'API key generated', desc: String((data as Record<string,unknown>).key_name ?? 'New key created') };
+    case 'user_suspended':
+      return { title: 'User suspended', desc: String((data as Record<string,unknown>).suspended_user_email ?? '') };
+    case 'user_deleted':
+      return { title: 'User deleted', desc: String((data as Record<string,unknown>).deleted_user_email ?? '') };
+    case 'role_changed':
+      return { title: 'Role changed', desc: `New role: ${String((data as Record<string,unknown>).new_role ?? '')}` };
+    case 'backup_created':
+      return { title: 'Backup completed', desc: 'Database backup created successfully' };
+    case 'storage_upload':
+      return { title: 'File uploaded', desc: String((data as Record<string,unknown>).file_name ?? '') };
+    default:
+      return { title: n.event_type.replace(/_/g, ' '), desc: n.user_email ?? '' };
+  }
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
 const NAV_PRIMARY = [
   { name: 'Overview',      href: '/dashboard',             icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
   { name: 'AI Builder',    href: '/dashboard/ai-builder',  icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z', badge: 'AI' },
@@ -134,6 +253,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showCmdPalette, setShowCmdPalette] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [user, setUser] = useState<User | null>(null);
   const [activeProject, setActiveProject] = useState('');
   const [activeProjectInitial, setActiveProjectInitial] = useState('');
@@ -151,14 +276,79 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.push('/login');
   }, [router]);
 
+  const fetchNotifications = useCallback(async () => {
+    setNotifLoading(true);
+    try {
+      const r = await apiFetch('api/audit/logs?limit=20');
+      if (r.ok) {
+        const data = await r.json();
+        const logs: Notification[] = (data.logs ?? []).map((l: Record<string, unknown>) => ({
+          id: String(l.id),
+          event_type: String(l.event_type),
+          success: Boolean(l.success),
+          created_at: String(l.created_at),
+          event_data: l.event_data as Record<string, unknown> | undefined,
+          user_email: l.user_email ? String(l.user_email) : undefined,
+        }));
+        setNotifications(logs);
+        // Count notifications not yet in readIds
+        setUnreadCount(prev => {
+          const stored = localStorage.getItem('notif_read_ids');
+          const ids: string[] = stored ? JSON.parse(stored) : [];
+          const idSet = new Set(ids);
+          setReadIds(idSet);
+          return logs.filter(l => !idSet.has(l.id)).length;
+        });
+      }
+    } catch {
+      // silent — no toast spam on polling
+    } finally {
+      setNotifLoading(false);
+    }
+  }, []);
+
+  const markAllRead = useCallback(() => {
+    const ids = notifications.map(n => n.id);
+    const idSet = new Set(ids);
+    setReadIds(idSet);
+    setUnreadCount(0);
+    localStorage.setItem('notif_read_ids', JSON.stringify(ids));
+  }, [notifications]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setShowCmdPalette(v => !v); }
-      if (e.key === 'Escape') { setShowCmdPalette(false); setShowUserMenu(false); }
+      if (e.key === 'Escape') { setShowCmdPalette(false); setShowUserMenu(false); setShowNotifications(false); setShowProfileMenu(false); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30_000);
+    return () => clearInterval(interval);
+  }, [user, fetchNotifications]);
+
+  // Also fetch when the panel is opened so it's always fresh
+  useEffect(() => {
+    if (showNotifications && user) fetchNotifications();
+  }, [showNotifications, user, fetchNotifications]);
+
+  // Close header dropdowns when clicking outside them
+  useEffect(() => {
+    if (!showNotifications && !showProfileMenu) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (!target.closest('[data-header-dropdown]')) {
+        setShowNotifications(false);
+        setShowProfileMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showNotifications, showProfileMenu]);
 
   useEffect(() => {
     (async () => {
@@ -370,23 +560,153 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2" data-header-dropdown>
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-medium text-emerald-400"
               style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.15)' }}>
               <span className="live-dot" style={{ width: 5, height: 5 }} />
               Live
             </div>
-            <button className="w-8 h-8 flex items-center justify-center rounded-lg text-[#71717A] hover:text-white hover:bg-white/[0.06] transition-all relative">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-              </svg>
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#FF6B00]" />
-            </button>
-            <Link href="/dashboard/profile"
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 transition-all hover:scale-105"
-              style={{ background: 'linear-gradient(135deg, #FF6B00, #e85e00)', boxShadow: '0 2px 8px rgba(255,107,0,0.3)' }}>
-              {getInitials(user.full_name)}
-            </Link>
+
+            {/* ── Bell / Notifications ── */}
+            <div className="relative">
+              <button
+                onClick={() => { setShowNotifications(v => !v); setShowProfileMenu(false); }}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-[#71717A] hover:text-white hover:bg-white/[0.06] transition-all relative"
+                aria-label="Notifications"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-[#FF6B00]" />
+              </button>
+
+              {showNotifications && (
+                <div
+                  className="absolute right-0 top-full mt-2 rounded-xl overflow-hidden z-50"
+                  style={{
+                    width: '320px',
+                    maxWidth: 'calc(100vw - 1rem)',
+                    background: 'rgba(13,13,13,0.98)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    boxShadow: '0 16px 48px rgba(0,0,0,0.7)',
+                  }}
+                >
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.05]">
+                    <span className="text-xs font-semibold text-white">Notifications</span>
+                    {unreadCount > 0 && (
+                      <span className="text-[10px] text-[#FF6B00] font-medium">{unreadCount} new</span>
+                    )}
+                  </div>
+
+                  <div className="py-1 max-h-72 overflow-y-auto">
+                    {notifLoading && notifications.length === 0 ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="w-4 h-4 border-2 border-[#FF6B00] border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : notifications.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-8 gap-2">
+                        <svg className="w-8 h-8 text-[#3F3F46]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                        </svg>
+                        <p className="text-xs text-[#52525B]">No activity yet</p>
+                      </div>
+                    ) : (
+                      notifications.map((n) => {
+                        const { title, desc } = notifMeta(n);
+                        const isUnread = !readIds.has(n.id);
+                        return (
+                          <div
+                            key={n.id}
+                            className={`flex items-start gap-3 px-4 py-3 transition-all cursor-pointer border-b border-white/[0.03] last:border-0 ${
+                              isUnread ? 'bg-[rgba(255,107,0,0.04)] hover:bg-[rgba(255,107,0,0.07)]' : 'hover:bg-white/[0.04]'
+                            }`}
+                          >
+                            <div className="flex-shrink-0 mt-0.5">
+                              <NotifIcon type={n.event_type} success={n.success} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-xs font-semibold text-white truncate capitalize">{title}</p>
+                                {isUnread && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF6B00] flex-shrink-0" />
+                                )}
+                              </div>
+                              {desc && <p className="text-[11px] text-[#71717A] mt-0.5 truncate">{desc}</p>}
+                              {!n.success && (
+                                <span className="inline-block mt-1 text-[10px] text-red-400 font-medium">Failed</span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-[#52525B] flex-shrink-0 whitespace-nowrap mt-0.5">
+                              {timeAgo(n.created_at)}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="px-4 py-2.5 border-t border-white/[0.05]">
+                    <button
+                      onClick={markAllRead}
+                      className="w-full text-center text-[11px] text-[#71717A] hover:text-white transition-all"
+                    >
+                      Mark all as read
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Profile avatar / menu ── */}
+            <div className="relative">
+              <button
+                onClick={() => { setShowProfileMenu(v => !v); setShowNotifications(false); }}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0 transition-all hover:scale-105"
+                style={{ background: 'linear-gradient(135deg, #FF6B00, #e85e00)', boxShadow: '0 2px 8px rgba(255,107,0,0.3)' }}
+                aria-label="Profile menu"
+              >
+                {getInitials(user.full_name)}
+              </button>
+
+              {showProfileMenu && (
+                <div
+                  className="absolute right-0 top-full mt-2 w-56 rounded-xl overflow-hidden z-50"
+                  style={{
+                    background: 'rgba(13,13,13,0.98)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    boxShadow: '0 16px 48px rgba(0,0,0,0.7)',
+                  }}
+                >
+                  <div className="px-4 py-3 border-b border-white/[0.05]">
+                    <p className="text-xs font-semibold text-white truncate">{user.full_name}</p>
+                    <p className="text-[11px] text-[#71717A] mt-0.5 truncate">{user.email}</p>
+                    <span className="inline-block mt-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold capitalize"
+                      style={{ background: 'rgba(255,107,0,0.12)', color: '#FF6B00', border: '1px solid rgba(255,107,0,0.2)' }}>
+                      {user.plan} plan
+                    </span>
+                  </div>
+                  <div className="p-1.5 space-y-0.5">
+                    {[
+                      { label: 'Profile',  href: '/dashboard/profile' },
+                      { label: 'Billing',  href: '/dashboard/billing' },
+                      { label: 'API Keys', href: '/dashboard/api-keys' },
+                      { label: 'Settings', href: '/dashboard/authentication/settings' },
+                    ].map(({ label, href }) => (
+                      <Link key={href} href={href} onClick={() => setShowProfileMenu(false)}
+                        className="block px-3 py-2 text-xs text-[#A1A1AA] hover:text-white hover:bg-white/[0.05] rounded-lg transition-all">
+                        {label}
+                      </Link>
+                    ))}
+                    <div className="h-px bg-white/[0.05] my-1" />
+                    <button
+                      onClick={() => { setShowProfileMenu(false); handleLogout(); }}
+                      className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-red-500/[0.08] rounded-lg transition-all">
+                      Sign out
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 
