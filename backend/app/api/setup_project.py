@@ -1,12 +1,18 @@
 """
 Temporary Setup Endpoint - Create Project Database and Keys
 This is a one-time setup endpoint to initialize a project without direct database access
+
+SECURITY: This endpoint is protected by admin JWT authentication.
+Remove from production once initial setup is complete.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from uuid import UUID
 import asyncpg
 import logging
+import os
+
+from app.core.rbac import require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -15,25 +21,14 @@ router = APIRouter()
 
 class ProjectSetupRequest(BaseModel):
     project_id: str
-    setup_secret: str
     force_regenerate: bool = False
 
 
 @router.post("/api/admin/setup-project")
-async def setup_project(request: ProjectSetupRequest):
-    """
-    One-time setup endpoint to:
-    1. Create project database
-    2. Set up users table
-    3. Generate API keys
-    
-    SECURITY: This should be removed after initial setup!
-    """
-    # Simple password protection (replace with your own secret)
-    SETUP_SECRET = "zendbx_setup_2024"  # Change this!
-    
-    if request.setup_secret != SETUP_SECRET:
-        raise HTTPException(status_code=403, detail="Invalid setup secret")
+async def setup_project(
+    request: ProjectSetupRequest,
+    _current_user: dict = Depends(require_admin),   # ← CRITICAL-3 fix: admin JWT required
+):
     
     try:
         project_id = UUID(request.project_id)
@@ -243,15 +238,13 @@ import secrets
 
 
 @router.post("/api/admin/add-jwt-secret")
-async def add_jwt_secret(request: ProjectSetupRequest):
+async def add_jwt_secret(
+    request: ProjectSetupRequest,
+    _current_user: dict = Depends(require_admin),   # ← CRITICAL-3 fix: admin JWT required
+):
     """
     Add JWT secret to project if missing
     """
-    # Simple password protection
-    SETUP_SECRET = "zendbx_setup_2024"
-    
-    if request.setup_secret != SETUP_SECRET:
-        raise HTTPException(status_code=403, detail="Invalid setup secret")
     
     try:
         project_id = UUID(request.project_id)

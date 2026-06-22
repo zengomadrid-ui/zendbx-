@@ -353,7 +353,9 @@ export default function AIBuilderPage() {
     // ── Try real backend first ──────────────────────────────────────────────
     if (projectId && token) {
       try {
-        const apiBase = "https://api.zendbx.in";
+        // Use relative API path so it hits the correct backend (local or production)
+        // based on NEXT_PUBLIC_API_URL env var, not a hardcoded URL
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'https://api.zendbx.in';
         const res = await fetch(`${apiBase}/api/ai/${projectId}/generate-backend`, {
           method: 'POST',
           headers: {

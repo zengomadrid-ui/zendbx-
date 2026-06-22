@@ -61,8 +61,10 @@ async def get_current_user(
             )
         
         user = dict(result[0])
-        # Add role from JWT payload (for consistency)
-        user["role"] = payload.get("role", user.get("role", "user"))
+        # MEDIUM-1 FIX: Role is sourced exclusively from the database record.
+        # Never trust the role embedded in the JWT payload — it could be stale
+        # or tampered with. The DB value is always authoritative.
+        # (The jwt payload role is intentionally NOT merged here.)
         
         return user
         
@@ -199,9 +201,25 @@ async def login(credentials: UserLogin):
         user = dict(result[0])
         print(f"✅ User found: {user['email']}")
         
+        # HIGH-1 FIX: Brute-force protection — check failed attempt counter before
+        # doing the expensive bcrypt verify. Limit: 10 failures per 15 minutes.
+        from app.core.redis_client import redis_client
+        lockout_key = f"login_failures:{credentials.email}"
+        if redis_client.enabled:
+            failure_count = await redis_client.get_counter(lockout_key, "count")
+            if failure_count >= 10:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many failed login attempts. Please try again in 15 minutes.",
+                    headers={"Retry-After": "900"},
+                )
+
         # Verify password
         if not verify_password(credentials.password, user["password_hash"]):
             print(f"❌ Invalid password for: {credentials.email}")
+            # Increment failure counter (TTL = 15 minutes = 900 seconds)
+            if redis_client.enabled:
+                await redis_client.increment_counter(lockout_key, "count", ttl=900)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
@@ -209,6 +227,10 @@ async def login(credentials: UserLogin):
         
         print(f"✅ Password verified for: {credentials.email}")
         
+        # Clear failure counter on successful login
+        if redis_client.enabled:
+            await redis_client.reset_counter(f"login_failures:{credentials.email}", "count")
+
         # Check if active
         if not user["is_active"]:
             print(f"❌ Inactive account: {credentials.email}")

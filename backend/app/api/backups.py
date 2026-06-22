@@ -254,7 +254,7 @@ async def download_backup(
     """Download backup file"""
     from fastapi.responses import FileResponse
     import os
-    
+
     # Get user ID - handle both dict and object formats
     user_id = current_user.id if hasattr(current_user, 'id') else current_user["id"]
     
@@ -279,13 +279,23 @@ async def download_backup(
     
     # Check if file exists
     file_path = backup["file_path"]
-    if not file_path or not os.path.exists(file_path):
+    if not file_path:
+        raise HTTPException(status_code=404, detail="Backup file not found on disk")
+
+    # HIGH-7 FIX: Prevent path traversal by resolving the real path and
+    # confirming it sits inside the designated backup directory.
+    BACKUP_BASE = os.path.realpath("./backups")
+    real_path = os.path.realpath(file_path)
+    if not real_path.startswith(BACKUP_BASE + os.sep) and real_path != BACKUP_BASE:
+        raise HTTPException(status_code=403, detail="Invalid backup path")
+
+    if not os.path.exists(real_path):
         raise HTTPException(status_code=404, detail="Backup file not found on disk")
     
     # Return file for download
     filename = f"{backup['backup_name']}.sql.gz"
     return FileResponse(
-        path=file_path,
+        path=real_path,
         filename=filename,
         media_type="application/gzip",
         headers={

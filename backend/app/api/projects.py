@@ -146,16 +146,20 @@ async def create_project(
     """Create a new project (creates a new PostgreSQL database)"""
     
     # Check project limit for free tier
-    if current_user["plan"] == "free":
+    user_plan = current_user.get("plan") or "free"
+    if user_plan == "free":
         count_result = await execute_on_main_db(
             "SELECT COUNT(*) as count FROM projects WHERE user_id = $1",
             current_user["id"]
         )
         
-        if count_result[0]["count"] >= 2:
+        project_count = int(count_result[0]["count"]) if count_result else 0
+        FREE_TIER_LIMIT = 5  # Generous free tier
+        
+        if project_count >= FREE_TIER_LIMIT:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Free tier limited to 2 projects. Upgrade to Pro for unlimited projects."
+                detail=f"Free tier limited to {FREE_TIER_LIMIT} projects. Upgrade to Pro for unlimited projects."
             )
     
     # Generate unique database name

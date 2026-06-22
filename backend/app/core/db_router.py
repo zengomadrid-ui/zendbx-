@@ -37,14 +37,20 @@ def _diagnose_database_url(url: str) -> None:
         print("=" * 60 + "\n")
 
         if host in _INVALID_HOSTS:
-            raise ValueError(
-                f"\n🚨 DATABASE_URL has an invalid hostname: '{host}'\n"
-                f"   This hostname cannot be resolved in production.\n"
-                f"   Expected a Render PostgreSQL hostname like:\n"
-                f"   dpg-xxxxxxxxxxxxxxx-a.oregon-postgres.render.com\n"
-                f"\n   Fix: Set DATABASE_URL in the Render Dashboard → Environment\n"
-                f"   Use the EXTERNAL Database URL from your Render PostgreSQL service."
-            )
+            # Only fail hard in production — localhost is fine for local dev
+            import os as _os
+            env = _os.getenv("ENVIRONMENT", "development")
+            if env == "production":
+                raise ValueError(
+                    f"\n🚨 DATABASE_URL has an invalid hostname: '{host}'\n"
+                    f"   This hostname cannot be resolved in production.\n"
+                    f"   Expected a Render PostgreSQL hostname like:\n"
+                    f"   dpg-xxxxxxxxxxxxxxx-a.oregon-postgres.render.com\n"
+                    f"\n   Fix: Set DATABASE_URL in the Render Dashboard → Environment\n"
+                    f"   Use the EXTERNAL Database URL from your Render PostgreSQL service."
+                )
+            else:
+                print(f"⚠️  DATABASE_URL uses localhost — OK for local development")
 
         if host == parsed.hostname and "." not in host:
             # Short hostname with no dots — this is a Render internal hostname.

@@ -88,27 +88,35 @@ export default function OnboardingPage() {
   const pin = regionPin(sel);
 
   // Pre-generate dots for the globe (land only)
-  const globeDots: { cx:number; cy:number; r:number; op:number }[] = [];
-  for (let latDeg = -85; latDeg <= 85; latDeg += 3.8) {
-    const latRad = latDeg * Math.PI / 180;
-    const lonStep = Math.max(5, 3.8 / Math.cos(latRad));
-    for (let lonDeg = -180; lonDeg < 180; lonDeg += lonStep) {
-      if (!isLand(lonDeg, latDeg)) continue;
-      const lonRad = lonDeg * Math.PI / 180;
-      const x3 = Math.cos(latRad)*Math.cos(lonRad);
-      const y3 = Math.sin(latRad);
-      const z3 = Math.cos(latRad)*Math.sin(lonRad);
-      const x4 = x3*Math.cos(rotY)+z3*Math.sin(rotY);
-      const z4 = -x3*Math.sin(rotY)+z3*Math.cos(rotY);
-      if (x4 < -0.08) continue;
-      const cx = CX + R*z4;
-      const cy = CY - R*y3;
-      const depth = (x4 + 1) / 2;
-      const dotR = 1.2 + depth * 2.0;
-      const op = 0.18 + depth * 0.72;
-      globeDots.push({ cx, cy, r: dotR, op });
+  // Wrapped in useMemo + rounded to 4dp to prevent SSR/client hydration mismatch
+  const globeDots = useMemo(() => {
+    const dots: { cx:number; cy:number; r:number; op:number }[] = [];
+    const _R = 238; const _CX = 260; const _CY = 260;
+    const _rotY = 20 * Math.PI / 180;
+    const round4 = (n: number) => Math.round(n * 10000) / 10000;
+    for (let latDeg = -85; latDeg <= 85; latDeg += 3.8) {
+      const latRad = latDeg * Math.PI / 180;
+      const lonStep = Math.max(5, 3.8 / Math.cos(latRad));
+      for (let lonDeg = -180; lonDeg < 180; lonDeg += lonStep) {
+        if (!isLand(lonDeg, latDeg)) continue;
+        const lonRad = lonDeg * Math.PI / 180;
+        const x3 = Math.cos(latRad)*Math.cos(lonRad);
+        const y3 = Math.sin(latRad);
+        const z3 = Math.cos(latRad)*Math.sin(lonRad);
+        const x4 = x3*Math.cos(_rotY)+z3*Math.sin(_rotY);
+        const z4 = -x3*Math.sin(_rotY)+z3*Math.cos(_rotY);
+        if (x4 < -0.08) continue;
+        const cx = round4(_CX + _R*z4);
+        const cy = round4(_CY - _R*y3);
+        const depth = (x4 + 1) / 2;
+        const dotR = round4(1.2 + depth * 2.0);
+        const op = round4(0.18 + depth * 0.72);
+        dots.push({ cx, cy, r: dotR, op });
+      }
     }
-  }
+    return dots;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // no deps — purely deterministic, only needs to run once
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex">

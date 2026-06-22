@@ -81,8 +81,8 @@ async def oauth_login(
         # Get OAuth client
         client = get_oauth_client(provider)
         
-        # Build redirect URI
-        redirect_uri = request.url_for('oauth_callback', provider=provider)
+        # Build redirect URI — hardcode to avoid url_for resolution issues
+        redirect_uri = f"{settings.BACKEND_URL}/api/auth/oauth/{provider}/callback"
         
         # Build authorization params
         auth_params = {'state': state}
@@ -341,8 +341,8 @@ async def link_oauth_account(
         # Get OAuth client
         client = get_oauth_client(provider)
         
-        # Build redirect URI
-        redirect_uri = request.url_for('oauth_callback', provider=provider)
+        # Build redirect URI — hardcode to avoid url_for resolution issues
+        redirect_uri = f"{settings.BACKEND_URL}/api/auth/oauth/{provider}/callback"
         
         # Redirect to OAuth provider
         return await client.authorize_redirect(request, redirect_uri, state=state)

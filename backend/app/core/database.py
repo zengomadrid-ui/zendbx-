@@ -40,10 +40,11 @@ async def get_main_db_pool() -> asyncpg.Pool:
                 ssl_context = None
                 if any(indicator in settings.DATABASE_URL.lower() for indicator in ['render.com', 'amazonaws.com', 'azure.com', 'digitalocean.com']):
                     import ssl
+                    # HIGH-4 FIX: Use proper certificate verification instead of CERT_NONE.
+                    # create_default_context() loads the system CA bundle and enables
+                    # hostname verification by default — no extra configuration needed.
                     ssl_context = ssl.create_default_context()
-                    ssl_context.check_hostname = False
-                    ssl_context.verify_mode = ssl.CERT_NONE
-                    print(f"🔒 SSL enabled for cloud database")
+                    print(f"🔒 SSL enabled for cloud database (certificate verification ON)")
                 
                 # Create connection pool
                 connection_pools["main"] = await asyncpg.create_pool(

@@ -50,7 +50,16 @@ app.get('/', (req, res) => {
 });
 
 // Broadcast endpoint for backend to forward database events
+// Protected by a shared secret header to prevent unauthenticated event injection.
 app.post('/broadcast', (req, res) => {
+  const internalSecret = process.env.INTERNAL_BROADCAST_SECRET;
+
+  // Reject requests that don't present the correct internal secret
+  if (!internalSecret || req.headers['x-internal-secret'] !== internalSecret) {
+    logger.warn(`Unauthorized /broadcast attempt from ${req.ip}`);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   const { event, channel, data } = req.body;
   
   if (!event || !channel || !data) {

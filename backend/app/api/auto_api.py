@@ -12,10 +12,36 @@ from typing import Optional, Dict, Any
 from uuid import UUID
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# Identifier safety helpers — prevent SQL injection via table/column names
+# ---------------------------------------------------------------------------
+
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$')
+_SAFE_ORDER_RE = re.compile(r'^(ASC|DESC)$', re.IGNORECASE)
+
+def _safe_ident(name: str, label: str = "identifier") -> str:
+    """
+    Validate that *name* is a safe SQL identifier (letters, digits, underscores,
+    must start with a letter or underscore, max 63 chars — the PostgreSQL limit).
+    Returns the name quoted with double-quotes safe for embedding in SQL.
+    Raises HTTP 400 if the name does not pass validation.
+    """
+    if not name or not _SAFE_IDENTIFIER_RE.match(name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {label}: '{name}'. Must match ^[a-zA-Z_][a-zA-Z0-9_]{{0,62}}$",
+        )
+    return f'"{name}"'
+
+def _safe_order(order: str) -> str:
+    """Return 'ASC' or 'DESC'; default to 'ASC' for any other value."""
+    return "ASC" if not _SAFE_ORDER_RE.match(order) else order.upper()
 
 # ============================================
 # HELPER: Verify API Key
@@ -33,7 +59,7 @@ async def verify_api_key(api_key: str, project_id: UUID) -> dict:
     import hashlib
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     
-    # Get API key from database
+    # Get API key from database — project_id in WHERE enforces key ↔ project binding (IDOR fix)
     result = await execute_on_main_db(
         """
         SELECT ak.*, p.database_name, p.user_id
@@ -41,7 +67,7 @@ async def verify_api_key(api_key: str, project_id: UUID) -> dict:
         JOIN projects p ON ak.project_id = p.id
         WHERE ak.key_hash = $1 AND ak.project_id = $2 AND ak.is_active = TRUE
         """,
-        key_hash,  # Compare hashed key
+        key_hash,
         project_id
     )
     
@@ -49,6 +75,14 @@ async def verify_api_key(api_key: str, project_id: UUID) -> dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key"
+        )
+    
+    # Defense-in-depth: explicit cross-check so a key can never serve a different project
+    if str(result[0]["project_id"]) != str(project_id):
+        logger.warning("IDOR attempt blocked: key project != route project")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API key does not belong to this project"
         )
     
     # Update last_used_at
@@ -113,43 +147,49 @@ async def auto_api_list(
     filters, operators = parse_filters(dict(request.query_params))
     
     logger.info(f"GET /v1/{project_id}/{table_name} - User: {enforcer.user_id}, Role: {enforcer.role}")
+
+    # Validate all identifiers before building any SQL
+    safe_table = _safe_ident(table_name, "table name")
+    safe_sort  = _safe_ident(sort, "sort column")
+    safe_order = _safe_order(order)
     
     try:
-        # Build query
-        query = f"SELECT * FROM {table_name}"
+        # Build query with quoted, validated identifiers only
+        query = f"SELECT * FROM {safe_table}"
         conditions = []
         params = []
         param_count = 1
         
-        # Add filters
+        # Add filters — column names are also validated
         for column, value in filters.items():
+            safe_col = _safe_ident(column, "filter column")
             operator = operators.get(column, 'eq')
             
             if operator == 'eq':
-                conditions.append(f"{column} = ${param_count}")
+                conditions.append(f"{safe_col} = ${param_count}")
                 params.append(value)
             elif operator == 'ne':
-                conditions.append(f"{column} != ${param_count}")
+                conditions.append(f"{safe_col} != ${param_count}")
                 params.append(value)
             elif operator == 'gt':
-                conditions.append(f"{column} > ${param_count}")
+                conditions.append(f"{safe_col} > ${param_count}")
                 params.append(value)
             elif operator == 'gte':
-                conditions.append(f"{column} >= ${param_count}")
+                conditions.append(f"{safe_col} >= ${param_count}")
                 params.append(value)
             elif operator == 'lt':
-                conditions.append(f"{column} < ${param_count}")
+                conditions.append(f"{safe_col} < ${param_count}")
                 params.append(value)
             elif operator == 'lte':
-                conditions.append(f"{column} <= ${param_count}")
+                conditions.append(f"{safe_col} <= ${param_count}")
                 params.append(value)
             elif operator == 'like':
-                conditions.append(f"{column} LIKE ${param_count}")
+                conditions.append(f"{safe_col} LIKE ${param_count}")
                 params.append(f"%{value}%")
             elif operator == 'in':
                 values = value.split(',')
                 placeholders = [f"${param_count + i}" for i in range(len(values))]
-                conditions.append(f"{column} IN ({', '.join(placeholders)})")
+                conditions.append(f"{safe_col} IN ({', '.join(placeholders)})")
                 params.extend(values)
                 param_count += len(values) - 1
             
@@ -158,8 +198,8 @@ async def auto_api_list(
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         
-        # Add sorting
-        query += f" ORDER BY {sort} {order}"
+        # Sort and pagination — identifiers already validated above
+        query += f" ORDER BY {safe_sort} {safe_order}"
         
         # Add pagination
         query += f" LIMIT ${param_count} OFFSET ${param_count + 1}"
@@ -204,9 +244,10 @@ async def auto_api_get(
     api_key_data = await verify_api_key(x_api_key, project_id)
     
     try:
+        safe_table = _safe_ident(table_name, "table name")
         result = await execute_on_project_db(
             api_key_data["database_name"],
-            f"SELECT * FROM {table_name} WHERE id = $1",
+            f"SELECT * FROM {safe_table} WHERE id = $1",
             row_id
         )
         
@@ -249,12 +290,15 @@ async def auto_api_create(
         )
     
     try:
+        safe_table = _safe_ident(table_name, "table name")
         columns = list(data.keys())
+        # Validate all column names supplied by the caller
+        safe_columns = [_safe_ident(c, "column name") for c in columns]
         placeholders = [f"${i+1}" for i in range(len(columns))]
         values = list(data.values())
         
         insert_sql = f"""
-            INSERT INTO {table_name} ({', '.join(columns)})
+            INSERT INTO {safe_table} ({', '.join(safe_columns)})
             VALUES ({', '.join(placeholders)})
             RETURNING *
         """
@@ -296,12 +340,13 @@ async def auto_api_update(
         )
     
     try:
-        updates = [f"{col} = ${i+1}" for i, col in enumerate(data.keys())]
+        safe_table = _safe_ident(table_name, "table name")
+        updates = [f"{_safe_ident(col, 'column name')} = ${i+1}" for i, col in enumerate(data.keys())]
         values = list(data.values())
         values.append(row_id)
         
         update_sql = f"""
-            UPDATE {table_name}
+            UPDATE {safe_table}
             SET {', '.join(updates)}
             WHERE id = ${len(values)}
             RETURNING *
@@ -351,9 +396,10 @@ async def auto_api_delete(
         )
     
     try:
+        safe_table = _safe_ident(table_name, "table name")
         result = await execute_on_project_db(
             api_key_data["database_name"],
-            f"DELETE FROM {table_name} WHERE id = $1 RETURNING id",
+            f"DELETE FROM {safe_table} WHERE id = $1 RETURNING id",
             row_id
         )
         

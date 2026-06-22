@@ -312,7 +312,7 @@ async def auto_fix_sql(
         schema = await get_project_schema(project_id)
         
         # Import auto-fix service
-        from app.services.sql_autofix_service import sql_autofix
+        from app.services.sql_autofix_service_v2 import sql_autofix_v2 as sql_autofix
         
         # Attempt auto-fix
         fixed_sql = await sql_autofix.auto_fix_sql(

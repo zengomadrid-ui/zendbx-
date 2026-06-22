@@ -58,14 +58,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 # CORS middleware - Must be added before routes
 # Production-safe CORS configuration
 if settings.ENVIRONMENT == "production":
-    # Production: Strict CORS + localhost for testing
+    # Production: Strict CORS — no localhost origins.
+    # HIGH-6 FIX: Removed http://localhost:* origins from production.
+    # Localhost origins allow any local attacker to make credentialed
+    # cross-origin requests to the production API from their machine.
     allowed_origins = [
         "https://devapp.zendbx.in",
         "https://zendbx.in",
         "https://www.zendbx.in",
-        "https://zendbx-2-zpp9.onrender.com",  # Legacy Render URL (keep for backwards compat)
-        "http://localhost:5173",  # CRITICAL: Allow localhost for development testing
-        "http://localhost:3000",  # Alternative frontend port
+        "https://zendbx-2-zpp9.onrender.com",
     ]
     allow_credentials = True
     print(f"🔒 Production CORS enabled for: {allowed_origins}")
@@ -87,8 +88,21 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_credentials=allow_credentials,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
-    allow_headers=["*"],  # Allow all headers
-    expose_headers=["*"],
+    # HIGH-6 FIX: Explicit header allowlist instead of wildcard.
+    # Browsers reject wildcard Access-Control-Allow-Headers when
+    # credentials:true is set, and it also leaks internal header names.
+    allow_headers=[
+        "Authorization",
+        "apikey",
+        "Content-Type",
+        "Accept",
+        "x-project-id",
+        "x-api-key",
+        "x-internal-secret",
+        "Cache-Control",
+        "Pragma",
+    ],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Used"],
     max_age=3600,
 )
 

@@ -8,6 +8,7 @@ import chardet
 import io
 import json
 import csv
+import re
 
 # Try to import pandas, but make it optional
 try:
@@ -18,6 +19,40 @@ except ImportError:
     print("Warning: pandas not available. CSV import will use basic CSV module.")
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# HIGH-5 FIX: Identifier safety helpers for imports
+# ---------------------------------------------------------------------------
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$')
+
+def _safe_ident(name: str, label: str = "identifier") -> str:
+    """Validate and double-quote a SQL identifier. Raises HTTP 400 on failure."""
+    if not name or not _SAFE_IDENTIFIER_RE.match(name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {label}: '{name}'. Only letters, digits and underscores allowed.",
+        )
+    return f'"{name}"'
+
+# Allowed PostgreSQL column type keywords (whitelist)
+_ALLOWED_TYPES = {
+    'TEXT', 'VARCHAR', 'INTEGER', 'INT', 'BIGINT', 'SMALLINT',
+    'BOOLEAN', 'BOOL', 'DECIMAL', 'NUMERIC', 'FLOAT', 'REAL',
+    'DOUBLE PRECISION', 'TIMESTAMPTZ', 'TIMESTAMP', 'DATE', 'TIME',
+    'UUID', 'JSON', 'JSONB', 'BYTEA', 'SERIAL', 'BIGSERIAL',
+}
+_SAFE_TYPE_RE = re.compile(
+    r'^(TEXT|VARCHAR\(\d+\)|INTEGER|INT|BIGINT|SMALLINT|BOOLEAN|BOOL|'
+    r'DECIMAL|NUMERIC(\(\d+,\d+\))?|FLOAT|REAL|DOUBLE PRECISION|'
+    r'TIMESTAMPTZ|TIMESTAMP|DATE|TIME|UUID|JSON|JSONB|BYTEA|SERIAL|BIGSERIAL)$',
+    re.IGNORECASE
+)
+
+def _safe_col_type(col_type: str) -> str:
+    """Validate a PostgreSQL column type string. Returns as-is if safe."""
+    if not col_type or not _SAFE_TYPE_RE.match(col_type.strip()):
+        return 'TEXT'   # Fall back to TEXT for anything unrecognised
+    return col_type.strip().upper()
 
 # ============================================
 # HELPER: Verify Project Access
@@ -215,12 +250,15 @@ async def execute_csv_import(
         
         # Create table if needed
         if create_table:
-            # Build CREATE TABLE statement
+            # Build CREATE TABLE statement with validated identifiers and types
+            safe_table_name = _safe_ident(table_name, "table name")
             column_defs = []
             column_defs.append("id SERIAL PRIMARY KEY")
             
             for col in schema:
-                col_def = f"{col['name']} {col['type']}"
+                safe_col_name = _safe_ident(col['name'], "column name")
+                safe_type = _safe_col_type(col.get('type', 'TEXT'))
+                col_def = f"{safe_col_name} {safe_type}"
                 if not col.get('nullable', True):
                     col_def += " NOT NULL"
                 if col.get('unique', False):
@@ -231,19 +269,19 @@ async def execute_csv_import(
             column_defs.append("updated_at TIMESTAMPTZ DEFAULT NOW()")
             
             create_sql = f"""
-                CREATE TABLE {table_name} (
+                CREATE TABLE {safe_table_name} (
                     {', '.join(column_defs)}
                 )
             """
             
             await execute_on_project_db(project["database_name"], create_sql)
             
-            # Create trigger
+            # Create trigger — table name already validated above
             await execute_on_project_db(
                 project["database_name"],
                 f"""
                 CREATE TRIGGER update_{table_name}_updated_at
-                BEFORE UPDATE ON {table_name}
+                BEFORE UPDATE ON {safe_table_name}
                 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
                 """
             )
@@ -278,13 +316,15 @@ async def execute_csv_import(
                 if not mapped_row:
                     continue
                 
-                # Build INSERT
+                # Build INSERT — validate column names (they came from schema which is user-supplied)
                 columns = list(mapped_row.keys())
+                safe_cols = [_safe_ident(c, "column name") for c in columns]
                 placeholders = [f"${i+1}" for i in range(len(columns))]
                 values = list(mapped_row.values())
+                safe_tbl = _safe_ident(table_name, "table name")
                 
                 insert_sql = f"""
-                    INSERT INTO {table_name} ({', '.join(columns)})
+                    INSERT INTO {safe_tbl} ({', '.join(safe_cols)})
                     VALUES ({', '.join(placeholders)})
                 """
                 
@@ -411,14 +451,17 @@ async def simple_csv_import(
             })
         
         # Create table
+        safe_tbl = _safe_ident(table_name, "table name")
         column_defs = ["id SERIAL PRIMARY KEY"]
         for col in schema:
-            column_defs.append(f"{col['name']} {col['type']}")
+            safe_col = _safe_ident(col['name'], "column name")
+            safe_type = _safe_col_type(col.get('type', 'TEXT'))
+            column_defs.append(f"{safe_col} {safe_type}")
         column_defs.append("created_at TIMESTAMPTZ DEFAULT NOW()")
         column_defs.append("updated_at TIMESTAMPTZ DEFAULT NOW()")
         
         create_sql = f"""
-            CREATE TABLE IF NOT EXISTS {table_name} (
+            CREATE TABLE IF NOT EXISTS {safe_tbl} (
                 {', '.join(column_defs)}
             )
         """
@@ -429,11 +472,11 @@ async def simple_csv_import(
         inserted_count = 0
         for row in cleaned_rows:
             try:
-                columns = [col['name'] for col in schema]
-                placeholders = [f"${i+1}" for i in range(len(columns))]
+                safe_cols = [_safe_ident(col['name'], "column name") for col in schema]
+                placeholders = [f"${i+1}" for i in range(len(safe_cols))]
                 
                 insert_sql = f"""
-                    INSERT INTO {table_name} ({', '.join(columns)})
+                    INSERT INTO {safe_tbl} ({', '.join(safe_cols)})
                     VALUES ({', '.join(placeholders)})
                 """
                 

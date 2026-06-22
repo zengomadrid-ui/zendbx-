@@ -19,10 +19,18 @@ class BackendGeneratorService:
     """AI-powered backend generation service"""
     
     def __init__(self):
-        # Use Groq - fast and free
+        # Primary: Groq - fast and free
         self.api_key = settings.GROQ_API_KEY
         self.base_url = "https://api.groq.com/openai/v1"
         self.model = "llama-3.1-8b-instant"
+        
+        # Fallback 1: OpenRouter
+        self.openrouter_api_key = getattr(settings, 'OPENROUTER_API_KEY', '')
+        self.openrouter_base_url = getattr(settings, 'OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+        self.openrouter_model = "meta-llama/llama-3.1-8b-instruct:free"
+        
+        # Fallback 2: Gemini
+        self.gemini_api_key = getattr(settings, 'GEMINI_API_KEY', '')
     
     # ============================================
     # MAIN GENERATION METHOD
@@ -105,20 +113,62 @@ class BackendGeneratorService:
     # ============================================
     
     async def _generate_backend_plan(self, description: str) -> Dict[str, Any]:
-        """Use AI to generate a detailed backend implementation plan"""
+        """Use AI to generate a detailed backend implementation plan.
         
-        # Try with detailed prompt first
-        result = await self._try_generate_plan(description, detailed=True)
+        Tries providers in order: Groq → OpenRouter → Gemini.
+        Falls back to a minimal hardcoded plan if all AI calls fail.
+        """
         
-        # If that fails, try with simpler prompt
-        if result and "error" in result:
-            print("Detailed prompt failed, trying simpler prompt...")
-            result = await self._try_generate_plan(description, detailed=False)
+        # Attempt 1: Groq (detailed prompt)
+        if self.api_key:
+            result = await self._try_generate_plan(description, detailed=True, provider="groq")
+            if result and "error" not in result:
+                return result
+            print(f"⚠️ Groq detailed prompt failed, trying simplified prompt...")
+            result = await self._try_generate_plan(description, detailed=False, provider="groq")
+            if result and "error" not in result:
+                return result
+            print(f"⚠️ Groq failed: {result.get('error', 'unknown') if result else 'no response'}")
+        else:
+            print("⚠️ GROQ_API_KEY not set, skipping Groq")
         
-        return result
+        # Attempt 2: OpenRouter
+        if self.openrouter_api_key:
+            print("🔄 Trying OpenRouter fallback...")
+            result = await self._try_generate_plan(description, detailed=True, provider="openrouter")
+            if result and "error" not in result:
+                return result
+            print(f"⚠️ OpenRouter failed: {result.get('error', 'unknown') if result else 'no response'}")
+        
+        # Attempt 3: Gemini
+        if self.gemini_api_key:
+            print("🔄 Trying Gemini fallback...")
+            result = await self._try_generate_plan_gemini(description)
+            if result and "error" not in result:
+                return result
+            print(f"⚠️ Gemini failed: {result.get('error', 'unknown') if result else 'no response'}")
+        
+        # Last resort: generate a minimal plan from keyword matching (no AI needed)
+        print("🔄 All AI providers failed — using keyword-based fallback plan generator")
+        return self._generate_fallback_plan(description)
     
-    async def _try_generate_plan(self, description: str, detailed: bool = True) -> Dict[str, Any]:
-        """Attempt to generate a plan with AI"""
+    async def _try_generate_plan(self, description: str, detailed: bool = True, provider: str = "groq") -> Dict[str, Any]:
+        """Attempt to generate a plan with AI (Groq or OpenRouter)"""
+        
+        # Select API credentials based on provider
+        if provider == "openrouter":
+            api_key = self.openrouter_api_key
+            base_url = self.openrouter_base_url
+            model = self.openrouter_model
+            extra_headers = {
+                "HTTP-Referer": "https://zendbx.in",
+                "X-Title": "ZendBX AI Backend Builder"
+            }
+        else:  # groq
+            api_key = self.api_key
+            base_url = self.base_url
+            model = self.model
+            extra_headers = {}
         
         system_prompt = """You are an expert backend architect for Zendbx, a PostgreSQL-based backend platform.
 
@@ -251,13 +301,14 @@ Adapt the table name and columns to match the description. Keep it minimal."""
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.base_url}/chat/completions",
+                    f"{base_url}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        **extra_headers
                     },
                     json={
-                        "model": self.model,
+                        "model": model,
                         "messages": [
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt}
@@ -374,13 +425,14 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             "auth_enabled": [],
             "realtime_enabled": [],
             "indexes_created": [],
-            "errors": []
+            "errors": [],
+            "slug": ""
         }
         
         # Get project database name
         try:
             project_result = await execute_on_main_db(
-                "SELECT database_name FROM projects WHERE id = $1",
+                "SELECT database_name, slug FROM projects WHERE id = $1",
                 project_id
             )
             
@@ -391,7 +443,9 @@ Adapt the table name and columns to match the description. Keep it minimal."""
                 }
             
             db_name = project_result[0]["database_name"]
+            project_slug = project_result[0]["slug"] or str(project_id)
             pool = await get_project_db_pool(db_name)
+            results["slug"] = project_slug
             
         except Exception as e:
             return {
@@ -511,9 +565,9 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             await execute_on_main_db(
                 """
                 INSERT INTO user_tables (project_id, table_name, schema_definition)
-                VALUES ($1, $2, $3)
+                VALUES ($1, $2, $3::jsonb)
                 ON CONFLICT (project_id, table_name) DO UPDATE
-                SET schema_definition = $3, updated_at = NOW()
+                SET schema_definition = $3::jsonb, updated_at = NOW()
                 """,
                 project_id,
                 table_name,
@@ -667,35 +721,214 @@ Adapt the table name and columns to match the description. Keep it minimal."""
                     print(f"Warning: Could not create realtime trigger: {str(e)}")
     
     # ============================================
+    # GEMINI FALLBACK
+    # ============================================
+
+    async def _try_generate_plan_gemini(self, description: str) -> Dict[str, Any]:
+        """Fallback to Google Gemini if Groq/OpenRouter fail."""
+        try:
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"gemini-1.5-flash:generateContent?key={self.gemini_api_key}"
+            )
+            prompt = f"""Generate a minimal PostgreSQL backend plan for: "{description}"
+
+Return ONLY valid JSON (no markdown, no extra text):
+{{
+  "backend_type": "custom",
+  "tables": [
+    {{
+      "name": "items",
+      "description": "Main table",
+      "columns": [
+        {{"name": "id", "type": "UUID", "primary_key": true, "default": "gen_random_uuid()", "nullable": false}},
+        {{"name": "name", "type": "TEXT", "nullable": false}},
+        {{"name": "created_at", "type": "TIMESTAMPTZ", "default": "NOW()", "nullable": false}}
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "enable_auth": false,
+      "enable_realtime": false,
+      "rls_policy": ""
+    }}
+  ],
+  "relationships": [],
+  "features": {{"authentication": false, "realtime": false, "file_storage": false, "search": false}},
+  "suggested_queries": []
+}}
+
+Adapt table name and columns for the description."""
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2000}
+                    },
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                data = response.json()
+                content = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                content = content.replace("```json", "").replace("```", "").strip()
+                start = content.find("{")
+                end = content.rfind("}")
+                if start != -1 and end != -1:
+                    content = content[start:end + 1]
+                content = re.sub(r",(\s*[}\]])", r"\1", content)
+                plan = json.loads(content)
+                if self._validate_plan(plan):
+                    return plan
+                return {"error": "Gemini returned invalid plan structure"}
+        except Exception as e:
+            return {"error": f"Gemini error: {str(e)}"}
+
+    # ============================================
+    # KEYWORD-BASED FALLBACK PLAN (no AI needed)
+    # ============================================
+
+    def _generate_fallback_plan(self, description: str) -> Dict[str, Any]:
+        """
+        Build a best-effort plan from keyword matching when all AI providers fail.
+        Always returns a valid plan — never an error dict.
+        """
+        lower = description.lower()
+
+        def base_cols(extra: list) -> list:
+            return [
+                {"name": "id",         "type": "UUID",        "primary_key": True, "default": "gen_random_uuid()", "nullable": False},
+                {"name": "user_id",    "type": "UUID",        "nullable": True},
+                *extra,
+                {"name": "created_at", "type": "TIMESTAMPTZ", "default": "NOW()", "nullable": False},
+                {"name": "updated_at", "type": "TIMESTAMPTZ", "default": "NOW()", "nullable": False},
+            ]
+
+        if any(w in lower for w in ["todo", "task", "checklist"]):
+            tables = [
+                {"name": "todos", "description": "Todo items", "columns": base_cols([
+                    {"name": "title",     "type": "TEXT",    "nullable": False},
+                    {"name": "completed", "type": "BOOLEAN", "default": "false", "nullable": False},
+                    {"name": "priority",  "type": "TEXT",    "default": "'medium'", "nullable": True},
+                    {"name": "due_date",  "type": "DATE",    "nullable": True},
+                ]), "foreign_keys": [], "indexes": [], "enable_auth": False, "enable_realtime": False, "rls_policy": ""},
+            ]
+            backend_type = "todo"
+
+        elif any(w in lower for w in ["blog", "post", "article", "cms"]):
+            tables = [
+                {"name": "posts", "description": "Blog posts", "columns": base_cols([
+                    {"name": "title",     "type": "TEXT",    "nullable": False},
+                    {"name": "slug",      "type": "TEXT",    "nullable": False},
+                    {"name": "content",   "type": "TEXT",    "nullable": True},
+                    {"name": "published", "type": "BOOLEAN", "default": "false", "nullable": False},
+                ]), "foreign_keys": [], "indexes": [], "enable_auth": False, "enable_realtime": False, "rls_policy": ""},
+                {"name": "comments", "description": "Post comments", "columns": base_cols([
+                    {"name": "post_id", "type": "UUID", "nullable": False},
+                    {"name": "body",    "type": "TEXT", "nullable": False},
+                ]), "foreign_keys": [{"column": "post_id", "references_table": "posts", "references_column": "id", "on_delete": "CASCADE"}],
+                 "indexes": [], "enable_auth": False, "enable_realtime": False, "rls_policy": ""},
+            ]
+            backend_type = "blog"
+
+        elif any(w in lower for w in ["shop", "store", "ecommerce", "product", "order", "cart"]):
+            tables = [
+                {"name": "products", "description": "Products", "columns": base_cols([
+                    {"name": "name",        "type": "TEXT",    "nullable": False},
+                    {"name": "description", "type": "TEXT",    "nullable": True},
+                    {"name": "price",       "type": "NUMERIC", "nullable": False},
+                    {"name": "stock",       "type": "INTEGER", "default": "0", "nullable": False},
+                ]), "foreign_keys": [], "indexes": [], "enable_auth": False, "enable_realtime": False, "rls_policy": ""},
+                {"name": "orders", "description": "Customer orders", "columns": base_cols([
+                    {"name": "total",  "type": "NUMERIC", "nullable": False},
+                    {"name": "status", "type": "TEXT",    "default": "'pending'", "nullable": False},
+                ]), "foreign_keys": [], "indexes": [], "enable_auth": False, "enable_realtime": False, "rls_policy": ""},
+            ]
+            backend_type = "ecommerce"
+
+        elif any(w in lower for w in ["chat", "message", "channel", "dm", "inbox"]):
+            tables = [
+                {"name": "channels", "description": "Chat channels", "columns": base_cols([
+                    {"name": "name",       "type": "TEXT",    "nullable": False},
+                    {"name": "is_private", "type": "BOOLEAN", "default": "false", "nullable": False},
+                ]), "foreign_keys": [], "indexes": [], "enable_auth": False, "enable_realtime": True, "rls_policy": ""},
+                {"name": "messages", "description": "Chat messages", "columns": base_cols([
+                    {"name": "channel_id", "type": "UUID", "nullable": False},
+                    {"name": "content",    "type": "TEXT", "nullable": False},
+                ]), "foreign_keys": [{"column": "channel_id", "references_table": "channels", "references_column": "id", "on_delete": "CASCADE"}],
+                 "indexes": [], "enable_auth": False, "enable_realtime": True, "rls_policy": ""},
+            ]
+            backend_type = "chat_app"
+
+        elif any(w in lower for w in ["user", "profile", "account", "member"]):
+            tables = [
+                {"name": "profiles", "description": "User profiles", "columns": base_cols([
+                    {"name": "username",   "type": "TEXT", "nullable": False},
+                    {"name": "bio",        "type": "TEXT", "nullable": True},
+                    {"name": "avatar_url", "type": "TEXT", "nullable": True},
+                ]), "foreign_keys": [], "indexes": [], "enable_auth": False, "enable_realtime": False, "rls_policy": ""},
+            ]
+            backend_type = "social_media"
+
+        else:
+            # Generic fallback — extract a noun from the description as table name
+            words = re.sub(r"[^a-zA-Z\s]", "", description).split()
+            nouns = [w.lower() for w in words if len(w) > 3]
+            table_name = nouns[-1] if nouns else "records"
+            if not table_name.endswith("s"):
+                table_name += "s"
+            tables = [
+                {"name": table_name, "description": f"Main {table_name} table", "columns": base_cols([
+                    {"name": "name",  "type": "TEXT", "nullable": False},
+                    {"name": "notes", "type": "TEXT", "nullable": True},
+                    {"name": "data",  "type": "JSONB", "default": "'{}'", "nullable": True},
+                ]), "foreign_keys": [], "indexes": [], "enable_auth": False, "enable_realtime": False, "rls_policy": ""},
+            ]
+            backend_type = "custom"
+
+        return {
+            "backend_type": backend_type,
+            "tables": tables,
+            "relationships": [],
+            "features": {"authentication": False, "realtime": False, "file_storage": False, "search": False},
+            "suggested_queries": [],
+            "_generated_by": "fallback"  # mark so we can log it
+        }
+
+    # ============================================
     # SUMMARY GENERATION
     # ============================================
-    
+
     def _generate_summary(self, plan: Dict[str, Any], execution: Dict[str, Any]) -> str:
         """Generate human-readable summary of what was created"""
-        
+
         summary_parts = []
-        
-        if execution["tables_created"]:
+
+        if execution.get("tables_created"):
             summary_parts.append(f"✅ Created {len(execution['tables_created'])} tables: {', '.join(execution['tables_created'])}")
-        
-        if execution["relationships_created"]:
+
+        if execution.get("relationships_created"):
             summary_parts.append(f"✅ Set up relationships for {len(execution['relationships_created'])} tables")
-        
-        if execution["auth_enabled"]:
+
+        if execution.get("auth_enabled"):
             summary_parts.append(f"✅ Enabled authentication on: {', '.join(execution['auth_enabled'])}")
-        
-        if execution["realtime_enabled"]:
+
+        if execution.get("realtime_enabled"):
             summary_parts.append(f"✅ Enabled realtime on: {', '.join(execution['realtime_enabled'])}")
-        
-        if execution["indexes_created"]:
-            summary_parts.append(f"✅ Created indexes for performance")
-        
-        if execution["errors"]:
+
+        if execution.get("indexes_created"):
+            summary_parts.append("✅ Created indexes for performance")
+
+        if plan.get("_generated_by") == "fallback":
+            summary_parts.append("ℹ️  Generated using offline template (AI service unavailable)")
+
+        if execution.get("errors"):
             summary_parts.append(f"⚠️ {len(execution['errors'])} warnings/errors occurred")
-        
+
         summary_parts.append(f"\n🎉 Your {plan.get('backend_type', 'custom')} backend is ready!")
         summary_parts.append("📡 REST API endpoints are automatically available")
-        
+
         return "\n".join(summary_parts)
 
 

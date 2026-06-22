@@ -4,12 +4,16 @@ Call this once after deployment to update the database schema
 """
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_main_db_pool
+from app.core.rbac import require_admin
 import asyncpg
 
 router = APIRouter()
 
 @router.post("/run-storage-migration")
-async def run_storage_migration(pool = Depends(get_main_db_pool)):
+async def run_storage_migration(
+    pool = Depends(get_main_db_pool),
+    _current_user: dict = Depends(require_admin),   # ← CRITICAL-2 fix: admin-only
+):
     """
     Run the storage migration to add storage_used and max_storage columns
     This should only be called once after deployment

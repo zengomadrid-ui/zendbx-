@@ -11,6 +11,25 @@ import re
 
 router = APIRouter()
 
+# ---------------------------------------------------------------------------
+# Identifier safety helpers
+# ---------------------------------------------------------------------------
+
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]{0,62}$')
+_SAFE_ORDER_RE = re.compile(r'^(ASC|DESC)$', re.IGNORECASE)
+
+def _safe_ident(name: str, label: str = "identifier") -> str:
+    """Validate and double-quote a SQL identifier. Raises HTTP 400 on failure."""
+    if not name or not _SAFE_IDENTIFIER_RE.match(name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid {label}: '{name}'. Must match ^[a-zA-Z_][a-zA-Z0-9_]{{0,62}}$",
+        )
+    return f'"{name}"'
+
+def _safe_order(order: str) -> str:
+    return "ASC" if not _SAFE_ORDER_RE.match(order) else order.upper()
+
 # ============================================
 # INFO ENDPOINT: Show API Usage
 # ============================================
@@ -208,6 +227,9 @@ async def handle_list_rows(
     # Verify API key
     api_key_data = await verify_api_key_for_project(api_key, project["id"])
     
+    # Validate table name before any SQL use
+    safe_table = _safe_ident(table_name, "table name")
+
     # Get primary key column for this table
     pk_result = await execute_on_project_db(
         api_key_data["database_name"],
@@ -225,21 +247,25 @@ async def handle_list_rows(
     # Parse query parameters
     limit = int(request.query_params.get('limit', 100))
     offset = int(request.query_params.get('offset', 0))
-    sort = request.query_params.get('sort', default_sort)
-    order = request.query_params.get('order', 'asc').upper()
+    sort_raw  = request.query_params.get('sort', default_sort)
+    order_raw = request.query_params.get('order', 'asc')
+
+    safe_sort  = _safe_ident(sort_raw, "sort column")
+    safe_order = _safe_order(order_raw)
     
     # Parse filters
     filters, operators = parse_filters(dict(request.query_params))
     
     try:
-        # Build query
-        query = f"SELECT * FROM {table_name}"
+        # Build query — all identifiers are quoted and validated
+        query = f"SELECT * FROM {safe_table}"
         conditions = []
         params = []
         param_count = 1
         
         # Add filters
         for column, value in filters.items():
+            safe_col = _safe_ident(column, "filter column")
             operator = operators.get(column, 'eq')
             
             # Convert string booleans to actual booleans
@@ -247,30 +273,30 @@ async def handle_list_rows(
                 value = value.lower() == 'true'
             
             if operator == 'eq':
-                conditions.append(f"{column} = ${param_count}")
+                conditions.append(f"{safe_col} = ${param_count}")
                 params.append(value)
             elif operator == 'ne':
-                conditions.append(f"{column} != ${param_count}")
+                conditions.append(f"{safe_col} != ${param_count}")
                 params.append(value)
             elif operator == 'gt':
-                conditions.append(f"{column} > ${param_count}")
+                conditions.append(f"{safe_col} > ${param_count}")
                 params.append(value)
             elif operator == 'gte':
-                conditions.append(f"{column} >= ${param_count}")
+                conditions.append(f"{safe_col} >= ${param_count}")
                 params.append(value)
             elif operator == 'lt':
-                conditions.append(f"{column} < ${param_count}")
+                conditions.append(f"{safe_col} < ${param_count}")
                 params.append(value)
             elif operator == 'lte':
-                conditions.append(f"{column} <= ${param_count}")
+                conditions.append(f"{safe_col} <= ${param_count}")
                 params.append(value)
             elif operator == 'like':
-                conditions.append(f"{column} LIKE ${param_count}")
+                conditions.append(f"{safe_col} LIKE ${param_count}")
                 params.append(f"%{value}%")
             elif operator == 'in':
                 values = value.split(',')
                 placeholders = [f"${param_count + i}" for i in range(len(values))]
-                conditions.append(f"{column} IN ({', '.join(placeholders)})")
+                conditions.append(f"{safe_col} IN ({', '.join(placeholders)})")
                 params.extend(values)
                 param_count += len(values) - 1
             
@@ -279,8 +305,8 @@ async def handle_list_rows(
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         
-        # Add sorting
-        query += f" ORDER BY {sort} {order}"
+        # Validated sort and order
+        query += f" ORDER BY {safe_sort} {safe_order}"
         
         # Add pagination
         query += f" LIMIT ${param_count} OFFSET ${param_count + 1}"
@@ -322,9 +348,10 @@ async def handle_get_row(
     api_key_data = await verify_api_key_for_project(api_key, project["id"])
     
     try:
+        safe_table = _safe_ident(table_name, "table name")
         result = await execute_on_project_db(
             api_key_data["database_name"],
-            f"SELECT * FROM {table_name} WHERE id = $1",
+            f"SELECT * FROM {safe_table} WHERE id = $1",
             row_id
         )
         
@@ -367,12 +394,14 @@ async def handle_create_row(
         )
     
     try:
+        safe_table = _safe_ident(table_name, "table name")
         columns = list(data.keys())
+        safe_columns = [_safe_ident(c, "column name") for c in columns]
         placeholders = [f"${i+1}" for i in range(len(columns))]
         values = list(data.values())
         
         insert_sql = f"""
-            INSERT INTO {table_name} ({', '.join(columns)})
+            INSERT INTO {safe_table} ({', '.join(safe_columns)})
             VALUES ({', '.join(placeholders)})
             RETURNING *
         """
@@ -414,12 +443,13 @@ async def handle_update_row(
         )
     
     try:
-        updates = [f"{col} = ${i+1}" for i, col in enumerate(data.keys())]
+        safe_table = _safe_ident(table_name, "table name")
+        updates = [f"{_safe_ident(col, 'column name')} = ${i+1}" for i, col in enumerate(data.keys())]
         values = list(data.values())
         values.append(row_id)
         
         update_sql = f"""
-            UPDATE {table_name}
+            UPDATE {safe_table}
             SET {', '.join(updates)}
             WHERE id = ${len(values)}
             RETURNING *
@@ -469,9 +499,10 @@ async def handle_delete_row(
         )
     
     try:
+        safe_table = _safe_ident(table_name, "table name")
         result = await execute_on_project_db(
             api_key_data["database_name"],
-            f"DELETE FROM {table_name} WHERE id = $1 RETURNING id",
+            f"DELETE FROM {safe_table} WHERE id = $1 RETURNING id",
             row_id
         )
         

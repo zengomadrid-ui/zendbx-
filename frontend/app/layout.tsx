@@ -151,7 +151,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           }}
         />
       </head>
-      <body className={`${inter.variable} ${jetbrainsMono.variable} antialiased bg-zinc-900 text-gray-100`}>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} antialiased bg-[#050505] text-white`}>
         <ToastProvider>
           {children}
         </ToastProvider>
