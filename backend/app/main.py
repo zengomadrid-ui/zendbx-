@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi import Header
+from typing import Optional
 from app.core.config import settings
 from app.core.database import close_all_pools
 import traceback
@@ -146,6 +148,23 @@ async def startup():
         print(f"   This will cause all database operations to fail!")
         raise  # Fail fast if we can't connect to database
     
+    # Initialize MCP Gateway (CRITICAL: Must happen after pool initialization)
+    try:
+        from app.mcp.main import gateway
+        await gateway.initialize()
+        print(f"✅ MCP Gateway initialized successfully")
+        
+        # Initialize the MCP adapter (the sub-app startup won't fire when mounted)
+        import app.mcp.main as _mcp_main
+        from app.mcp.protocol import MCPAdapter
+        _mcp_main.adapter = MCPAdapter(gateway)
+        print(f"✅ MCP Adapter initialized successfully")
+    except Exception as e:
+        print(f"⚠️  MCP Gateway initialization failed: {str(e)}")
+        print(f"   MCP endpoints will not work properly!")
+        import traceback
+        print(traceback.format_exc())
+    
     # Initialize database schema if needed
     try:
         from app.services.db_initializer import initialize_database_on_startup
@@ -280,7 +299,11 @@ from app.api import (
     storage_v2,  # Object Storage v2 (project-scoped /p/{slug}/storage)
     run_migration,  # One-time database migrations
     setup_project,  # Temporary setup endpoint
+    mcp_info,  # MCP Information API
 )
+
+# Import MCP app
+from app.mcp.main import mcp_app
 
 # Multi-tenant APIs (new) - These MUST come first to override old endpoints
 app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New multi-tenant auth
@@ -314,6 +337,41 @@ app.include_router(imports_router.router, prefix="/api/projects", tags=["imports
 app.include_router(imports_router.router, prefix="/api", tags=["imports"])  # Simple import endpoint
 app.include_router(auto_api.router, prefix="/api", tags=["auto-api"])
 app.include_router(api_keys.router, tags=["api-keys"])
+
+# Mount MCP (AI Operating Layer) at /mcp
+# CRITICAL FIX: Use explicit path pattern to avoid routing conflicts
+from app.mcp.main import mcp_jsonrpc_endpoint, mcp_app
+
+# Include MCP routes directly instead of mounting to avoid path conflicts
+@app.get("/mcp")
+async def mcp_root_get():
+    """MCP root GET - returns server info"""
+    return {
+        "service": "ZendBX MCP",
+        "version": "1.0.0", 
+        "mcp_compliant": True,
+        "protocol_version": "2024-11-05",
+        "endpoints": {
+            "jsonrpc": "/mcp (POST)",
+            "sse": "/mcp/sse (GET)", 
+            "health": "/mcp/health",
+            "legacy": {
+                "initialize": "/mcp/p/{project_slug}/initialize",
+                "tools_list": "/mcp/p/{project_slug}/tools/list", 
+                "tools_call": "/mcp/p/{project_slug}/tools/call"
+            }
+        }
+    }
+
+@app.post("/mcp")
+async def mcp_root_post(request: Request, authorization: Optional[str] = Header(None)):
+    """MCP JSON-RPC endpoint - the main MCP interface"""
+    from app.mcp.main import mcp_jsonrpc_endpoint
+    return await mcp_jsonrpc_endpoint(request, authorization)
+
+# Mount the rest of MCP app for sub-paths like /mcp/health, /mcp/p/*, etc.
+app.mount("/mcp", mcp_app)
+print(f"🤖 MCP (AI Operating Layer) routes added and mounted")
 
 # Object Storage API v2 — MUST come before project_api.router to prevent
 # /p/{slug}/storage/... from being swallowed by the /p/{slug}/{table_name} catch-all
@@ -356,3 +414,6 @@ app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])
 
 # Temporary Setup Endpoint (remove after initial setup)
 app.include_router(setup_project.router, tags=["setup"])
+
+# MCP Information API
+app.include_router(mcp_info.router, tags=["mcp"])
