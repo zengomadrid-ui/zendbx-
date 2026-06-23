@@ -46,6 +46,7 @@ class RLSContextMiddleware(BaseHTTPMiddleware):
         "/health",
         "/version",
         "/v1/auth/",  # Public auth endpoints
+        "/mcp",             # MCP (AI Operating Layer) handles its own auth
         "/"
     ]
     

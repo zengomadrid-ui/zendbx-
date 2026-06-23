@@ -279,3 +279,13 @@ class RedisClient:
 
 # Singleton instance
 redis_client = RedisClient()
+
+
+async def get_redis_client() -> RedisClient:
+    """
+    Get the Redis client singleton
+    Ensures connection is established
+    """
+    if not redis_client.enabled and redis_client.redis is None:
+        await redis_client.connect()
+    return redis_client

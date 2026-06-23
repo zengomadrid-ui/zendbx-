@@ -45,6 +45,7 @@ SKIP_PREFIXES = [
     "/openapi.json",
     "/health",
     "/v1/auth/",
+    "/mcp",             # MCP (AI Operating Layer) handles its own auth
     # Storage v2 handles project resolution internally — skip middleware
     # Matched via regex in dispatch to handle /p/{any-slug}/storage
 ]
