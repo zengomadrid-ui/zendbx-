@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/fetch-utils';
-import { toast } from 'react-hot-toast';
+import { useToast } from '@/lib/toast';
 
 interface MCPInfo {
   endpoint: string;
@@ -17,7 +16,7 @@ interface MCPInfo {
 }
 
 export default function MCPPage() {
-  const router = useRouter();
+  const { showToast } = useToast();
   const [mcpInfo, setMcpInfo] = useState<MCPInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -52,7 +51,7 @@ export default function MCPPage() {
       }
     } catch (error: any) {
       console.error('Error fetching MCP info:', error);
-      toast.error('Failed to load MCP information');
+      showToast('Failed to load MCP information', 'error');
     } finally {
       setLoading(false);
     }
@@ -60,7 +59,7 @@ export default function MCPPage() {
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
-    toast.success(`${label} copied to clipboard!`);
+    showToast(`${label} copied to clipboard!`, 'success');
   };
 
   if (loading) {
