@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch } from '@/lib/fetch-utils';
+import { MCPCard } from '@/components/dashboard/MCPCard';
 
 interface ProjectStats {
   project: { id: string; name: string; slug?: string; created_at: string };
@@ -323,6 +324,13 @@ export default function DashboardPage() {
             <MetricCard key={card.label} {...card} delay={i * 30} />
           ))}
         </div>
+
+        {/* ── MCP CARD ── */}
+        {projectId && (
+          <div className="animate-slide-up" style={{ animationDelay: '160ms' }}>
+            <MCPCard projectId={projectId} />
+          </div>
+        )}
 
         {/* ── BOTTOM ROW: Queries + Quick Actions ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-slide-up" style={{ animationDelay: '200ms' }}>
