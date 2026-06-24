@@ -82,18 +82,145 @@ export default function MCPPage() {
 
   if (!mcpInfo) {
     return (
-      <div className="min-h-full flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center"
-            style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,107,0,0.15)' }}>
-            <svg className="w-6 h-6 text-[#FF6B00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+      <div className="min-h-full p-6 space-y-5">
+        <div className="max-w-[1400px] mx-auto space-y-5">
+          
+          {/* ── PAGE HEADER ── */}
+          <div className="flex items-start justify-between pt-1 animate-slide-up" style={{ animationDelay: '0ms' }}>
+            <div>
+              <div className="flex items-center gap-3 mb-1">
+                <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                  <svg className="w-5 h-5 text-[#FF6B00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Model Context Protocol
+                </h1>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold text-[#FF6B00]"
+                  style={{ background: 'rgba(255,107,0,0.1)', border: '1px solid rgba(255,107,0,0.2)' }}>
+                  <span className="live-dot" style={{ width: 4, height: 4, background: '#FF6B00' }} /> NEW
+                </div>
+              </div>
+              <p className="text-xs text-[#A1A1AA]">Connect to AI development tools · Available in production</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold"
+                style={{ 
+                  background: 'rgba(251,191,36,0.1)', 
+                  border: '1px solid rgba(251,191,36,0.2)',
+                  color: '#f59e0b'
+                }}>
+                <div className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                Not Configured
+              </div>
+            </div>
           </div>
-          <div>
-            <p className="text-base font-semibold text-white">MCP not available</p>
-            <p className="text-sm text-[#A1A1AA] mt-1">MCP information is not available for this project</p>
+
+          {/* ── MCP OVERVIEW CARD ── */}
+          <div className="relative rounded-2xl overflow-hidden animate-slide-up" style={{ 
+            animationDelay: '60ms',
+            background: 'rgba(0,0,0,0.85)', 
+            border: '1px solid rgba(255,107,0,0.15)', 
+            boxShadow: '0 8px 32px rgba(0,0,0,0.8), 0 1px 0 rgba(255,107,0,0.1) inset' 
+          }}>
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#FF6B00]/40 to-transparent" />
+            <div className="p-8 text-center space-y-6">
+              <div className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center"
+                style={{ background: 'rgba(255,107,0,0.15)', border: '1px solid rgba(255,107,0,0.25)' }}>
+                <svg className="w-10 h-10 text-[#FF6B00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white mb-2">MCP Not Available in Development</h2>
+                <p className="text-sm text-[#A1A1AA] max-w-md mx-auto leading-relaxed">
+                  Model Context Protocol is available in production environments. Configure your project deployment to enable MCP integration with AI development tools.
+                </p>
+              </div>
+            </div>
           </div>
+
+          {/* ── WHAT IS MCP ── */}
+          <div className="relative rounded-2xl overflow-hidden animate-slide-up" style={{ 
+            animationDelay: '120ms',
+            background: 'rgba(0,0,0,0.85)', 
+            border: '1px solid rgba(255,107,0,0.15)', 
+            boxShadow: '0 8px 32px rgba(0,0,0,0.8), 0 1px 0 rgba(255,107,0,0.1) inset' 
+          }}>
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#FF6B00]/40 to-transparent" />
+            <div className="p-5 space-y-4">
+              <p className="text-[10px] font-semibold text-[#A1A1AA] uppercase tracking-widest">What is MCP?</p>
+              
+              <div className="space-y-4">
+                <p className="text-sm text-[#D4D4D8] leading-relaxed">
+                  Model Context Protocol enables seamless integration between ZenDBX and AI development tools like Cursor IDE, Claude Desktop, and other MCP-compatible clients.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,107,0,0.1)' }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
+                      style={{ background: 'rgba(255,107,0,0.15)', border: '1px solid rgba(255,107,0,0.25)' }}>
+                      <svg className="w-4 h-4 text-[#FF6B00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-sm font-semibold text-white mb-2">Direct Integration</h3>
+                    <p className="text-xs text-[#A1A1AA] leading-relaxed">Access your ZenDBX project directly from AI tools without manual copying</p>
+                  </div>
+                  
+                  <div className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,107,0,0.1)' }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
+                      style={{ background: 'rgba(255,107,0,0.15)', border: '1px solid rgba(255,107,0,0.25)' }}>
+                      <svg className="w-4 h-4 text-[#FF6B00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-sm font-semibold text-white mb-2">Real-time Context</h3>
+                    <p className="text-xs text-[#A1A1AA] leading-relaxed">AI tools get live access to your database schema and project structure</p>
+                  </div>
+                  
+                  <div className="p-4 rounded-xl" style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,107,0,0.1)' }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center mb-3"
+                      style={{ background: 'rgba(255,107,0,0.15)', border: '1px solid rgba(255,107,0,0.25)' }}>
+                      <svg className="w-4 h-4 text-[#FF6B00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-sm font-semibold text-white mb-2">Secure Access</h3>
+                    <p className="text-xs text-[#A1A1AA] leading-relaxed">Authentication-protected endpoints ensure only authorized AI tools can connect</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── SUPPORTED CLIENTS ── */}
+          <div className="relative rounded-2xl overflow-hidden animate-slide-up" style={{ 
+            animationDelay: '180ms',
+            background: 'rgba(0,0,0,0.85)', 
+            border: '1px solid rgba(255,107,0,0.15)', 
+            boxShadow: '0 8px 32px rgba(0,0,0,0.8), 0 1px 0 rgba(255,107,0,0.1) inset' 
+          }}>
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#FF6B00]/40 to-transparent" />
+            <div className="p-5 space-y-4">
+              <p className="text-[10px] font-semibold text-[#A1A1AA] uppercase tracking-widest">Supported AI Clients</p>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {['Cursor IDE', 'Claude Desktop', 'Continue', 'Codeium'].map((client, index) => (
+                  <div key={index} className="p-3 rounded-xl text-center"
+                    style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,107,0,0.1)' }}>
+                    <div className="w-6 h-6 mx-auto mb-2 rounded-lg flex items-center justify-center"
+                      style={{ background: 'rgba(255,107,0,0.15)', border: '1px solid rgba(255,107,0,0.25)' }}>
+                      <svg className="w-3 h-3 text-[#FF6B00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <p className="text-xs font-semibold text-white">{client}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     );
