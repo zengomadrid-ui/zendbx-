@@ -200,14 +200,14 @@ export default function ProvidersPage() {
     console.log('🔄 All providers:', providers);
     
     if (!provider?.configured) {
-      console.warn('❌ Cannot toggle unconfigured provider');
-      setSuccessMessage('⚠️ Please configure this provider first before enabling it');
+      console.warn('Cannot toggle unconfigured provider');
+      setSuccessMessage('Please configure this provider first before enabling it');
       setShowSuccessPopup(true);
       setTimeout(() => setShowSuccessPopup(false), 3000);
       return;
     }
     
-    console.log('✅ Provider is configured, proceeding with toggle');
+    console.log('Provider is configured, proceeding with toggle');
     
     try {
       const response = await apiFetch(
@@ -225,12 +225,12 @@ export default function ProvidersPage() {
         setShowSuccessPopup(true);
         setTimeout(() => setShowSuccessPopup(false), 2000);
       } else {
-        setSuccessMessage('❌ Failed to toggle provider');
+        setSuccessMessage('Failed to toggle provider');
         setShowSuccessPopup(true);
         setTimeout(() => setShowSuccessPopup(false), 3000);
       }
     } catch (error) {
-      setSuccessMessage('❌ Cannot connect to backend server');
+      setSuccessMessage('Cannot connect to backend server');
       setShowSuccessPopup(true);
       setTimeout(() => setShowSuccessPopup(false), 3000);
     }
@@ -283,7 +283,7 @@ export default function ProvidersPage() {
             ? error.message
             : 'Failed to save configuration';
 
-        setSuccessMessage(`❌ ${errorMessage}`);
+        setSuccessMessage(`${errorMessage}`);
         setShowSuccessPopup(true);
         setTimeout(() => setShowSuccessPopup(false), 5000);
       }
@@ -363,7 +363,7 @@ export default function ProvidersPage() {
             </p>
           )}
           {!selectedProject && !loadingProject && (
-            <p className="text-xs text-red-400 mt-1">⚠️ No project selected. Please select a project first.</p>
+            <p className="text-xs text-red-400 mt-1">No project selected. Please select a project first.</p>
           )}
         </div>
 
@@ -599,7 +599,7 @@ export default function ProvidersPage() {
 
               <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3">
                 <p className="text-xs text-orange-400">
-                  💡 Get credentials from {selectedProvider === 'google' ? 'Google Cloud Console' : 'GitHub Developer Settings'}
+                  Get credentials from {selectedProvider === 'google' ? 'Google Cloud Console' : 'GitHub Developer Settings'}
                 </p>
               </div>
             </div>

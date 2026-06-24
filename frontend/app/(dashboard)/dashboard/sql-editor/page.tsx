@@ -140,7 +140,7 @@ export default function SQLEditorPage() {
       // Notify user if data was modified (INSERT/UPDATE/DELETE)
       const isDataModification = /^\s*(INSERT|UPDATE|DELETE)/i.test(sql.trim());
       if (isDataModification && data.row_count !== undefined) {
-        console.log('💡 Data modified successfully. Go to Table Editor and click "Refresh" to see changes.');
+        console.log('Data modified successfully. Go to Table Editor and click "Refresh" to see changes.');
       }
     } catch (err: any) {
       // Error already set above
@@ -605,7 +605,7 @@ export default function SQLEditorPage() {
               onClick={() => setShowLogs(!showLogs)}
               className="px-4 py-2 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white rounded-lg text-sm font-medium transition-colors"
             >
-              {showLogs ? '🔽 Hide' : '🔼 Show'} Execution Logs ({result.logs.length})
+              {showLogs ? 'Hide' : 'Show'} Execution Logs ({result.logs.length})
             </button>
 
             {showLogs && (

@@ -406,7 +406,7 @@ export default function APIPlaygroundPage() {
                     onClick={() => navigator.clipboard.writeText(JSON.stringify(response, null, 2))}
                     className="px-2 py-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#ededed] rounded text-xs transition-colors"
                   >
-                    📋 Copy
+                    Copy
                   </button>
                 </div>
                 <pre className="p-4 text-xs text-[#ededed] font-mono overflow-auto max-h-[600px]">
