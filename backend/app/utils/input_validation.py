@@ -304,19 +304,40 @@ def validate_and_sanitize_input(
     
     except ValidationError as e:
         # Log the specific validation error (server-side only)
+        error_details = e.errors()
         logger.warning(
             f"Validation failed for {context}",
             extra={
                 "context": context,
-                "errors": e.errors(),
+                "errors": error_details,
                 "data_keys": list(data.keys())  # Don't log actual values
             }
         )
         
-        # Return generic error message (don't expose which field failed)
+        # Print to console for debugging (REMOVE IN PRODUCTION)
+        print(f"\n{'='*60}")
+        print(f"🔍 VALIDATION ERROR DEBUG - {context}")
+        print(f"{'='*60}")
+        print(f"Received data keys: {list(data.keys())}")
+        print(f"\nValidation errors:")
+        for err in error_details:
+            field = '.'.join(str(loc) for loc in err.get('loc', []))
+            msg = err.get('msg', 'validation error')
+            print(f"  • Field '{field}': {msg}")
+        print(f"{'='*60}\n")
+        
+        # Return detailed error message for debugging (TODO: Make generic in production)
+        if error_details and len(error_details) > 0:
+            first_error = error_details[0]
+            field = '.'.join(str(loc) for loc in first_error.get('loc', []))
+            msg = first_error.get('msg', 'validation error')
+            detail_msg = f"Validation error in '{field}': {msg}"
+        else:
+            detail_msg = "Invalid input provided. Please check your data and try again."
+        
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid input provided. Please check your data and try again."
+            detail=detail_msg
         )
     
     except Exception as e:
