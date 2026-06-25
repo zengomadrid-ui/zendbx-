@@ -16,13 +16,58 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-async def authenticate_mcp_request(project_slug: str, authorization: Optional[str] = None) -> dict:
+async def authenticate_mcp_request(project_slug: str, authorization: Optional[str] = None, request_url: str = None) -> dict:
     """
     Authenticate MCP request using project API key
     Returns project context and database pool
     Supports both clean slugs and legacy slugs for backward compatibility
+    
+    Raises a developer-friendly JSON response when authentication is missing
     """
     from app.utils.schema_compat import resolve_project_by_slug
+    
+    # Check if authentication is provided - return developer-friendly response
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "name": "ZenDBX MCP Server",
+                "status": "authentication_required",
+                "message": "This MCP endpoint requires a valid project API key.",
+                "how_to_authenticate": {
+                    "header": "Authorization",
+                    "value": "Bearer <PROJECT_API_KEY>",
+                    "example": f"Authorization: Bearer your_project_api_key_here"
+                },
+                "steps": [
+                    "1. Go to your ZenDBX Dashboard (https://zendbx.in/dashboard/api-keys)",
+                    "2. Create a new API key with 'service_role' permissions",
+                    "3. Copy the API key (shown only once)",
+                    "4. Include it in the Authorization header as shown above"
+                ],
+                "example_curl": f"curl -H 'Authorization: Bearer <YOUR_API_KEY>' {request_url or 'https://api.zendbx.in/mcp/p/' + project_slug}",
+                "documentation": "https://docs.zendbx.in/mcp",
+                "mcp_protocol_version": "2024-11-05"
+            }
+        )
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "name": "ZenDBX MCP Server",
+                "status": "invalid_auth_format",
+                "message": "Invalid authentication format. Expected 'Authorization: Bearer <PROJECT_API_KEY>'",
+                "how_to_authenticate": {
+                    "header": "Authorization",
+                    "value": "Bearer <PROJECT_API_KEY>",
+                    "example": "Authorization: Bearer your_project_api_key_here"
+                },
+                "your_format": authorization.split()[0] if authorization else "missing",
+                "expected_format": "Bearer <token>",
+                "documentation": "https://docs.zendbx.in/mcp"
+            }
+        )
     
     pool = await get_main_db_pool()
     
@@ -34,23 +79,21 @@ async def authenticate_mcp_request(project_slug: str, authorization: Optional[st
             additional_columns="id, name, slug, user_id, database_name"
         )
         
+        # Security: Don't expose whether project exists or not when auth is invalid
+        # This prevents enumeration attacks
+        api_key = authorization[7:].strip()
+        
         if not project:
-            raise HTTPException(status_code=404, detail="Project not found")
-        
-        # Check if authentication is provided
-        if not authorization:
-            raise HTTPException(
-                status_code=401, 
-                detail="Authentication required. Include 'Authorization: Bearer <project_api_key>' header."
-            )
-        
-        if not authorization.startswith("Bearer "):
+            # Return generic auth error - don't reveal project doesn't exist
             raise HTTPException(
                 status_code=401,
-                detail="Invalid authentication format. Use 'Authorization: Bearer <project_api_key>'"
+                detail={
+                    "name": "ZenDBX MCP Server",
+                    "status": "authentication_failed",
+                    "message": "Authentication failed. Invalid API key or project.",
+                    "documentation": "https://docs.zendbx.in/mcp"
+                }
             )
-        
-        api_key = authorization[7:].strip()
         
         # Validate API key against project
         try:
@@ -60,7 +103,14 @@ async def authenticate_mcp_request(project_slug: str, authorization: Optional[st
             if project_context["role"] not in ["service_role", "authenticated"]:
                 raise HTTPException(
                     status_code=403,
-                    detail="MCP access requires service_role or authenticated API key"
+                    detail={
+                        "name": "ZenDBX MCP Server",
+                        "status": "insufficient_permissions",
+                        "message": "MCP access requires 'service_role' API key.",
+                        "your_role": project_context["role"],
+                        "required_role": "service_role",
+                        "documentation": "https://docs.zendbx.in/mcp"
+                    }
                 )
             
             return {
@@ -73,7 +123,16 @@ async def authenticate_mcp_request(project_slug: str, authorization: Optional[st
             raise
         except Exception as e:
             logger.error(f"API key validation failed: {str(e)}")
-            raise HTTPException(status_code=401, detail="Invalid API key")
+            # Generic error - don't expose internal details
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "name": "ZenDBX MCP Server",
+                    "status": "authentication_failed",
+                    "message": "Authentication failed. Invalid API key or project.",
+                    "documentation": "https://docs.zendbx.in/mcp"
+                }
+            )
 
 
 @router.get("/p/{project_slug}")
@@ -86,13 +145,13 @@ async def mcp_server_info(
     MCP Server Information Endpoint (New URL)
     Returns server capabilities and information
     """
-    """
-    MCP Server Information Endpoint
-    Returns server capabilities and information
-    """
     try:
-        # Authenticate the request
-        auth_info = await authenticate_mcp_request(project_slug, authorization)
+        # Authenticate the request (passes request URL for better error messages)
+        auth_info = await authenticate_mcp_request(
+            project_slug, 
+            authorization,
+            request_url=str(request.url)
+        )
         project = auth_info["project"]
         
         # Return MCP server information
@@ -120,8 +179,12 @@ async def mcp_server_info(
             }
         }
             
-    except HTTPException:
-        raise
+    except HTTPException as http_exc:
+        # Return the detailed error response we crafted
+        return JSONResponse(
+            status_code=http_exc.status_code,
+            content=http_exc.detail if isinstance(http_exc.detail, dict) else {"detail": http_exc.detail}
+        )
     except Exception as e:
         logger.error(f"Error in MCP server info: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -217,19 +280,25 @@ async def mcp_server_request(
         # Step 3: Authenticate the request
         logger.info(f"🔐 Authenticating request...")
         try:
-            auth_info = await authenticate_mcp_request(project_slug, authorization)
+            auth_info = await authenticate_mcp_request(
+                project_slug,
+                authorization,
+                request_url=str(request.url)
+            )
             project = auth_info["project"]
             pool = auth_info["pool"]
             logger.info(f"✅ Authentication successful for project: {project['name']}")
         except HTTPException as http_exc:
             logger.warning(f"❌ Authentication failed: {http_exc.detail}")
+            # Return developer-friendly JSON error
             return JSONResponse(
                 status_code=http_exc.status_code,
                 content={
                     "jsonrpc": "2.0",
                     "error": {
                         "code": -32000,  # Server error
-                        "message": f"Authentication failed: {http_exc.detail}"
+                        "message": http_exc.detail if isinstance(http_exc.detail, str) else http_exc.detail.get("message", "Authentication failed"),
+                        "data": http_exc.detail if isinstance(http_exc.detail, dict) else None
                     },
                     "id": request_id
                 }

@@ -303,6 +303,9 @@ export default function MCPPage() {
                   style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,107,0,0.1)' }}>
                   {mcpInfo.endpoint}
                 </div>
+                <p className="text-[10px] text-[#A1A1AA] mt-1.5">
+                  ⚠️ Requires authentication - Use with API key in Authorization header
+                </p>
               </div>
 
               {/* Project ID */}
