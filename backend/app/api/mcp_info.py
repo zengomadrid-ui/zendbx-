@@ -63,12 +63,12 @@ async def get_project_mcp_info(
             
             # Determine base URL based on environment
             if settings.ENVIRONMENT == "production":
-                base_url = "https://mcp.zendbx.in"
+                base_url = "https://api.zendbx.in"
             else:
-                # Development - use localhost
+                # Development - use localhost with /mcp prefix
                 base_url = "http://localhost:8000"
             
-            # Build MCP endpoint
+            # Build MCP endpoint (new clean format with /mcp/p/ prefix)
             mcp_endpoint = f"{base_url}/mcp/p/{project['slug']}"
             
             # Check MCP health (simple check - endpoint exists)

@@ -774,7 +774,7 @@ export default function AIBuilderPage() {
                     if (apiError) {
                       window.location.href = '/onboarding';
                     } else {
-                      window.location.href = '/dashboard/database/tables';
+                      window.location.href = '/dashboard/tables';
                     }
                   }}
                   className="px-5 py-2 bg-gradient-to-r from-orange-600 to-orange-500 text-white rounded-lg text-sm font-semibold hover:from-orange-500 hover:to-orange-400 transition-all shadow-lg shadow-orange-500/20 whitespace-nowrap">

@@ -84,8 +84,57 @@ async def create_default_project_keys(project_id: UUID, user_id: UUID, jwt_secre
 # HELPER: Generate Project Slug
 # ============================================
 
+async def generate_clean_slug_from_name(name: str) -> str:
+    """
+    Generate clean, human-readable slug from project name
+    Handles collisions by appending incremental counters
+    Returns: clean slug (e.g., 'zendbx-commits', 'zenhire-2')
+    """
+    # Convert to lowercase and replace spaces/special chars with hyphens
+    slug = name.lower()
+    slug = re.sub(r'[^a-z0-9]+', '-', slug)
+    slug = slug.strip('-')
+    
+    # Handle empty slug
+    if not slug:
+        slug = 'project'
+    
+    # Check if slug is available
+    result = await execute_on_main_db(
+        "SELECT id FROM projects WHERE slug = $1 LIMIT 1",
+        slug
+    )
+    
+    # If available, return it
+    if not result:
+        return slug
+    
+    # Handle collision - find next available numbered slug
+    counter = 2
+    while True:
+        numbered_slug = f"{slug}-{counter}"
+        result = await execute_on_main_db(
+            "SELECT id FROM projects WHERE slug = $1 LIMIT 1",
+            numbered_slug
+        )
+        
+        if not result:
+            return numbered_slug
+        
+        counter += 1
+        
+        # Safety limit to prevent infinite loops
+        if counter > 100:
+            # Fallback to UUID suffix if too many collisions
+            import uuid
+            return f"{slug}-{str(uuid.uuid4())[:8]}"
+
+
 def generate_slug_from_name(name: str, project_id: UUID) -> str:
-    """Generate URL-friendly slug from project name"""
+    """
+    DEPRECATED: Legacy function for backward compatibility
+    New projects should use generate_clean_slug_from_name instead
+    """
     # Convert to lowercase and replace spaces/special chars with hyphens
     slug = name.lower()
     slug = re.sub(r'[^a-z0-9]+', '-', slug)
@@ -196,8 +245,8 @@ async def create_project(
         project = dict(result[0])
         project_id = project["id"]
         
-        # Generate slug using project_id
-        slug = generate_slug_from_name(project_data.name, project_id)
+        # Generate clean slug (new architecture - no UUID fragments)
+        slug = await generate_clean_slug_from_name(project_data.name)
         
         # Update with generated slug
         await execute_on_main_db(

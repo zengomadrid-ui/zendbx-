@@ -314,7 +314,7 @@ export default function DashboardPage() {
         {/* ── METRICS STRIP ── */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 animate-slide-up" style={{ animationDelay: '120ms' }}>
           {[
-            { label: 'Tables',    value: db.table_count.toString(),        sub: `${db.total_rows.toLocaleString()} rows`, href: '/dashboard/database/tables', accent: false, icon: 'M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
+            { label: 'Tables',    value: db.table_count.toString(),        sub: `${db.total_rows.toLocaleString()} rows`, href: '/dashboard/tables', accent: false, icon: 'M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
             { label: 'DB Size',   value: fmtSize(db.size_mb),              sub: `${diskPct}% used`,       href: '/dashboard/database',  accent: false, icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4' },
             { label: 'Cache Hit', value: '99.9%',                          sub: 'query efficiency',       href: '/dashboard/analytics', accent: true,  icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
             { label: 'Requests',  value: api.total_requests.toLocaleString(), sub: `${api.requests_24h} today`, href: '/dashboard/analytics', accent: false, icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
@@ -328,7 +328,7 @@ export default function DashboardPage() {
         {/* ── MCP CARD ── */}
         {projectId && (
           <div className="animate-slide-up" style={{ animationDelay: '160ms' }}>
-            <MCPCard projectId={projectId} />
+            <MCPCard key={`mcp-${projectId}-v2`} projectId={projectId} />
           </div>
         )}
 
@@ -412,7 +412,7 @@ export default function DashboardPage() {
               {[
                 { title: 'SQL Editor',    desc: 'Write & run queries',   href: '/dashboard/sql-editor',   primary: true,  icon: 'M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z' },
                 { title: 'AI Builder',    desc: 'Generate with AI',      href: '/dashboard/ai-builder',   primary: false, icon: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z' },
-                { title: 'Browse Tables', desc: 'View & edit data',      href: '/dashboard/database/tables', primary: false, icon: 'M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
+                { title: 'Browse Tables', desc: 'View & edit data',      href: '/dashboard/tables', primary: false, icon: 'M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
                 { title: 'Import Data',   desc: 'Upload CSV files',      href: '/dashboard/import',       primary: false, icon: 'M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12' },
                 { title: 'API Keys',      desc: 'Manage project keys',   href: '/dashboard/api-keys',     primary: false, icon: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z' },
               ].map((a) => (

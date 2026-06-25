@@ -46,7 +46,7 @@ async def resolve_mcp_project(
     1. Query string:  ?project=project-slug
     2. JSON-RPC params: {"params": {"project": "project-slug"}}
     3. HTTP header: X-Project-Slug: project-slug
-    4. URL path params: /mcp/p/{project_slug}  (legacy support)
+    4. URL path params: /p/{project_slug}  (new format, /mcp/p/{project_slug} legacy support)
     
     Args:
         request: FastAPI Request object

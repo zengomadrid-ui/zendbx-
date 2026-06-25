@@ -20,16 +20,19 @@ async def authenticate_mcp_request(project_slug: str, authorization: Optional[st
     """
     Authenticate MCP request using project API key
     Returns project context and database pool
+    Supports both clean slugs and legacy slugs for backward compatibility
     """
     pool = await get_main_db_pool()
     
     async with pool.acquire() as conn:
-        # Get project by slug
+        # Get project by slug (supports both slug and legacy_slug)
         project = await conn.fetchrow(
             """
-            SELECT id, name, slug, user_id, database_name
+            SELECT id, name, slug, legacy_slug, user_id, database_name
             FROM projects
-            WHERE slug = $1 AND status = 'active'
+            WHERE (slug = $1 OR legacy_slug = $1) AND status = 'active'
+            ORDER BY CASE WHEN slug = $1 THEN 1 ELSE 2 END
+            LIMIT 1
             """,
             project_slug
         )
@@ -76,12 +79,16 @@ async def authenticate_mcp_request(project_slug: str, authorization: Optional[st
             raise HTTPException(status_code=401, detail="Invalid API key")
 
 
-@router.get("/mcp/p/{project_slug}")
+@router.get("/p/{project_slug}")
 async def mcp_server_info(
     project_slug: str,
     request: Request,
     authorization: Optional[str] = Header(None)
 ):
+    """
+    MCP Server Information Endpoint (New URL)
+    Returns server capabilities and information
+    """
     """
     MCP Server Information Endpoint
     Returns server capabilities and information
@@ -123,12 +130,16 @@ async def mcp_server_info(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/mcp/p/{project_slug}")
+@router.post("/p/{project_slug}")
 async def mcp_server_request(
     project_slug: str,
     request: Request,
     authorization: Optional[str] = Header(None)
 ):
+    """
+    MCP Server JSON-RPC Endpoint (New URL)
+    Handles MCP protocol requests with proper authentication
+    """
     """
     MCP Server JSON-RPC Endpoint
     Handles MCP protocol requests with proper authentication
@@ -507,3 +518,30 @@ async def mcp_server_request(
                 "id": body.get("id") if isinstance(body, dict) else None
             }
         )
+
+
+# Backward compatibility routes - redirect old URLs to new format
+@router.get("/mcp/p/{project_slug}")
+async def mcp_server_info_legacy(
+    project_slug: str,
+    request: Request,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Legacy MCP Server Information Endpoint - Redirects to new URL
+    DEPRECATED: Use /p/{project_slug} instead
+    """
+    return await mcp_server_info(project_slug, request, authorization)
+
+
+@router.post("/mcp/p/{project_slug}")
+async def mcp_server_request_legacy(
+    project_slug: str,
+    request: Request,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Legacy MCP Server JSON-RPC Endpoint - Redirects to new URL  
+    DEPRECATED: Use /p/{project_slug} instead
+    """
+    return await mcp_server_request(project_slug, request, authorization)
