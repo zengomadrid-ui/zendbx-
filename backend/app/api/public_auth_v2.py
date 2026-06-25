@@ -159,7 +159,11 @@ async def signup(project_id: UUID, request_data: SignUpRequest):
 
         existing = await conn.fetchrow("SELECT id FROM users WHERE email = $1", request_data.email)
         if existing:
-            raise HTTPException(status_code=400, detail="User with this email already exists")
+            # Generic error - don't reveal if email exists
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to create account. Please check your information and try again."
+            )
 
         hashed = hash_password(request_data.password)
         user = await conn.fetchrow("""
@@ -204,13 +208,21 @@ async def login(project_id: UUID, request_data: SignInRequest):
         """, request_data.email)
 
         if not user:
-            raise HTTPException(status_code=401, detail="Invalid email or password")
+            # Generic error - don't reveal if email exists
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials. Please check your email and password."
+            )
 
         metadata = parse_metadata(user['metadata'])
         password_hash = metadata.get('password_hash')
 
         if not password_hash or not verify_password(request_data.password, password_hash):
-            raise HTTPException(status_code=401, detail="Invalid email or password")
+            # Generic error - don't reveal which part failed
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials. Please check your email and password."
+            )
 
         await set_rls_context(conn, user_id=str(user['id']), role='authenticated')
         await conn.execute(
@@ -266,7 +278,11 @@ async def get_user(project_id: UUID, authorization: str = Header(None)):
         """, user_id)
 
         if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+            # Generic error - don't reveal if user doesn't exist
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials"
+            )
 
     return {
         "id": str(user['id']),

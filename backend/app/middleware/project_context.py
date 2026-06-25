@@ -238,17 +238,19 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
             except ValueError:
                 pass  # Not a UUID, fall through to slug lookup
 
-            # Then try as a slug (supports both slug and legacy_slug)
-            result = await execute_on_main_db(
-                """
-                SELECT id FROM projects 
-                WHERE slug = $1 OR legacy_slug = $1
-                ORDER BY CASE WHEN slug = $1 THEN 1 ELSE 2 END
-                LIMIT 1
-                """, 
-                slug
-            )
-            return str(result[0]["id"]) if result else None
+            # Then try as a slug (supports both slug and legacy_slug with backward compat)
+            from ..utils.schema_compat import resolve_project_by_slug
+            from ..core.database import get_main_db_pool
+            
+            pool = await get_main_db_pool()
+            async with pool.acquire() as conn:
+                project = await resolve_project_by_slug(
+                    conn,
+                    slug,
+                    additional_columns="id"
+                )
+                return str(project["id"]) if project else None
+                
         except Exception as e:
             logger.error(f"Slug resolution error: {e}")
             return None

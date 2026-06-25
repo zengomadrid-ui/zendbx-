@@ -13,7 +13,7 @@ export default function DatabasePage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Link href="/dashboard/database/tables">
+        <Link href="/dashboard/tables">
           <div className="p-6 border rounded-lg hover:shadow-lg transition cursor-pointer">
             <h3 className="text-xl font-semibold mb-2">Tables</h3>
             <p className="text-gray-600">Create and manage database tables</p>

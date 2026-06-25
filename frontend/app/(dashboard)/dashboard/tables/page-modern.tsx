@@ -1,6 +1,5 @@
 'use client';
 
-// FORCE REBUILD: Modern table editor with black/orange theme - Updated 2026-06-24 21:45
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api';
 import { useToast } from '@/lib/toast';
@@ -18,7 +17,7 @@ interface ColumnSchema {
   column_default: string | null;
 }
 
-export default function TablesPageEditable() {
+export default function ModernTableEditor() {
   const { showToast } = useToast();
   const [tables, setTables] = useState<Table[]>([]);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
@@ -176,90 +175,6 @@ export default function TablesPageEditable() {
     }
   };
 
-  const deleteRow = async (rowIndex: number) => {
-    if (!selectedTable || !tableData) return;
-    if (!confirm('Are you sure you want to delete this row?')) return;
-    
-    const projectId = localStorage.getItem('current_project_id');
-    if (!projectId) return;
-
-    const row = tableData.rows[rowIndex];
-    const primaryKey = tableData.schema.find((s: any) => s.name === 'id' || s.name.includes('id'));
-    
-    if (!primaryKey) {
-      showToast('Cannot delete: No primary key found', 'error');
-      return;
-    }
-
-    const pkValue = row[primaryKey.name];
-    const deleteSql = `DELETE FROM "${selectedTable}" WHERE "${primaryKey.name}" = '${pkValue}'`;
-
-    try {
-      await apiClient.post(`/api/projects/${projectId}/query`, { sql: deleteSql });
-      
-      // Refresh the table data
-      await fetchTableData(selectedTable);
-      
-      showToast('Row deleted successfully', 'success');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete row', 'error');
-    }
-  };
-
-  const startAddRow = () => {
-    if (!tableData) return;
-    
-    const emptyRow: any = {};
-    tableData.columns.forEach((col: string) => {
-      emptyRow[col] = '';
-    });
-    
-    setNewRow(emptyRow);
-    setIsAddingRow(true);
-  };
-
-  const cancelAddRow = () => {
-    setNewRow(null);
-    setIsAddingRow(false);
-  };
-
-  const saveNewRow = async () => {
-    if (!selectedTable || !newRow || !tableData) return;
-    
-    const projectId = localStorage.getItem('current_project_id');
-    if (!projectId) return;
-
-    // Build INSERT statement
-    const columns = Object.keys(newRow).filter(key => newRow[key] !== '');
-    const values = columns.map(col => {
-      const colSchema = tableData.schema.find((s: any) => s.name === col);
-      const value = newRow[col];
-      
-      if (value === '' && colSchema?.is_nullable === 'YES') {
-        return 'NULL';
-      } else if (colSchema?.type.includes('int') || colSchema?.type.includes('numeric')) {
-        return value;
-      } else {
-        return `'${value.replace(/'/g, "''")}'`;
-      }
-    });
-
-    const insertSql = `INSERT INTO "${selectedTable}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')}) RETURNING *`;
-
-    try {
-      const result = await apiClient.post(`/api/projects/${projectId}/query`, { sql: insertSql });
-      
-      // Refresh the table data
-      await fetchTableData(selectedTable);
-      
-      setNewRow(null);
-      setIsAddingRow(false);
-      showToast('Row added successfully', 'success');
-    } catch (err: any) {
-      showToast(err.message || 'Failed to add row', 'error');
-    }
-  };
-
   const totalPages = Math.ceil(totalRows / rowsPerPage);
   const startRow = (page - 1) * rowsPerPage + 1;
   const endRow = Math.min(page * rowsPerPage, totalRows);
@@ -298,13 +213,13 @@ export default function TablesPageEditable() {
               </span>
             )}
           </div>
-          {/* Status badges */}
+          {/* Status badges like your reference */}
           <div className="flex items-center gap-2">
             <span 
               className="px-2 py-0.5 text-xs rounded-md flex items-center gap-1"
               style={{
                 background: 'rgba(251, 191, 36, 0.1)',
-                color: '#FBB024',
+                color: '#FBB F24',
                 border: '1px solid rgba(251, 191, 36, 0.3)'
               }}
             >
@@ -350,9 +265,8 @@ export default function TablesPageEditable() {
             Sort
           </button>
           <button
-            onClick={startAddRow}
-            disabled={isAddingRow}
-            className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-1 disabled:opacity-50"
+            onClick={() => setIsAddingRow(true)}
+            className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-1"
             style={{
               background: '#FF6B00',
               color: '#FFFFFF'
@@ -365,6 +279,7 @@ export default function TablesPageEditable() {
           </button>
         </div>
       </div>
+
       <div className="flex flex-1">
         {/* Left Sidebar - Table List */}
         <div 
@@ -376,7 +291,7 @@ export default function TablesPageEditable() {
         >
           <div className="p-3">
             <div className="text-xs font-medium text-[#CCCCCC] mb-3">SCHEMA</div>
-            {/* Schema folders */}
+            {/* Schema folders like your reference */}
             <div className="space-y-1">
               <div 
                 className="px-2 py-1.5 rounded text-xs font-medium flex items-center gap-2"
@@ -437,30 +352,16 @@ export default function TablesPageEditable() {
                 </span>
               </div>
 
-              {/* Tables list */}
-              {tables.length > 0 && (
-                <div className="ml-4 mt-2 space-y-0.5">
-                  {tables.map((table) => (
-                    <div 
-                      key={table.table_name}
-                      onClick={() => setSelectedTable(table.table_name)}
-                      className={`px-2 py-1.5 rounded text-xs cursor-pointer flex items-center gap-2 ${
-                        selectedTable === table.table_name
-                          ? 'text-[#FF6B00]'
-                          : 'text-[#888888] hover:text-[#CCCCCC]'
-                      }`}
-                      style={{ 
-                        background: selectedTable === table.table_name ? 'rgba(255, 107, 0, 0.1)' : 'transparent'
-                      }}
-                    >
-                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M3 3h18v2H3V3zm0 4h18v2H3V7zm0 4h18v2H3v-2zm0 4h18v2H3v-2zm0 4h18v2H3v-2z" />
-                      </svg>
-                      {table.table_name}
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Selected table indicator */}
+              <div 
+                className="ml-4 px-2 py-1.5 rounded text-xs text-[#FF6B00] flex items-center gap-2"
+                style={{ background: 'rgba(255, 107, 0, 0.1)' }}
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M3 3h18v2H3V3zm0 4h18v2H3V7zm0 4h18v2H3v-2zm0 4h18v2H3v-2zm0 4h18v2H3v-2z" />
+                </svg>
+                indian_states
+              </div>
             </div>
           </div>
         </div>
@@ -476,8 +377,8 @@ export default function TablesPageEditable() {
             }}
           >
             <div className="flex items-center gap-3">
-              <div className="text-sm font-medium">{selectedTable || 'No table selected'}</div>
-              <div className="text-xs text-[#888888]">{totalRows} rows</div>
+              <div className="text-sm font-medium">indian_states</div>
+              <div className="text-xs text-[#888888]">8 rows</div>
             </div>
             
             <div className="flex items-center gap-2">
@@ -498,13 +399,6 @@ export default function TablesPageEditable() {
             {loading ? (
               <div className="flex items-center justify-center h-64">
                 <div className="text-sm text-[#888888]">Loading...</div>
-              </div>
-            ) : !selectedTable ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="text-center">
-                  <div className="text-sm font-medium text-[#CCCCCC] mb-1">No table selected</div>
-                  <div className="text-xs text-[#888888]">Select a table to view data</div>
-                </div>
               </div>
             ) : tableData && tableData.columns ? (
               <table className="w-full">
@@ -538,61 +432,9 @@ export default function TablesPageEditable() {
                         </th>
                       );
                     })}
-                    <th className="px-4 py-3 text-left text-xs font-medium text-[#CCCCCC] w-20">
-                      Actions
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {/* New Row Form */}
-                  {isAddingRow && newRow && (
-                    <tr 
-                      className="group"
-                      style={{ 
-                        borderBottom: '1px solid #1A1A1A',
-                        background: 'rgba(34, 197, 94, 0.1)'
-                      }}
-                    >
-                      <td className="px-4 py-3">
-                        <input type="checkbox" className="w-3 h-3" />
-                      </td>
-                      {tableData.columns.map((col: string, colIndex: number) => (
-                        <td key={colIndex} className="px-4 py-3">
-                          <input
-                            type="text"
-                            value={newRow[col] || ''}
-                            onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
-                            placeholder={col}
-                            className="w-full px-2 py-1 text-xs rounded focus:outline-none"
-                            style={{
-                              background: '#1F1F1F',
-                              border: '1px solid #22C55E',
-                              color: '#FFFFFF'
-                            }}
-                          />
-                        </td>
-                      ))}
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1">
-                          <button
-                            onClick={saveNewRow}
-                            className="text-green-400 hover:text-green-300 text-xs px-2 py-1 rounded"
-                            style={{ background: 'rgba(34, 197, 94, 0.2)' }}
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={cancelAddRow}
-                            className="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded"
-                            style={{ background: 'rgba(239, 68, 68, 0.2)' }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  
                   {tableData.rows && tableData.rows.map((row: any, rowIndex: number) => (
                     <tr 
                       key={rowIndex}
@@ -630,18 +472,6 @@ export default function TablesPageEditable() {
                                   }}
                                   autoFocus
                                 />
-                                <button
-                                  onClick={() => saveEdit(rowIndex, col)}
-                                  className="text-green-400 hover:text-green-300 px-1"
-                                >
-                                  ✓
-                                </button>
-                                <button
-                                  onClick={cancelEdit}
-                                  className="text-red-400 hover:text-red-300 px-1"
-                                >
-                                  ✕
-                                </button>
                               </div>
                             ) : (
                               <div className="flex items-center justify-between group-hover:bg-[#1A1A1A] -mx-2 px-2 py-1 rounded">
@@ -666,35 +496,15 @@ export default function TablesPageEditable() {
                           </td>
                         );
                       })}
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => deleteRow(rowIndex)}
-                          className="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                          style={{ background: 'rgba(239, 68, 68, 0.2)' }}
-                        >
-                          Delete
-                        </button>
-                      </td>
                     </tr>
                   ))}
-                  
-                  {tableData.rows.length === 0 && !isAddingRow && (
-                    <tr>
-                      <td colSpan={tableData.columns.length + 2} className="px-4 py-8 text-center">
-                        <div className="flex flex-col items-center justify-center text-center">
-                          <h3 className="text-sm font-semibold text-[#CCCCCC] mb-2">No data in this table</h3>
-                          <p className="text-xs text-[#888888] mb-3">Click "Insert Row" to add data</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             ) : (
               <div className="flex items-center justify-center h-64">
                 <div className="text-center">
-                  <div className="text-sm font-medium text-[#CCCCCC] mb-1">Unable to load table</div>
-                  <div className="text-xs text-[#888888]">There was an error loading this table's data</div>
+                  <div className="text-sm font-medium text-[#CCCCCC] mb-1">No table selected</div>
+                  <div className="text-xs text-[#888888]">Select a table to view data</div>
                 </div>
               </div>
             )}

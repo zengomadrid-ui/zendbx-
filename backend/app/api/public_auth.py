@@ -223,9 +223,10 @@ async def signup(
         """, project_id, request.email)
         
         if existing:
+            # Generic error - don't reveal if email exists
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email already exists"
+                detail="Unable to create account. Please check your information and try again."
             )
         
         # Hash password
@@ -321,41 +322,44 @@ async def login(
         """, project_id, request.email)
         
         if not user:
-            # Log failed attempt
+            # Log failed attempt (don't reveal reason in log)
             await conn.execute("""
                 INSERT INTO project_auth_logs (
                     project_id, user_email, event_type, provider, 
                     success, error_message, created_at
                 )
-                VALUES ($1, $2, 'login', 'email', FALSE, 'User not found', NOW())
+                VALUES ($1, $2, 'login', 'email', FALSE, 'Authentication failed', NOW())
             """, project_id, request.email)
             
+            # Generic error - don't reveal if email exists
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail="Invalid credentials. Please check your email and password."
             )
         
         # Verify password
         if not user['encrypted_password'] or not verify_password(request.password, user['encrypted_password']):
-            # Log failed attempt
+            # Log failed attempt (don't reveal reason in log)
             await conn.execute("""
                 INSERT INTO project_auth_logs (
                     project_id, user_email, event_type, provider, 
                     success, error_message, created_at
                 )
-                VALUES ($1, $2, 'login', 'email', FALSE, 'Invalid password', NOW())
+                VALUES ($1, $2, 'login', 'email', FALSE, 'Authentication failed', NOW())
             """, project_id, request.email)
             
+            # Generic error - don't reveal which part failed
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail="Invalid credentials. Please check your email and password."
             )
         
         # Check if user is active
         if not user['is_active']:
+            # Generic error - don't reveal account status
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User account is disabled"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials. Please check your email and password."
             )
         
         # Update last login
@@ -426,8 +430,8 @@ async def get_user(
             
             if not user:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User not found"
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials"
                 )
             
             return {

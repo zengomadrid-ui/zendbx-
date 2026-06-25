@@ -530,7 +530,7 @@ async def resolve_principal(
 
     pool = await get_main_db_pool()
     async with pool.acquire() as conn:
-        # Resolve slug or UUID
+        # Resolve slug or UUID with backward compatibility
         try:
             import uuid as _uuid
             _uuid.UUID(project_identifier)
@@ -538,15 +538,12 @@ async def resolve_principal(
                 "SELECT id, jwt_secret FROM projects WHERE id = $1", project_identifier
             )
         except ValueError:
-            # Support both slug and legacy_slug for backward compatibility
-            project = await conn.fetchrow(
-                """
-                SELECT id, jwt_secret FROM projects 
-                WHERE slug = $1 OR legacy_slug = $1
-                ORDER BY CASE WHEN slug = $1 THEN 1 ELSE 2 END
-                LIMIT 1
-                """, 
-                project_identifier
+            # Support both slug and legacy_slug with backward compatibility
+            from app.utils.schema_compat import resolve_project_by_slug
+            project = await resolve_project_by_slug(
+                conn,
+                project_identifier,
+                additional_columns="id, jwt_secret"
             )
 
     if not project or not project["jwt_secret"]:

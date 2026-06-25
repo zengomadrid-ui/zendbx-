@@ -22,19 +22,16 @@ async def authenticate_mcp_request(project_slug: str, authorization: Optional[st
     Returns project context and database pool
     Supports both clean slugs and legacy slugs for backward compatibility
     """
+    from app.utils.schema_compat import resolve_project_by_slug
+    
     pool = await get_main_db_pool()
     
     async with pool.acquire() as conn:
-        # Get project by slug (supports both slug and legacy_slug)
-        project = await conn.fetchrow(
-            """
-            SELECT id, name, slug, legacy_slug, user_id, database_name
-            FROM projects
-            WHERE (slug = $1 OR legacy_slug = $1) AND status = 'active'
-            ORDER BY CASE WHEN slug = $1 THEN 1 ELSE 2 END
-            LIMIT 1
-            """,
-            project_slug
+        # Get project by slug (supports both slug and legacy_slug with backward compat)
+        project = await resolve_project_by_slug(
+            conn,
+            project_slug,
+            additional_columns="id, name, slug, user_id, database_name"
         )
         
         if not project:

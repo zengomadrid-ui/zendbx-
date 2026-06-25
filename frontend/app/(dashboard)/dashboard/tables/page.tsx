@@ -1,154 +1,47 @@
 'use client';
 
-
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api';
 import { useToast } from '@/lib/toast';
-import { io, Socket } from 'socket.io-client';
 
 interface Table {
-  table_schema: string;
   table_name: string;
-  full_name: string;
-  row_count?: number;
-  column_count?: number;
-  columns?: any[];
+  row_count: number;
+  column_count: number;
 }
 
-export default function TablesPageEditable() {
+interface ColumnSchema {
+  name: string;
+  type: string;
+  is_nullable: string;
+  column_default: string | null;
+}
+
+export default function TablesPage() {
   const { showToast } = useToast();
   const [tables, setTables] = useState<Table[]>([]);
-  // Initialize selectedTable from localStorage if available
-  const [selectedTable, setSelectedTable] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('selected_table');
-    }
-    return null;
-  });
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [tableData, setTableData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [editingCell, setEditingCell] = useState<{row: number, col: string} | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const [newRow, setNewRow] = useState<any>(null);
   const [isAddingRow, setIsAddingRow] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
-  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteModalType, setDeleteModalType] = useState<'table' | 'row'>('table');
-  const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
+  const rowsPerPage = 50;
 
   useEffect(() => {
     fetchTables();
-    setupRealtimeConnection();
-    
-    return () => {
-      // Cleanup WebSocket connection on unmount
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
-    };
   }, []);
 
   useEffect(() => {
     if (selectedTable) {
       fetchTableData(selectedTable);
-      subscribeToTable(selectedTable);
     }
-  }, [selectedTable]);
-
-  const setupRealtimeConnection = () => {
-    const projectId = localStorage.getItem('current_project_id');
-    if (!projectId) return;
-
-    // Connect to WebSocket server using environment variable
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL!;
-    const socket = io(wsUrl, {
-      transports: ['websocket'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5
-    });
-
-    socket.on('connect', () => {
-      console.log('Connected to realtime server');
-      setIsRealtimeConnected(true);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('Disconnected from realtime server');
-      setIsRealtimeConnected(false);
-    });
-
-    socket.on('database_change', (data: any) => {
-      handleRealtimeUpdate(data);
-    });
-
-    socketRef.current = socket;
-  };
-
-  const subscribeToTable = (tableName: string) => {
-    const projectId = localStorage.getItem('current_project_id');
-    if (!socketRef.current || !projectId) return;
-
-    // Subscribe to table changes
-    socketRef.current.emit('subscribe', {
-      channel: `project:${projectId}:table:${tableName}`,
-      table: tableName,
-      project_id: projectId
-    });
-  };
-
-  const handleRealtimeUpdate = (data: any) => {
-    if (!selectedTable || !tableData) return;
-    
-    // Check if update is for current table
-    if (data.table !== selectedTable) return;
-
-    console.log('Realtime update received:', data);
-
-    // Handle different operation types
-    switch (data.operation) {
-      case 'INSERT':
-        // Add new row to table
-        if (data.new_data) {
-          setTableData((prev: any) => ({
-            ...prev,
-            rows: [...prev.rows, data.new_data],
-            row_count: prev.row_count + 1
-          }));
-          showToast('New row added', 'success');
-        }
-        break;
-
-      case 'UPDATE':
-        // Update existing row
-        if (data.new_data && data.old_data) {
-          setTableData((prev: any) => ({
-            ...prev,
-            rows: prev.rows.map((row: any) => 
-              row.id === data.new_data.id ? data.new_data : row
-            )
-          }));
-          showToast('Row updated', 'success');
-        }
-        break;
-
-      case 'DELETE':
-        // Remove deleted row
-        if (data.old_data) {
-          setTableData((prev: any) => ({
-            ...prev,
-            rows: prev.rows.filter((row: any) => row.id !== data.old_data.id),
-            row_count: prev.row_count - 1
-          }));
-          showToast('Row deleted', 'success');
-        }
-        break;
-    }
-  };
+  }, [selectedTable, page]);
 
   const fetchTables = async () => {
-    // Fetch tables for the current project
     let projectId = localStorage.getItem('current_project_id');
     
     if (!projectId) {
@@ -171,45 +64,10 @@ export default function TablesPageEditable() {
     }
 
     try {
-      const data = await apiClient.get(`/api/projects/${projectId}/db/tables/`, {
-        headers: {
-          'x-project-id': projectId
-        }
-      });
-      // Extract tables array from response
-      const tablesArray = data.tables || data;
-      setTables(tablesArray);
-      
-      // Check if we have a previously selected table in localStorage
-      const savedSelectedTable = localStorage.getItem('selected_table');
-      
-      if (tablesArray.length > 0) {
-        if (savedSelectedTable && tablesArray.some((t: Table) => 
-          (t.full_name || t.table_name) === savedSelectedTable
-        )) {
-          // If saved table exists in the list, select it
-          setSelectedTable(savedSelectedTable);
-        } else if (!selectedTable) {
-          // Only auto-select first table if no table is currently selected
-          const firstTable = tablesArray[0].full_name || tablesArray[0].table_name;
-          setSelectedTable(firstTable);
-          localStorage.setItem('selected_table', firstTable);
-        } else {
-          // Verify the currently selected table still exists in the list
-          const tableExists = tablesArray.some((t: Table) => 
-            (t.full_name || t.table_name) === selectedTable
-          );
-          if (!tableExists) {
-            // If selected table was deleted, select the first available table
-            const firstTable = tablesArray[0].full_name || tablesArray[0].table_name;
-            setSelectedTable(firstTable);
-            localStorage.setItem('selected_table', firstTable);
-          }
-        }
-      } else {
-        // No tables available, clear selection
-        setSelectedTable(null);
-        localStorage.removeItem('selected_table');
+      const data = await apiClient.get(`/api/projects/${projectId}/tables`);
+      setTables(data);
+      if (data.length > 0 && !selectedTable) {
+        setSelectedTable(data[0].table_name);
       }
     } catch (err) {
       console.error('Failed to fetch tables:', err);
@@ -218,25 +76,11 @@ export default function TablesPageEditable() {
 
   const fetchTableData = async (tableName: string) => {
     const projectId = localStorage.getItem('current_project_id');
-    if (!projectId) {
-      showToast('No project selected', 'error');
-      return;
-    }
+    if (!projectId) return;
 
-    console.log('Fetching table data for:', tableName, 'Project:', projectId);
     setLoading(true);
     try {
-      // Parse schema and table name properly
-      let schemaName = 'public';
-      let tableOnly = tableName;
-      
-      if (tableName.includes('.')) {
-        const parts = tableName.split('.');
-        schemaName = parts[0];
-        tableOnly = parts[1];
-      }
-      
-      // Get schema - use proper quoting for schema-qualified names
+      // Get schema
       const schemaSql = `
         SELECT 
           column_name as name,
@@ -244,34 +88,29 @@ export default function TablesPageEditable() {
           is_nullable,
           column_default
         FROM information_schema.columns 
-        WHERE table_name = '${tableOnly}'
-        AND table_schema = '${schemaName}'
+        WHERE table_name = '${tableName}'
         ORDER BY ordinal_position
       `;
       
-      console.log('Fetching schema with SQL:', schemaSql);
       const schemaRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: schemaSql });
-      console.log('Schema response:', schemaRes);
       const columns = schemaRes.rows || [];
-      console.log('Columns:', columns);
       
-      // Get data - use proper schema.table format
-      const dataSql = `SELECT * FROM "${schemaName}"."${tableOnly}" LIMIT 100`;
-      console.log('Fetching data with SQL:', dataSql);
+      // Get total count
+      const countSql = `SELECT COUNT(*) as total FROM "${tableName}"`;
+      const countRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: countSql });
+      const total = countRes.rows[0]?.total || 0;
+      setTotalRows(total);
+      
+      // Get paginated data
+      const offset = (page - 1) * rowsPerPage;
+      const dataSql = `SELECT * FROM "${tableName}" LIMIT ${rowsPerPage} OFFSET ${offset}`;
       const dataRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: dataSql });
-      console.log('Data response:', dataRes);
-      console.log('Data rows:', dataRes.rows);
-      console.log('Data row_count:', dataRes.row_count);
       
-      const tableDataObj = {
+      setTableData({
         columns: columns.map((c: any) => c.name),
         rows: dataRes.rows || [],
-        row_count: dataRes.row_count || (dataRes.rows ? dataRes.rows.length : 0),
         schema: columns
-      };
-      
-      console.log('Setting tableData to:', tableDataObj);
-      setTableData(tableDataObj);
+      });
     } catch (err) {
       console.error('Failed to fetch table data:', err);
       setTableData(null);
@@ -280,7 +119,6 @@ export default function TablesPageEditable() {
       setLoading(false);
     }
   };
-
   const startEdit = (rowIndex: number, colName: string, currentValue: any) => {
     setEditingCell({ row: rowIndex, col: colName });
     setEditValue(currentValue === null ? '' : String(currentValue));
@@ -295,13 +133,10 @@ export default function TablesPageEditable() {
     if (!selectedTable || !tableData) return;
     
     const projectId = localStorage.getItem('current_project_id');
-    if (!projectId) {
-      showToast('No project selected', 'error');
-      return;
-    }
+    if (!projectId) return;
 
     const row = tableData.rows[rowIndex];
-    const primaryKey = tableData.schema.find((s: any) => s.name === 'id');
+    const primaryKey = tableData.schema.find((s: any) => s.name === 'id' || s.name.includes('id'));
     
     if (!primaryKey) {
       showToast('Cannot update: No primary key found', 'error');
@@ -321,17 +156,7 @@ export default function TablesPageEditable() {
       formattedValue = `'${editValue.replace(/'/g, "''")}'`;
     }
 
-    // Parse schema and table name properly
-    let schemaName = 'public';
-    let tableOnly = selectedTable;
-    
-    if (selectedTable.includes('.')) {
-      const parts = selectedTable.split('.');
-      schemaName = parts[0];
-      tableOnly = parts[1];
-    }
-
-    const updateSql = `UPDATE "${schemaName}"."${tableOnly}" SET "${colName}" = ${formattedValue} WHERE "${primaryKey.name}" = '${pkValue}'`;
+    const updateSql = `UPDATE "${selectedTable}" SET "${colName}" = ${formattedValue} WHERE "${primaryKey.name}" = '${pkValue}'`;
 
     try {
       await apiClient.post(`/api/projects/${projectId}/query`, { sql: updateSql });
@@ -348,105 +173,33 @@ export default function TablesPageEditable() {
       showToast(err.message || 'Failed to update cell', 'error');
     }
   };
-
   const deleteRow = async (rowIndex: number) => {
     if (!selectedTable || !tableData) return;
-    
-    setDeleteModalType('row');
-    setDeleteRowIndex(rowIndex);
-    setShowDeleteModal(true);
-  };
-
-  const confirmDeleteRow = async () => {
-    if (!selectedTable || !tableData || deleteRowIndex === null) return;
+    if (!confirm('Are you sure you want to delete this row?')) return;
     
     const projectId = localStorage.getItem('current_project_id');
-    if (!projectId) {
-      showToast('No project selected', 'error');
-      return;
-    }
+    if (!projectId) return;
 
-    const row = tableData.rows[deleteRowIndex];
-    const primaryKey = tableData.schema.find((s: any) => s.name === 'id');
+    const row = tableData.rows[rowIndex];
+    const primaryKey = tableData.schema.find((s: any) => s.name === 'id' || s.name.includes('id'));
     
     if (!primaryKey) {
       showToast('Cannot delete: No primary key found', 'error');
-      setShowDeleteModal(false);
       return;
     }
 
     const pkValue = row[primaryKey.name];
-    
-    // Parse schema and table name properly
-    let schemaName = 'public';
-    let tableOnly = selectedTable;
-    
-    if (selectedTable.includes('.')) {
-      const parts = selectedTable.split('.');
-      schemaName = parts[0];
-      tableOnly = parts[1];
-    }
-    
-    const deleteSql = `DELETE FROM "${schemaName}"."${tableOnly}" WHERE "${primaryKey.name}" = '${pkValue}'`;
+    const deleteSql = `DELETE FROM "${selectedTable}" WHERE "${primaryKey.name}" = '${pkValue}'`;
 
     try {
       await apiClient.post(`/api/projects/${projectId}/query`, { sql: deleteSql });
       
-      // Update local state
-      const newRows = tableData.rows.filter((_: any, i: number) => i !== deleteRowIndex);
-      setTableData({ ...tableData, rows: newRows, row_count: newRows.length });
+      // Refresh the table data
+      await fetchTableData(selectedTable);
       
       showToast('Row deleted successfully', 'success');
     } catch (err: any) {
       showToast(err.message || 'Failed to delete row', 'error');
-    } finally {
-      setShowDeleteModal(false);
-      setDeleteRowIndex(null);
-    }
-  };
-
-  const deleteTable = async () => {
-    if (!selectedTable) return;
-    
-    setDeleteModalType('table');
-    setShowDeleteModal(true);
-  };
-
-  const confirmDeleteTable = async () => {
-    if (!selectedTable) return;
-    
-    const projectId = localStorage.getItem('current_project_id');
-    if (!projectId) {
-      showToast('No project selected', 'error');
-      return;
-    }
-
-    // Parse schema and table name properly
-    let schemaName = 'public';
-    let tableOnly = selectedTable;
-    
-    if (selectedTable.includes('.')) {
-      const parts = selectedTable.split('.');
-      schemaName = parts[0];
-      tableOnly = parts[1];
-    }
-
-    const dropSql = `DROP TABLE "${schemaName}"."${tableOnly}"`;
-
-    try {
-      await apiClient.post(`/api/projects/${projectId}/query`, { sql: dropSql });
-      
-      showToast(`Table "${selectedTable}" deleted successfully`, 'success');
-      
-      // Clear selection and localStorage
-      setSelectedTable(null);
-      setTableData(null);
-      localStorage.removeItem('selected_table');
-      fetchTables();
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete table', 'error');
-    } finally {
-      setShowDeleteModal(false);
     }
   };
 
@@ -454,13 +207,8 @@ export default function TablesPageEditable() {
     if (!tableData) return;
     
     const emptyRow: any = {};
-    const autoGeneratedCols = ['id', 'created_at', 'updated_at'];
-    
-    // Only include non-auto-generated columns in the form
     tableData.columns.forEach((col: string) => {
-      if (!autoGeneratedCols.includes(col.toLowerCase())) {
-        emptyRow[col] = '';
-      }
+      emptyRow[col] = '';
     });
     
     setNewRow(emptyRow);
@@ -476,220 +224,289 @@ export default function TablesPageEditable() {
     if (!selectedTable || !newRow || !tableData) return;
     
     const projectId = localStorage.getItem('current_project_id');
-    if (!projectId) {
-      showToast('No project selected', 'error');
-      return;
-    }
-
-    // Skip auto-generated columns and only include columns with values
-    const autoGeneratedCols = ['id', 'created_at', 'updated_at'];
-    const columns = Object.keys(newRow).filter(key => {
-      // Skip auto-generated columns
-      if (autoGeneratedCols.includes(key.toLowerCase())) return false;
-      // Skip empty values
-      if (newRow[key] === '') return false;
-      return true;
-    });
-
-    if (columns.length === 0) {
-      showToast('Please fill in at least one field', 'error');
-      return;
-    }
-
+    if (!projectId) return;
+    // Build INSERT statement
+    const columns = Object.keys(newRow).filter(key => newRow[key] !== '');
     const values = columns.map(col => {
       const colSchema = tableData.schema.find((s: any) => s.name === col);
       const value = newRow[col];
       
       if (value === '' && colSchema?.is_nullable === 'YES') {
         return 'NULL';
-      } else if (colSchema?.type.includes('int') || colSchema?.type.includes('numeric') || colSchema?.type.includes('double') || colSchema?.type.includes('float')) {
+      } else if (colSchema?.type.includes('int') || colSchema?.type.includes('numeric')) {
         return value;
-      } else if (colSchema?.type.includes('bool')) {
-        return value.toLowerCase() === 'true' ? 'true' : 'false';
       } else {
         return `'${value.replace(/'/g, "''")}'`;
       }
     });
 
-    // Parse schema and table name properly
-    let schemaName = 'public';
-    let tableOnly = selectedTable;
-    
-    if (selectedTable.includes('.')) {
-      const parts = selectedTable.split('.');
-      schemaName = parts[0];
-      tableOnly = parts[1];
-    }
-
-    const insertSql = `INSERT INTO "${schemaName}"."${tableOnly}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')}) RETURNING *`;
-
-    console.log('Insert SQL:', insertSql); // Debug log
+    const insertSql = `INSERT INTO "${selectedTable}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')}) RETURNING *`;
 
     try {
       const result = await apiClient.post(`/api/projects/${projectId}/query`, { sql: insertSql });
       
-      // Refresh table data to ensure we see the inserted row
+      // Refresh the table data
       await fetchTableData(selectedTable);
       
       setNewRow(null);
       setIsAddingRow(false);
       showToast('Row added successfully', 'success');
     } catch (err: any) {
-      console.error('Insert error:', err); // Debug log
       showToast(err.message || 'Failed to add row', 'error');
     }
   };
 
+  const totalPages = Math.ceil(totalRows / rowsPerPage);
+  const startRow = (page - 1) * rowsPerPage + 1;
+  const endRow = Math.min(page * rowsPerPage, totalRows);
+
   return (
-    <>
-    <div className="h-full flex bg-[#1c1c1c]">
+    <div 
+      className="h-screen flex"
+      style={{ 
+        background: '#0A0A0A',
+        color: '#FFFFFF'
+      }}
+    >
       {/* Left Sidebar */}
-      <div className="w-64 bg-[#181818] border-r border-[#2a2a2a] flex flex-col">
-        <div className="h-10 flex items-center justify-between px-3 border-b border-[#2a2a2a]">
-          <h2 className="text-xs font-semibold text-[#ededed]">Tables</h2>
-          <button 
-            onClick={fetchTables}
-            className="p-1 rounded hover:bg-[#2a2a2a] text-[#a1a1a1] hover:text-[#ededed]"
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
+      <div 
+        className="w-64 flex flex-col"
+        style={{
+          background: '#000000',
+          borderRight: '1px solid #1F1F1F'
+        }}
+      >
+        {/* Sidebar Header */}
+        <div 
+          className="p-4"
+          style={{
+            borderBottom: '1px solid #1F1F1F'
+          }}
+        >
+          <h2 className="text-sm font-medium text-[#CCCCCC] mb-3">Tables</h2>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search or jump to..."
+              className="w-full text-white text-sm px-3 py-2 rounded focus:outline-none focus:ring-2"
+              style={{
+                background: '#1F1F1F',
+                border: '1px solid #333333',
+                focusRingColor: '#FF6B00'
+              }}
+            />
+            <div className="absolute right-2 top-2">
+              <span className="text-xs text-[#888888]">⌘K</span>
+            </div>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2">
-          {tables.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center p-4">
-              <p className="text-xs text-[#6b6b6b]">No tables yet</p>
+        {/* Tables List */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-2">
+            {/* Project info */}
+            <div className="mb-4 px-2">
+              <div className="flex items-center gap-2 text-sm text-[#CCCCCC]">
+                <div 
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: '#FF6B00' }}
+                ></div>
+                <span>Live</span>
+                <span 
+                  className="text-xs px-2 py-0.5 rounded text-white ml-auto"
+                  style={{ backgroundColor: '#FF6B00' }}
+                >
+                  PG
+                </span>
+              </div>
+              <div className="text-xs text-[#888888] mt-1">
+                {selectedTable} • {totalRows} rows • Offline
+              </div>
             </div>
-          ) : (
-            <div className="space-y-0.5">
-              {tables.map((table) => {
-                const tableIdentifier = table.full_name || table.table_name;
-                const displayName = table.table_name;
-                return (
-                  <button
-                    key={tableIdentifier}
-                    onClick={() => {
-                      setSelectedTable(tableIdentifier);
-                      localStorage.setItem('selected_table', tableIdentifier);
-                    }}
-                    className={`w-full text-left px-2 py-1.5 rounded transition-colors ${
-                      selectedTable === tableIdentifier
-                        ? 'bg-[#2a2a2a] text-[#ededed]'
-                        : 'text-[#a1a1a1] hover:bg-[#2a2a2a] hover:text-[#ededed]'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                      </svg>
-                      <span className="text-xs truncate">
-                        {table.table_schema && table.table_schema !== 'public' ? (
-                          <><span className="text-[#6b6b6b]">{table.table_schema}.</span>{displayName}</>
-                        ) : displayName}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+
+            {/* Tables */}
+            {tables.map((table) => (
+              <div
+                key={table.table_name}
+                onClick={() => setSelectedTable(table.table_name)}
+                className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
+                  selectedTable === table.table_name ? 'text-[#FF6B00]' : 'text-[#888888] hover:text-[#CCCCCC]'
+                }`}
+                style={{ 
+                  background: selectedTable === table.table_name ? 'rgba(255, 107, 0, 0.1)' : 'transparent'
+                }}
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
+                </svg>
+                <span className="text-sm">{table.table_name}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-        {/* Toolbar */}
-        <div className="h-10 flex items-center justify-between px-4 border-b border-[#2a2a2a] bg-[#181818]">
-          <div className="flex items-center space-x-2">
-            <h1 className="text-xs font-semibold text-[#ededed]">{selectedTable || 'Select a table'}</h1>
-            {tableData && (
-              <span className="text-[10px] text-[#6b6b6b]">
-                {tableData.row_count} rows
-              </span>
-            )}
-            {/* Realtime Indicator */}
-            <div className="flex items-center space-x-1">
-              <div className={`w-1.5 h-1.5 rounded-full ${isRealtimeConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
-              <span className="text-[10px] text-[#6b6b6b]">
-                {isRealtimeConnected ? 'Live' : 'Offline'}
-              </span>
+        {/* Top Header */}
+        <div 
+          className="px-6 py-4 flex items-center justify-between"
+          style={{
+            background: '#000000',
+            borderBottom: '1px solid #1F1F1F'
+          }}
+        >
+          <div className="flex items-center gap-4">
+            <h1 className="text-lg font-medium text-white">Tables</h1>
+            <div className="flex items-center gap-2">
+              <div className="text-sm text-[#888888]">
+                {selectedTable || 'Select a table'}
+              </div>
+              {tableData && (
+                <div className="text-sm text-[#888888]">
+                  {totalRows} rows • Offline
+                </div>
+              )}
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            {selectedTable && (
-              <>
-                <button
-                  onClick={startAddRow}
-                  disabled={isAddingRow}
-                  className="px-2 py-1 text-[10px] bg-green-900/20 hover:bg-green-900/30 text-green-400 rounded disabled:opacity-50"
-                >
-                  + Add Row
-                </button>
-                <button
-                  onClick={() => selectedTable && fetchTableData(selectedTable)}
-                  className="px-2 py-1 text-[10px] bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#ededed] rounded"
-                >
-                  Refresh
-                </button>
-                <button
-                  onClick={deleteTable}
-                  className="px-2 py-1 text-[10px] bg-red-900/20 hover:bg-red-900/30 text-red-400 rounded flex items-center space-x-1"
-                  title="Delete table"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  <span>Delete Table</span>
-                </button>
-              </>
-            )}
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fetchTableData(selectedTable || '')}
+              className="px-3 py-1.5 text-white text-sm rounded hover:opacity-80 transition-opacity"
+              style={{
+                background: '#1F1F1F',
+                border: '1px solid #333333'
+              }}
+            >
+              Refresh
+            </button>
+            <button 
+              className="px-3 py-1.5 text-white text-sm rounded hover:opacity-80 transition-opacity"
+              style={{
+                background: '#1F1F1F',
+                border: '1px solid #333333'
+              }}
+            >
+              Delete Table
+            </button>
+            <button
+              onClick={startAddRow}
+              disabled={isAddingRow}
+              className="px-3 py-1.5 text-white text-sm rounded transition-opacity disabled:opacity-50"
+              style={{
+                background: '#FF6B00'
+              }}
+            >
+              + Add Row
+            </button>
           </div>
         </div>
-
         {/* Table Content */}
-        <div className="flex-1 overflow-auto p-4">
-          {!selectedTable ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <svg className="w-16 h-16 text-[#3a3a3a] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              <h3 className="text-sm font-semibold text-[#ededed] mb-2">No table selected</h3>
-              <p className="text-xs text-[#6b6b6b]">Select a table from the sidebar</p>
+        <div 
+          className="flex-1 overflow-auto"
+          style={{ background: '#0A0A0A' }}
+        >
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-[#888888]">Loading...</div>
             </div>
-          ) : loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-xs text-[#6b6b6b]">Loading...</div>
+          ) : !selectedTable ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <div className="text-[#CCCCCC] mb-2">No table selected</div>
+                <div className="text-[#888888] text-sm">Select a table from the sidebar to view data</div>
+              </div>
             </div>
-          ) : tableData && tableData.columns && tableData.columns.length > 0 ? (
-            <table className="w-full text-xs border border-[#2a2a2a]">
-              <thead className="bg-[#181818] sticky top-0">
+          ) : tableData && tableData.columns ? (
+            <table className="w-full">
+              <thead 
+                className="sticky top-0"
+                style={{
+                  background: '#000000',
+                  borderBottom: '1px solid #1F1F1F'
+                }}
+              >
                 <tr>
                   {tableData.columns.map((col: string, i: number) => {
                     const colSchema = tableData.schema?.find((s: any) => s.name === col);
                     return (
-                      <th key={i} className="px-3 py-2 text-left border-b border-[#2a2a2a]">
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-[#ededed] font-medium">{col}</span>
+                      <th 
+                        key={i} 
+                        className="px-4 py-3 text-left"
+                        style={{ borderBottom: '1px solid #1F1F1F' }}
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-white">{col}</span>
                           {colSchema && (
-                            <span className="text-[10px] text-[#6b6b6b] font-normal">
+                            <span className="text-xs text-[#666666]">
                               {colSchema.type}
-                              {colSchema.is_nullable === 'NO' && ' • NOT NULL'}
+                              {colSchema.is_nullable === 'NO' ? ' • NOT NULL' : ''}
                             </span>
                           )}
                         </div>
                       </th>
                     );
                   })}
-                  <th className="px-3 py-2 text-left border-b border-[#2a2a2a] w-20">
-                    <span className="text-[#ededed] font-medium">Actions</span>
+                  <th 
+                    className="px-4 py-3 text-left"
+                    style={{ borderBottom: '1px solid #1F1F1F' }}
+                  >
+                    <span className="text-sm font-medium text-white">Actions</span>
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {tableData.rows && Array.isArray(tableData.rows) && tableData.rows.map((row: any, rowIndex: number) => (
-                  <tr key={rowIndex} className="border-b border-[#2a2a2a] hover:bg-[#2a2a2a]">
+                {/* New Row Form */}
+                {isAddingRow && newRow && (
+                  <tr 
+                    className="group"
+                    style={{ 
+                      borderBottom: '1px solid #1A1A1A',
+                      background: 'rgba(255, 107, 0, 0.1)'
+                    }}
+                  >
+                    {tableData.columns.map((col: string, colIndex: number) => (
+                      <td key={colIndex} className="px-4 py-2">
+                        <input
+                          type="text"
+                          value={newRow[col] || ''}
+                          onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
+                          placeholder={col}
+                          className="w-full text-white text-sm px-2 py-1 rounded focus:outline-none"
+                          style={{
+                            background: '#1F1F1F',
+                            border: '1px solid #FF6B00'
+                          }}
+                        />
+                      </td>
+                    ))}
+                    <td className="px-4 py-2">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={saveNewRow}
+                          className="text-green-400 hover:text-green-300 text-sm"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={cancelAddRow}
+                          className="text-red-400 hover:text-red-300 text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                
+                {/* Data Rows */}
+                {tableData.rows && tableData.rows.map((row: any, rowIndex: number) => (
+                  <tr 
+                    key={rowIndex} 
+                    className="hover:bg-[#0F0F0F] group"
+                    style={{ borderBottom: '1px solid #1A1A1A' }}
+                  >
                     {tableData.columns.map((col: string, colIndex: number) => {
                       const value = row[col];
                       const isEditing = editingCell?.row === rowIndex && editingCell?.col === col;
@@ -697,11 +514,11 @@ export default function TablesPageEditable() {
                       return (
                         <td 
                           key={colIndex} 
-                          className="px-3 py-2 text-[#ededed] cursor-pointer hover:bg-[#3a3a3a]"
+                          className="px-4 py-2 text-sm cursor-pointer"
                           onClick={() => !isEditing && startEdit(rowIndex, col, value)}
                         >
                           {isEditing ? (
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-2">
                               <input
                                 type="text"
                                 value={editValue}
@@ -710,7 +527,11 @@ export default function TablesPageEditable() {
                                   if (e.key === 'Enter') saveEdit(rowIndex, col);
                                   if (e.key === 'Escape') cancelEdit();
                                 }}
-                                className="flex-1 bg-[#1c1c1c] border border-orange-600 rounded px-1 py-0.5 text-xs text-[#ededed] focus:outline-none"
+                                className="flex-1 text-white px-2 py-1 rounded focus:outline-none"
+                                style={{
+                                  background: '#1F1F1F',
+                                  border: '1px solid #FF6B00'
+                                }}
                                 autoFocus
                               />
                               <button
@@ -727,17 +548,19 @@ export default function TablesPageEditable() {
                               </button>
                             </div>
                           ) : (
-                            <span>
-                              {value !== null ? String(value) : <span className="text-[#6b6b6b] italic">NULL</span>}
+                            <span className="text-[#FFFFFF]">
+                              {value !== null ? String(value) : (
+                                <span className="text-[#666666] italic">NULL</span>
+                              )}
                             </span>
                           )}
                         </td>
                       );
                     })}
-                    <td className="px-3 py-2">
+                    <td className="px-4 py-2">
                       <button
                         onClick={() => deleteRow(rowIndex)}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-900/20 p-1.5 rounded transition-colors"
+                        className="text-red-400 hover:text-red-300 p-1 rounded"
                         title="Delete row"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -748,58 +571,12 @@ export default function TablesPageEditable() {
                   </tr>
                 ))}
                 
-                {/* New Row Form */}
-                {isAddingRow && newRow && (
-                  <tr className="border-b border-[#2a2a2a] bg-green-900/10">
-                    {tableData.columns.map((col: string, colIndex: number) => {
-                      const autoGeneratedCols = ['id', 'created_at', 'updated_at'];
-                      const isAutoGenerated = autoGeneratedCols.includes(col.toLowerCase());
-                      const colSchema = tableData.schema?.find((s: any) => s.name === col);
-                      const isRequired = colSchema?.is_nullable === 'NO' && !isAutoGenerated && !colSchema?.column_default;
-                      
-                      return (
-                        <td key={colIndex} className="px-3 py-2">
-                          {isAutoGenerated ? (
-                            <span className="text-[10px] text-[#6b6b6b] italic">auto</span>
-                          ) : (
-                            <input
-                              type="text"
-                              value={newRow[col] || ''}
-                              onChange={(e) => setNewRow({ ...newRow, [col]: e.target.value })}
-                              placeholder={isRequired ? `${col} (required)` : col}
-                              className={`w-full bg-[#1c1c1c] border rounded px-1 py-0.5 text-xs text-[#ededed] focus:outline-none ${
-                                isRequired ? 'border-orange-600' : 'border-green-600'
-                              }`}
-                            />
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="px-3 py-2">
-                      <div className="flex gap-1">
-                        <button
-                          onClick={saveNewRow}
-                          className="text-green-400 hover:text-green-300 text-xs"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={cancelAddRow}
-                          className="text-red-400 hover:text-red-300 text-xs"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-                
-                {tableData.rows && Array.isArray(tableData.rows) && tableData.rows.length === 0 && !isAddingRow && (
+                {tableData.rows.length === 0 && !isAddingRow && (
                   <tr>
-                    <td colSpan={tableData.columns.length + 1} className="px-3 py-8 text-center">
-                      <div className="flex flex-col items-center justify-center text-center">
-                        <h3 className="text-sm font-semibold text-[#ededed] mb-2">No data in this table</h3>
-                        <p className="text-xs text-[#6b6b6b] mb-3">Click "+ Add Row" to insert data</p>
+                    <td colSpan={tableData.columns.length + 1} className="px-4 py-8 text-center">
+                      <div className="text-[#888888]">
+                        <div className="mb-2">No data in this table</div>
+                        <div className="text-sm">Click "Add Row" to add data</div>
                       </div>
                     </td>
                   </tr>
@@ -807,57 +584,60 @@ export default function TablesPageEditable() {
               </tbody>
             </table>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <h3 className="text-sm font-semibold text-[#ededed] mb-2">Unable to load table</h3>
-              <p className="text-xs text-[#6b6b6b]">There was an error loading this table's data</p>
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <div className="text-[#CCCCCC] mb-2">Unable to load table</div>
+                <div className="text-[#888888] text-sm">There was an error loading this table's data</div>
+              </div>
             </div>
           )}
         </div>
-      </div>
-    </div>
 
-    {/* Delete Confirmation Modal */}
-    {showDeleteModal && (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg p-6 max-w-md w-full mx-4">
-          <div className="flex items-start space-x-4">
-            <div className="flex-shrink-0">
-              <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+        {/* Bottom Pagination */}
+        {tableData && (
+          <div 
+            className="px-6 py-3 flex items-center justify-between"
+            style={{
+              background: '#000000',
+              borderTop: '1px solid #1F1F1F'
+            }}
+          >
+            <div className="text-sm text-[#888888]">
+              Showing {startRow} to {endRow} of {totalRows} rows
             </div>
-            <div className="flex-1">
-              <h3 className="text-lg font-semibold text-[#ededed] mb-2">
-                {deleteModalType === 'table' ? 'Delete Table' : 'Delete Row'}
-              </h3>
-              <p className="text-sm text-[#a1a1a1] mb-4">
-                {deleteModalType === 'table' 
-                  ? `Are you sure you want to delete the table "${selectedTable}"? This action cannot be undone and all data will be lost.`
-                  : 'Are you sure you want to delete this row? This action cannot be undone.'
-                }
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setDeleteRowIndex(null);
-                  }}
-                  className="px-4 py-2 text-sm bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#ededed] rounded transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={deleteModalType === 'table' ? confirmDeleteTable : confirmDeleteRow}
-                  className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(Math.max(1, page - 1))}
+                disabled={page === 1}
+                className="px-3 py-1 text-white text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-80 transition-opacity"
+                style={{
+                  background: '#1F1F1F',
+                  border: '1px solid #333333'
+                }}
+              >
+                Previous
+              </button>
+              
+              <span className="text-sm text-[#CCCCCC] px-2">
+                Page {page} of {totalPages}
+              </span>
+              
+              <button
+                onClick={() => setPage(Math.min(totalPages, page + 1))}
+                disabled={page === totalPages}
+                className="px-3 py-1 text-white text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-80 transition-opacity"
+                style={{
+                  background: '#1F1F1F',
+                  border: '1px solid #333333'
+                }}
+              >
+                Next
+              </button>
             </div>
           </div>
-        </div>
+        )}
       </div>
-    )}
-    </>
+    </div>
   );
 }
