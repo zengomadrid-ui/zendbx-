@@ -138,9 +138,10 @@ class SecureUserCreate(BaseModel):
         if len(v) > 100:
             raise ValueError('Name too long')
         
-        # Format check - allow letters, spaces, hyphens, apostrophes
-        if not re.match(r"^[a-zA-Z\s\-\']+$", v):
-            raise ValueError('Invalid name format')
+        # Format check - be more lenient, allow any printable characters after sanitization
+        # Sanitization already removed dangerous characters
+        if len(v.strip()) == 0:
+            return None
         
         return v
 
@@ -256,8 +257,9 @@ class SecureUserUpdate(BaseModel):
         if len(v) > 100:
             raise ValueError('Name too long')
         
-        if len(v) > 0 and not re.match(r"^[a-zA-Z\s\-\']+$", v):
-            raise ValueError('Invalid name format')
+        # After sanitization, if empty, return None
+        if len(v.strip()) == 0:
+            return None
         
         return v if len(v) > 0 else None
     
