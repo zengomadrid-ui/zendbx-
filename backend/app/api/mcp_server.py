@@ -137,28 +137,108 @@ async def mcp_server_request(
     MCP Server JSON-RPC Endpoint (New URL)
     Handles MCP protocol requests with proper authentication
     """
-    """
-    MCP Server JSON-RPC Endpoint
-    Handles MCP protocol requests with proper authentication
-    """
+    # Initialize variables for error handling
+    body = None
+    request_id = None
+    
     try:
-        # Parse JSON-RPC request
-        body = await request.json()
+        logger.info(f"📨 MCP POST request received for project: {project_slug}")
+        logger.info(f"🔑 Authorization header present: {bool(authorization)}")
         
-        if not isinstance(body, dict) or "method" not in body:
-            raise HTTPException(status_code=400, detail="Invalid JSON-RPC request")
+        # Step 1: Parse JSON-RPC request
+        try:
+            body = await request.json()
+            logger.info(f"✅ JSON parsing successful")
+            logger.debug(f"📦 Request body: {body}")
+        except json.JSONDecodeError as e:
+            logger.warning(f"❌ JSON parse error: {str(e)}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32700,
+                        "message": "Parse error: Invalid JSON"
+                    },
+                    "id": None
+                }
+            )
+        except Exception as e:
+            logger.exception(f"❌ Request body read error: {str(e)}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32700,
+                        "message": "Parse error"
+                    },
+                    "id": None
+                }
+            )
+        
+        # Step 2: Validate JSON-RPC request structure
+        if not isinstance(body, dict):
+            logger.warning(f"❌ Invalid request: body is not a dict, type={type(body)}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32600,
+                        "message": "Invalid Request: body must be an object"
+                    },
+                    "id": None
+                }
+            )
+        
+        request_id = body.get("id")
+        
+        if "method" not in body:
+            logger.warning(f"❌ Invalid request: missing 'method' field")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32600,
+                        "message": "Invalid Request: 'method' field is required"
+                    },
+                    "id": request_id
+                }
+            )
         
         method = body.get("method")
         params = body.get("params", {})
-        request_id = body.get("id")
         
-        # Authenticate the request
-        auth_info = await authenticate_mcp_request(project_slug, authorization)
-        project = auth_info["project"]
-        pool = auth_info["pool"]
+        logger.info(f"🔧 JSON-RPC method: {method}")
+        logger.info(f"📋 Parameters: {list(params.keys()) if isinstance(params, dict) else type(params)}")
         
-        # Handle different MCP methods
+        # Step 3: Authenticate the request
+        logger.info(f"🔐 Authenticating request...")
+        try:
+            auth_info = await authenticate_mcp_request(project_slug, authorization)
+            project = auth_info["project"]
+            pool = auth_info["pool"]
+            logger.info(f"✅ Authentication successful for project: {project['name']}")
+        except HTTPException as http_exc:
+            logger.warning(f"❌ Authentication failed: {http_exc.detail}")
+            return JSONResponse(
+                status_code=http_exc.status_code,
+                content={
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32000,  # Server error
+                        "message": f"Authentication failed: {http_exc.detail}"
+                    },
+                    "id": request_id
+                }
+            )
+        
+        # Step 4: Handle different MCP methods
+        logger.info(f"🚀 Executing method: {method}")
         if method == "tools/list":
+            logger.info(f"📋 Listing available tools")
             return JSONResponse(content={
                 "jsonrpc": "2.0",
                 "result": {
@@ -216,6 +296,9 @@ async def mcp_server_request(
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
             
+            logger.info(f"🔧 Tool call: {tool_name}")
+            logger.debug(f"📦 Arguments: {arguments}")
+            
             # Set schema context for project database
             async with pool.acquire() as project_conn:
                 await project_conn.execute(f'SET search_path TO "{project["database_name"]}", public')
@@ -224,6 +307,7 @@ async def mcp_server_request(
                     # Handle database query
                     query = arguments.get("query", "")
                     if not query:
+                        logger.warning(f"❌ Tool call failed: query parameter required")
                         return JSONResponse(content={
                             "jsonrpc": "2.0",
                             "error": {
@@ -234,10 +318,13 @@ async def mcp_server_request(
                         })
                     
                     try:
+                        logger.info(f"🗄️  Executing query: {query[:100]}...")
                         # Execute query on project database with proper schema context
                         if query.strip().upper().startswith("SELECT"):
                             result = await project_conn.fetch(query)
                             rows = [dict(row) for row in result]
+                            
+                            logger.info(f"✅ Query executed successfully: {len(rows)} rows returned")
                             
                             return JSONResponse(content={
                                 "jsonrpc": "2.0",
@@ -255,6 +342,7 @@ async def mcp_server_request(
                         else:
                             # Non-SELECT queries
                             result = await project_conn.execute(query)
+                            logger.info(f"✅ Non-SELECT query executed: {result}")
                             return JSONResponse(content={
                                 "jsonrpc": "2.0",
                                 "result": {
@@ -269,6 +357,7 @@ async def mcp_server_request(
                             })
                             
                     except Exception as e:
+                        logger.exception(f"❌ Query execution failed: {str(e)}")
                         return JSONResponse(content={
                             "jsonrpc": "2.0",
                             "result": {
@@ -491,6 +580,7 @@ async def mcp_server_request(
             })
         
         else:
+            logger.warning(f"❌ Unknown method: {method}")
             return JSONResponse(content={
                 "jsonrpc": "2.0",
                 "error": {
@@ -500,10 +590,12 @@ async def mcp_server_request(
                 "id": request_id
             })
             
-    except HTTPException:
+    except HTTPException as http_exc:
+        logger.exception(f"❌ HTTP exception in MCP server: {http_exc.detail}")
         raise
     except Exception as e:
-        logger.error(f"Error in MCP server request: {str(e)}")
+        logger.exception(f"❌ Unhandled exception in MCP server request")
+        # Use request_id if available, otherwise None
         return JSONResponse(
             status_code=500,
             content={
@@ -512,7 +604,7 @@ async def mcp_server_request(
                     "code": -32603,
                     "message": f"Internal error: {str(e)}"
                 },
-                "id": body.get("id") if isinstance(body, dict) else None
+                "id": request_id
             }
         )
 

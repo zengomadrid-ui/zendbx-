@@ -96,9 +96,14 @@ async def oauth_login(
 
     pool = await get_main_db_pool()
     async with pool.acquire() as conn:
-        # Resolve project
+        # Resolve project (supports both slug and legacy_slug for backward compatibility)
         project = await conn.fetchrow(
-            "SELECT id, slug FROM projects WHERE slug = $1",
+            """
+            SELECT id, slug FROM projects 
+            WHERE slug = $1 OR legacy_slug = $1
+            ORDER BY CASE WHEN slug = $1 THEN 1 ELSE 2 END
+            LIMIT 1
+            """,
             project_ref
         )
         if not project:

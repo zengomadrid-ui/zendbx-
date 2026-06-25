@@ -39,13 +39,15 @@ class StorageRepository:
         except ValueError:
             pass
 
-        # Try slug
+        # Try slug (supports both slug and legacy_slug for backward compatibility)
         row = await conn.fetchrow(
             """
             SELECT p.id, p.slug, p.storage_used, p.max_storage, u.plan
             FROM projects p
             JOIN users u ON u.id = p.user_id
-            WHERE p.slug = $1
+            WHERE p.slug = $1 OR p.legacy_slug = $1
+            ORDER BY CASE WHEN p.slug = $1 THEN 1 ELSE 2 END
+            LIMIT 1
             """,
             identifier,
         )
@@ -75,13 +77,15 @@ class StorageRepository:
         except ValueError:
             pass
 
-        # Try slug
+        # Try slug (supports both slug and legacy_slug for backward compatibility)
         row = await conn.fetchrow(
             """
             SELECT p.id, p.slug, p.storage_used, p.max_storage, u.plan
             FROM projects p
             JOIN users u ON u.id = p.user_id
-            WHERE p.slug = $1 AND p.user_id = $2
+            WHERE (p.slug = $1 OR p.legacy_slug = $1) AND p.user_id = $2
+            ORDER BY CASE WHEN p.slug = $1 THEN 1 ELSE 2 END
+            LIMIT 1
             """,
             identifier,
             user_id,
