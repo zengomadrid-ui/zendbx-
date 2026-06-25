@@ -288,11 +288,10 @@ export default function TablesPage() {
             <input
               type="text"
               placeholder="Search or jump to..."
-              className="w-full text-white text-sm px-3 py-2 rounded focus:outline-none focus:ring-2"
+              className="w-full text-white text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-[#FF6B00]"
               style={{
                 background: '#1F1F1F',
-                border: '1px solid #333333',
-                focusRingColor: '#FF6B00'
+                border: '1px solid #333333'
               }}
             />
             <div className="absolute right-2 top-2">
