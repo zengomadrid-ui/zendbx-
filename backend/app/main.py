@@ -272,7 +272,7 @@ async def version():
 from app.api import (
     auth, projects, tables, queries, ai, imports as imports_router, 
     auto_api, api_keys, oauth, oauth_settings, project_api, project_keys,
-    sessions, admin_users, audit, project_auth, public_auth,
+    sessions, admin_users, admin_security, audit, project_auth, public_auth,
     rest_v1, public_auth_v2,  # New multi-tenant APIs
     db_tables, db_functions, db_triggers, db_schema,  # Database management
     project_stats,  # Project statistics
@@ -370,8 +370,8 @@ app.include_router(setup_project.router, tags=["setup"])
 # MCP Information API
 app.include_router(mcp_info.router, tags=["mcp"])
 
-# MCP Server Implementation
-app.include_router(mcp_server.router, tags=["mcp-server"])
+# MCP Server Implementation - Register with /mcp prefix for new architecture
+app.include_router(mcp_server.router, prefix="/mcp", tags=["mcp-server"])
 
 # Project Settings API
 app.include_router(project_settings.router, tags=["project-settings"])

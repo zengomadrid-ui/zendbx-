@@ -5,9 +5,156 @@ from passlib.context import CryptContext
 from cryptography.fernet import Fernet
 import secrets
 import base64
+import hmac
+import hashlib
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# ============================================
+# SECURE PASSWORD HASHING CONFIGURATION
+# ============================================
+
+# Configure bcrypt with secure parameters
+# - bcrypt with 12 rounds (2^12 = 4096 iterations)
+# - Recommended by OWASP as of 2024
+# - Takes ~300ms to hash (good balance of security vs UX)
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=12,  # Explicit cost factor
+    bcrypt__ident="2b",  # Use modern bcrypt variant
+)
+
+# For detecting and migrating legacy weak hashes
+legacy_pwd_context = CryptContext(
+    schemes=["bcrypt", "md5_crypt", "sha256_crypt", "sha512_crypt"],
+    deprecated=["md5_crypt", "sha256_crypt", "sha512_crypt"],
+)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    Verify a password against a hash using constant-time comparison.
+    
+    Security features:
+    - Uses bcrypt's built-in constant-time comparison
+    - Resistant to timing attacks
+    - Never logs password values
+    
+    Args:
+        plain_password: Password to verify (never logged)
+        hashed_password: Bcrypt hash to compare against
+    
+    Returns:
+        bool: True if password matches, False otherwise
+    """
+    try:
+        # passlib's verify() uses constant-time comparison internally
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception:
+        # If verification fails (corrupt hash, wrong algorithm), return False
+        return False
+
+def verify_password_with_migration_check(
+    plain_password: str, 
+    hashed_password: str
+) -> tuple[bool, bool]:
+    """
+    Verify password and detect if rehashing is needed.
+    
+    Returns:
+        (is_valid, needs_rehash)
+    """
+    try:
+        # Check if hash needs upgrade
+        needs_rehash = pwd_context.needs_update(hashed_password)
+        
+        # Verify using primary context (bcrypt)
+        is_valid = pwd_context.verify(plain_password, hashed_password)
+        
+        return is_valid, needs_rehash
+        
+    except ValueError:
+        # Hash might be using deprecated algorithm (MD5, SHA256, etc.)
+        try:
+            is_valid = legacy_pwd_context.verify(plain_password, hashed_password)
+            # If valid with legacy algorithm, needs rehash
+            return is_valid, is_valid
+        except Exception:
+            return False, False
+    except Exception:
+        return False, False
+
+def get_password_hash(password: str) -> str:
+    """
+    Hash a password using bcrypt with secure parameters.
+    
+    Security features:
+    - bcrypt with 12 rounds (cost factor)
+    - Automatically generates cryptographically secure salt
+    - Output format: $2b$12$[22-char salt][31-char hash]
+    - Never logs the password
+    
+    Args:
+        password: Plain text password (NEVER logged)
+    
+    Returns:
+        str: Bcrypt hash string (safe to store in database)
+    
+    Example output:
+        $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtntnbE3TQCifyuBM.Dq0j7K0JNi
+    """
+    # SECURITY: Never log password value
+    return pwd_context.hash(password)
+
+def hash_password(password: str) -> str:
+    """
+    Alias for get_password_hash for backward compatibility.
+    Hash a password using bcrypt (12 rounds).
+    
+    NEVER logs password values.
+    """
+    return get_password_hash(password)
+
+def is_password_hash_secure(hashed_password: str) -> bool:
+    """
+    Check if a password hash uses secure algorithm (bcrypt).
+    
+    Returns:
+        bool: True if hash is bcrypt with adequate cost factor
+    """
+    try:
+        # Check if it's a bcrypt hash
+        if not hashed_password.startswith("$2"):
+            return False
+        
+        # Check if it needs update (cost factor too low)
+        return not pwd_context.needs_update(hashed_password)
+    except Exception:
+        return False
+
+def detect_weak_hash(hashed_password: str) -> Optional[str]:
+    """
+    Detect if a hash uses a weak algorithm.
+    
+    Returns:
+        str: Algorithm name if weak (md5, sha256, etc.) or None if secure
+    """
+    if hashed_password.startswith("$1$"):
+        return "md5_crypt"
+    elif hashed_password.startswith("$5$"):
+        return "sha256_crypt"
+    elif hashed_password.startswith("$6$"):
+        return "sha512_crypt"
+    elif hashed_password.startswith("$2") and not hashed_password.startswith("$2b$12$"):
+        return "bcrypt_weak"  # Old bcrypt with low cost factor
+    return None
+
+def secure_compare(a: str, b: str) -> bool:
+    """
+    Constant-time string comparison to prevent timing attacks.
+    
+    Use this when comparing secrets, tokens, or hashes.
+    """
+    return hmac.compare_digest(a.encode(), b.encode())
 
 # Initialize encryption for OAuth client secrets
 def get_encryption_key() -> bytes:
@@ -27,18 +174,6 @@ def get_fernet() -> Fernet:
     if _fernet is None:
         _fernet = Fernet(get_encryption_key())
     return _fernet
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against a hash"""
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password: str) -> str:
-    """Hash a password"""
-    return pwd_context.hash(password)
-
-# ============================================
-# OAUTH ENCRYPTION & SECURITY
-# ============================================
 
 def encrypt_client_secret(secret: str) -> str:
     """Encrypt OAuth client secret for storage"""
@@ -97,9 +232,9 @@ def is_valid_https_url(url: str, allow_localhost: bool = True) -> bool:
     except Exception:
         return False
 
-def hash_password(password: str) -> str:
-    """Alias for get_password_hash"""
-    return get_password_hash(password)
+# ============================================
+# OAUTH ENCRYPTION & SECURITY
+# ============================================
 
 def create_access_token(subject: Union[str, dict], expires_delta: Optional[timedelta] = None) -> str:
     """Create JWT access token - accepts either user_id string or data dict"""
@@ -272,7 +407,7 @@ async def get_current_user_from_token(authorization: str = Header(...)) -> UserR
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found"
+                detail="Invalid authentication credentials"
             )
         
         if not user["is_active"]:
@@ -358,8 +493,10 @@ async def resolve_principal(
             )
 
         if not user:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                                detail="User not found")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication credentials"
+            )
         if not user["is_active"]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                                 detail="User account is inactive")
@@ -401,8 +538,15 @@ async def resolve_principal(
                 "SELECT id, jwt_secret FROM projects WHERE id = $1", project_identifier
             )
         except ValueError:
+            # Support both slug and legacy_slug for backward compatibility
             project = await conn.fetchrow(
-                "SELECT id, jwt_secret FROM projects WHERE slug = $1", project_identifier
+                """
+                SELECT id, jwt_secret FROM projects 
+                WHERE slug = $1 OR legacy_slug = $1
+                ORDER BY CASE WHEN slug = $1 THEN 1 ELSE 2 END
+                LIMIT 1
+                """, 
+                project_identifier
             )
 
     if not project or not project["jwt_secret"]:

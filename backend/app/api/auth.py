@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models.schemas import (
     UserCreate, UserLogin, UserResponse, UserUpdate,
@@ -8,14 +8,22 @@ from app.core.security import (
     hash_password, verify_password, create_access_token, decode_token
 )
 from app.core.database import execute_on_main_db
+from app.utils.input_validation import (
+    SecureUserCreate, SecureUserLogin, SecurePasswordReset,
+    SecureForgotPassword, SecureUserUpdate,
+    validate_and_sanitize_input, log_validation_failure,
+    log_suspicious_activity
+)
 from typing import Optional
 from uuid import UUID
 import secrets
 from datetime import datetime, timedelta
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ValidationError
+import logging
 
 router = APIRouter()
 security = HTTPBearer()
+logger = logging.getLogger(__name__)
 
 # ============================================
 # PASSWORD RESET SCHEMAS
@@ -79,11 +87,32 @@ async def get_current_user(
 # ============================================
 
 @router.post("/signup", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def signup(user_data: UserCreate):
-    """Register a new user"""
+async def signup(request: Request, raw_data: dict):
+    """
+    Register a new user with comprehensive server-side validation.
+    All inputs are validated and sanitized regardless of frontend checks.
+    """
     
     try:
-        print(f"📝 Signup attempt for email: {user_data.email}")
+        # Server-side validation and sanitization
+        try:
+            user_data = validate_and_sanitize_input(
+                raw_data,
+                SecureUserCreate,
+                context="signup"
+            )
+        except HTTPException as e:
+            # Log validation failure (generic message to user)
+            log_validation_failure(
+                endpoint="signup",
+                email=raw_data.get('email', 'unknown'),
+                error_type="validation",
+                details={"status": "rejected"}
+            )
+            raise
+        
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info(f"📝 Signup attempt for email: {user_data.email} from IP: {client_ip}")
         
         # Check if user already exists
         existing = await execute_on_main_db(
@@ -92,23 +121,24 @@ async def signup(user_data: UserCreate):
         )
         
         if existing:
-            print(f"❌ Email already registered: {user_data.email}")
+            logger.warning(f"❌ Signup failed - email already registered: {user_data.email}")
+            # Generic error message (don't reveal if email exists)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
+                detail="Unable to create account. Please check your information and try again."
             )
         
-        print(f"✅ Email available: {user_data.email}")
+        logger.info(f"✅ Email available: {user_data.email}")
         
-        # Hash password
+        # Hash password (already validated for strength)
         try:
             password_hash = hash_password(user_data.password)
-            print(f"✅ Password hashed successfully")
+            logger.info(f"✅ Password hashed successfully")
         except Exception as e:
-            print(f"❌ Password hashing failed: {str(e)}")
+            logger.error(f"❌ Password hashing failed: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Password hashing failed: {str(e)}"
+                detail="Unable to process request. Please try again."
             )
         
         # Create user
@@ -123,19 +153,15 @@ async def signup(user_data: UserCreate):
                 password_hash,
                 user_data.full_name
             )
-            print(f"✅ User created in database")
+            logger.info(f"✅ User created in database: {user_data.email}")
         except Exception as e:
-            print(f"❌ Database insert failed: {str(e)}")
-            print(f"❌ Error type: {type(e).__name__}")
-            import traceback
-            print(f"❌ Traceback: {traceback.format_exc()}")
+            logger.error(f"❌ Database insert failed: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create user: {str(e)}"
+                detail="Unable to create account. Please try again."
             )
         
         user = dict(result[0])
-        print(f"✅ User data retrieved: {user['email']}")
         
         # Create access token with role
         try:
@@ -144,15 +170,15 @@ async def signup(user_data: UserCreate):
                 "email": user["email"],
                 "role": user.get("role", "user")
             })
-            print(f"✅ Access token created")
+            logger.info(f"✅ Access token created for: {user['email']}")
         except Exception as e:
-            print(f"❌ Token creation failed: {str(e)}")
+            logger.error(f"❌ Token creation failed: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Token creation failed: {str(e)}"
+                detail="Unable to complete registration. Please try again."
             )
         
-        print(f"🎉 Signup successful for: {user['email']}")
+        logger.info(f"🎉 Signup successful for: {user['email']} from IP: {client_ip}")
         
         return Token(
             access_token=access_token,
@@ -160,18 +186,25 @@ async def signup(user_data: UserCreate):
         )
         
     except HTTPException:
-        # Re-raise HTTP exceptions
         raise
+    except ValidationError as e:
+        # Log validation error details server-side
+        log_validation_failure(
+            endpoint="signup",
+            email=raw_data.get('email', 'unknown'),
+            error_type="pydantic_validation",
+            details={"errors": e.errors()}
+        )
+        # Return generic error
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid input provided. Please check your data and try again."
+        )
     except Exception as e:
-        # Catch any unexpected errors
-        print(f"❌ Unexpected error in signup: {str(e)}")
-        print(f"❌ Error type: {type(e).__name__}")
-        import traceback
-        print(f"❌ Full traceback:")
-        print(traceback.format_exc())
+        logger.error(f"❌ Unexpected error in signup: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Signup failed: {str(e)}"
+            detail="Unable to process request. Please try again."
         )
 
 # ============================================
@@ -179,65 +212,157 @@ async def signup(user_data: UserCreate):
 # ============================================
 
 @router.post("/login", response_model=Token)
-async def login(credentials: UserLogin):
-    """Login user"""
+async def login(request: Request, raw_data: dict):
+    """
+    Login user with comprehensive rate limiting and account lockout.
+    
+    Features:
+    - IP-based rate limiting (10 requests/minute)
+    - Account lockout after 5 failed attempts
+    - Progressive delays (1s, 2s, 5s, 10s)
+    - Generic error messages
+    """
     
     try:
-        print(f"🔐 Login attempt for email: {credentials.email}")
+        # Get client IP
+        client_ip = request.client.host if request.client else "unknown"
         
-        # Get user
+        # PHASE 1: IP-BASED RATE LIMITING
+        # Check if IP has exceeded request rate limit
+        from app.services.rate_limiter import rate_limiter
+        
+        ip_allowed, ip_retry_after = await rate_limiter.check_ip_rate_limit(client_ip)
+        if not ip_allowed:
+            logger.warning(f"🚫 IP rate limit exceeded: {client_ip}")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many login requests. Please try again later.",
+                headers={"Retry-After": str(ip_retry_after)} if ip_retry_after else {}
+            )
+        
+        # PHASE 2: INPUT VALIDATION
+        # Server-side validation and sanitization
+        try:
+            credentials = validate_and_sanitize_input(
+                raw_data,
+                SecureUserLogin,
+                context="login"
+            )
+        except HTTPException as e:
+            log_validation_failure(
+                endpoint="login",
+                email=raw_data.get('email', 'unknown'),
+                error_type="validation",
+                details={"status": "rejected"}
+            )
+            raise
+        
+        logger.info(f"🔐 Login attempt for email: {credentials.email} from IP: {client_ip}")
+        
+        # PHASE 3: ACCOUNT LOCKOUT CHECK
+        # Check if account is locked due to failed attempts
+        account_allowed, account_retry_after, failure_count = await rate_limiter.check_account_lockout(
+            credentials.email
+        )
+        
+        if not account_allowed:
+            logger.warning(
+                f"🚫 Account locked: {credentials.email} from IP: {client_ip} ({failure_count} failures)"
+            )
+            log_suspicious_activity(
+                activity_type="locked_account_login_attempt",
+                identifier=credentials.email,
+                details={"ip": client_ip, "failures": failure_count}
+            )
+            # Generic error - don't reveal lockout reason
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials. Please check your email and password.",
+                headers={"Retry-After": str(account_retry_after)} if account_retry_after else {}
+            )
+        
+        # PHASE 4: GET USER FROM DATABASE
         result = await execute_on_main_db(
             "SELECT id, email, full_name, avatar_url, is_active, is_verified, plan, role, password_hash, created_at FROM users WHERE email = $1",
             credentials.email
         )
         
         if not result:
-            print(f"❌ User not found: {credentials.email}")
+            logger.warning(f"❌ Login failed - user not found: {credentials.email}")
+            
+            # Record failed attempt (even for non-existent users to prevent enumeration)
+            failure_count, delay = await rate_limiter.record_failed_login(
+                credentials.email,
+                client_ip
+            )
+            
+            # Apply progressive delay
+            await rate_limiter.apply_progressive_delay(delay)
+            
+            # Check if this triggered lockout
+            if failure_count >= 5:
+                await rate_limiter.send_lockout_notification(credentials.email, failure_count)
+            
+            # Generic error message
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail="Invalid credentials. Please check your email and password."
             )
         
         user = dict(result[0])
-        print(f"✅ User found: {user['email']}")
+        logger.info(f"✅ User found: {user['email']}")
         
-        # HIGH-1 FIX: Brute-force protection — check failed attempt counter before
-        # doing the expensive bcrypt verify. Limit: 10 failures per 15 minutes.
-        from app.core.redis_client import redis_client
-        lockout_key = f"login_failures:{credentials.email}"
-        if redis_client.enabled:
-            failure_count = await redis_client.get_counter(lockout_key, "count")
-            if failure_count >= 10:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Too many failed login attempts. Please try again in 15 minutes.",
-                    headers={"Retry-After": "900"},
-                )
-
-        # Verify password
-        if not verify_password(credentials.password, user["password_hash"]):
-            print(f"❌ Invalid password for: {credentials.email}")
-            # Increment failure counter (TTL = 15 minutes = 900 seconds)
-            if redis_client.enabled:
-                await redis_client.increment_counter(lockout_key, "count", ttl=900)
+        # PHASE 5: VERIFY PASSWORD WITH AUTOMATIC MIGRATION
+        # Use migration service to verify and upgrade weak hashes
+        from app.services.password_migration import password_migration_service
+        
+        password_valid, was_migrated = await password_migration_service.check_and_migrate_password(
+            user_id=user["id"],
+            email=user["email"],
+            plain_password=credentials.password,
+            current_hash=user["password_hash"]
+        )
+        
+        if not password_valid:
+            logger.warning(f"❌ Login failed - invalid password: {credentials.email}")
+            
+            # Record failed attempt
+            failure_count, delay = await rate_limiter.record_failed_login(
+                credentials.email,
+                client_ip
+            )
+            
+            # Apply progressive delay BEFORE responding
+            await rate_limiter.apply_progressive_delay(delay)
+            
+            # Check if this triggered lockout (5 failures = lockout)
+            if failure_count >= 5:
+                await rate_limiter.send_lockout_notification(credentials.email, failure_count)
+                logger.warning(f"🔒 Account locked: {credentials.email} after {failure_count} failures")
+            
+            # Generic error message (don't reveal lockout status)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail="Invalid credentials. Please check your email and password."
             )
         
-        print(f"✅ Password verified for: {credentials.email}")
+        logger.info(f"✅ Password verified for: {credentials.email}")
         
-        # Clear failure counter on successful login
-        if redis_client.enabled:
-            await redis_client.reset_counter(f"login_failures:{credentials.email}", "count")
-
-        # Check if active
+        # Log migration if it occurred
+        if was_migrated:
+            logger.info(f"🔒 Password hash automatically upgraded for: {credentials.email}")
+        
+        # PHASE 6: CHECK ACCOUNT STATUS
         if not user["is_active"]:
-            print(f"❌ Inactive account: {credentials.email}")
+            logger.warning(f"❌ Login blocked - inactive account: {credentials.email}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Account is inactive"
+                detail="Account is not active. Please contact support."
             )
+        
+        # PHASE 7: SUCCESSFUL LOGIN
+        # Clear failed attempts on successful login
+        await rate_limiter.clear_failed_attempts(credentials.email)
         
         # Create access token with role
         access_token = create_access_token({
@@ -249,7 +374,7 @@ async def login(credentials: UserLogin):
         # Remove password_hash from response
         user.pop("password_hash")
         
-        print(f"🎉 Login successful for: {user['email']}")
+        logger.info(f"🎉 Login successful for: {user['email']} from IP: {client_ip}")
         
         return Token(
             access_token=access_token,
@@ -258,13 +383,22 @@ async def login(credentials: UserLogin):
         
     except HTTPException:
         raise
+    except ValidationError as e:
+        log_validation_failure(
+            endpoint="login",
+            email=raw_data.get('email', 'unknown'),
+            error_type="pydantic_validation",
+            details={"errors": e.errors()}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid input provided. Please check your credentials and try again."
+        )
     except Exception as e:
-        print(f"❌ Unexpected error in login: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
+        logger.error(f"❌ Unexpected error in login: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login failed: {str(e)}"
+            detail="Unable to process login. Please try again."
         )
 
 # ============================================
@@ -283,46 +417,75 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 @router.put("/profile", response_model=UserResponse)
 async def update_profile(
-    update_data: UserUpdate,
+    raw_data: dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Update user profile"""
-    
-    # Build update query
-    updates = []
-    values = []
-    param_count = 1
-    
-    if update_data.full_name is not None:
-        updates.append(f"full_name = ${param_count}")
-        values.append(update_data.full_name)
-        param_count += 1
-    
-    if update_data.avatar_url is not None:
-        updates.append(f"avatar_url = ${param_count}")
-        values.append(update_data.avatar_url)
-        param_count += 1
-    
-    if not updates:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No fields to update"
-        )
-    
-    # Add user_id to values
-    values.append(current_user["id"])
-    
-    # Execute update
-    query = f"""
-        UPDATE users 
-        SET {', '.join(updates)}, updated_at = NOW()
-        WHERE id = ${param_count}
-        RETURNING id, email, full_name, avatar_url, is_active, is_verified, plan, role, created_at
+    """
+    Update user profile with server-side validation and sanitization.
     """
     
-    result = await execute_on_main_db(query, *values)
+    try:
+        # Server-side validation and sanitization
+        try:
+            update_data = validate_and_sanitize_input(
+                raw_data,
+                SecureUserUpdate,
+                context="profile_update"
+            )
+        except HTTPException as e:
+            log_validation_failure(
+                endpoint="profile_update",
+                email=current_user.get('email', 'unknown'),
+                error_type="validation"
+            )
+            raise
+        
+        # Build update query
+        updates = []
+        values = []
+        param_count = 1
+        
+        if update_data.full_name is not None:
+            updates.append(f"full_name = ${param_count}")
+            values.append(update_data.full_name)
+            param_count += 1
+        
+        if update_data.avatar_url is not None:
+            updates.append(f"avatar_url = ${param_count}")
+            values.append(update_data.avatar_url)
+            param_count += 1
+        
+        if not updates:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No fields to update"
+            )
+        
+        # Add user_id to values
+        values.append(current_user["id"])
+        
+        # Execute update
+        query = f"""
+            UPDATE users 
+            SET {', '.join(updates)}, updated_at = NOW()
+            WHERE id = ${param_count}
+            RETURNING id, email, full_name, avatar_url, is_active, is_verified, plan, role, created_at
+        """
+        
+        result = await execute_on_main_db(query, *values)
+        
+        logger.info(f"✅ Profile updated for user: {current_user['email']}")
+        
+        return UserResponse(**dict(result[0]))
     
-    return UserResponse(**dict(result[0]))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error updating profile: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to update profile. Please try again."
+        )
 
 # ============================================
 # LOGOUT (Client-side token removal)
@@ -341,129 +504,207 @@ async def logout(current_user: dict = Depends(get_current_user)):
 # ============================================
 
 @router.post("/forgot-password", response_model=MessageResponse)
-async def forgot_password(request: ForgotPasswordRequest):
-    """Request password reset - sends reset token"""
+async def forgot_password(request: Request, raw_data: dict):
+    """
+    Request password reset with server-side validation.
+    Generic response prevents email enumeration attacks.
+    """
     
-    # Check if user exists
-    result = await execute_on_main_db(
-        "SELECT id, email, full_name FROM users WHERE email = $1 AND is_active = TRUE",
-        request.email
-    )
-    
-    if not result:
-        # Don't reveal if email exists or not (security best practice)
+    try:
+        # Server-side validation and sanitization
+        try:
+            reset_request = validate_and_sanitize_input(
+                raw_data,
+                SecureForgotPassword,
+                context="forgot_password"
+            )
+        except HTTPException as e:
+            log_validation_failure(
+                endpoint="forgot_password",
+                email=raw_data.get('email', 'unknown'),
+                error_type="validation"
+            )
+            raise
+        
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info(f"🔑 Password reset request for: {reset_request.email} from IP: {client_ip}")
+        
+        # Check if user exists
+        result = await execute_on_main_db(
+            "SELECT id, email, full_name FROM users WHERE email = $1 AND is_active = TRUE",
+            reset_request.email
+        )
+        
+        if not result:
+            # Don't reveal if email exists or not (security best practice)
+            logger.info(f"Password reset requested for non-existent email: {reset_request.email}")
+            return MessageResponse(
+                message="If your email is registered, you will receive a password reset link shortly.",
+                success=True
+            )
+        
+        user = dict(result[0])
+        
+        # Generate secure reset token
+        reset_token = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
+        
+        # Store reset token in database
+        await execute_on_main_db(
+            """
+            INSERT INTO password_reset_tokens (user_id, token, expires_at)
+            VALUES ($1, $2, $3)
+            """,
+            user["id"],
+            reset_token,
+            expires_at
+        )
+        
+        # In production, send email here
+        # TODO: Integrate email service (SendGrid, AWS SES, etc.)
+        
+        logger.info(f"🔑 Password reset token generated for {user['email']}")
+        logger.info(f"🔗 Reset link: http://localhost:3000/reset-password?token={reset_token}")
+        
         return MessageResponse(
             message="If your email is registered, you will receive a password reset link shortly.",
             success=True
         )
     
-    user = dict(result[0])
-    
-    # Generate secure reset token
-    reset_token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=1)  # Token valid for 1 hour
-    
-    # Store reset token in database
-    await execute_on_main_db(
-        """
-        INSERT INTO password_reset_tokens (user_id, token, expires_at)
-        VALUES ($1, $2, $3)
-        """,
-        user["id"],
-        reset_token,
-        expires_at
-    )
-    
-    # In production, send email here
-    # For now, we'll just return success
-    # TODO: Integrate email service (SendGrid, AWS SES, etc.)
-    
-    print(f"🔑 Password reset token for {user['email']}: {reset_token}")
-    print(f"🔗 Reset link: http://localhost:3000/reset-password?token={reset_token}")
-    
-    return MessageResponse(
-        message="If your email is registered, you will receive a password reset link shortly.",
-        success=True
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in forgot password: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to process request. Please try again."
+        )
 
 # ============================================
 # RESET PASSWORD
 # ============================================
 
 @router.post("/reset-password", response_model=MessageResponse)
-async def reset_password(request: ResetPasswordRequest):
-    """Reset password using token"""
+async def reset_password(request: Request, raw_data: dict):
+    """
+    Reset password using token with comprehensive validation.
+    Validates token format and new password strength.
+    """
     
-    # Validate token
-    result = await execute_on_main_db(
-        """
-        SELECT prt.id, prt.user_id, prt.expires_at, prt.used, u.email
-        FROM password_reset_tokens prt
-        JOIN users u ON prt.user_id = u.id
-        WHERE prt.token = $1
-        """,
-        request.token
-    )
-    
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired reset token"
+    try:
+        # Server-side validation and sanitization
+        try:
+            reset_data = validate_and_sanitize_input(
+                raw_data,
+                SecurePasswordReset,
+                context="reset_password"
+            )
+        except HTTPException as e:
+            log_validation_failure(
+                endpoint="reset_password",
+                error_type="validation",
+                details={"has_token": bool(raw_data.get('token'))}
+            )
+            raise
+        
+        client_ip = request.client.host if request.client else "unknown"
+        logger.info(f"🔑 Password reset attempt from IP: {client_ip}")
+        
+        # Validate token
+        result = await execute_on_main_db(
+            """
+            SELECT prt.id, prt.user_id, prt.expires_at, prt.used, u.email
+            FROM password_reset_tokens prt
+            JOIN users u ON prt.user_id = u.id
+            WHERE prt.token = $1
+            """,
+            reset_data.token
+        )
+        
+        if not result:
+            logger.warning(f"❌ Invalid reset token from IP: {client_ip}")
+            log_suspicious_activity(
+                activity_type="invalid_reset_token",
+                identifier=client_ip,
+                details={"reason": "token_not_found"}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+        
+        token_data = dict(result[0])
+        
+        # Check if token is already used
+        if token_data["used"]:
+            logger.warning(f"❌ Reset token already used: {token_data['email']}")
+            log_suspicious_activity(
+                activity_type="reused_reset_token",
+                identifier=token_data['email'],
+                details={"ip": client_ip}
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This reset token has already been used"
+            )
+        
+        # Check if token is expired
+        if datetime.utcnow() > token_data["expires_at"].replace(tzinfo=None):
+            logger.warning(f"❌ Expired reset token: {token_data['email']}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Reset token has expired. Please request a new one."
+            )
+        
+        # Hash new password (already validated for strength by SecurePasswordReset)
+        password_hash = hash_password(reset_data.new_password)
+        
+        # Update user password
+        await execute_on_main_db(
+            """
+            UPDATE users 
+            SET password_hash = $1, updated_at = NOW()
+            WHERE id = $2
+            """,
+            password_hash,
+            token_data["user_id"]
+        )
+        
+        # Mark token as used
+        await execute_on_main_db(
+            """
+            UPDATE password_reset_tokens 
+            SET used = TRUE
+            WHERE id = $1
+            """,
+            token_data["id"]
+        )
+        
+        logger.info(f"✅ Password reset successful for user: {token_data['email']}")
+        
+        return MessageResponse(
+            message="Password has been reset successfully. You can now login with your new password.",
+            success=True
         )
     
-    token_data = dict(result[0])
-    
-    # Check if token is already used
-    if token_data["used"]:
+    except HTTPException:
+        raise
+    except ValidationError as e:
+        log_validation_failure(
+            endpoint="reset_password",
+            error_type="pydantic_validation",
+            details={"errors": e.errors()}
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This reset token has already been used"
+            detail="Invalid input provided. Please check your data and try again."
         )
-    
-    # Check if token is expired
-    if datetime.utcnow() > token_data["expires_at"].replace(tzinfo=None):
+    except Exception as e:
+        logger.error(f"❌ Error in password reset: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Reset token has expired. Please request a new one."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to reset password. Please try again."
         )
-    
-    # Validate new password
-    if len(request.new_password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
-        )
-    
-    # Hash new password
-    password_hash = hash_password(request.new_password)
-    
-    # Update user password
-    await execute_on_main_db(
-        """
-        UPDATE users 
-        SET password_hash = $1, updated_at = NOW()
-        WHERE id = $2
-        """,
-        password_hash,
-        token_data["user_id"]
-    )
-    
-    # Mark token as used
-    await execute_on_main_db(
-        """
-        UPDATE password_reset_tokens 
-        SET used = TRUE
-        WHERE id = $1
-        """,
-        token_data["id"]
-    )
-    
-    print(f"✅ Password reset successful for user: {token_data['email']}")
-    
-    return MessageResponse(
-        message="Password has been reset successfully. You can now login with your new password.",
-        success=True
-    )
 
 # ============================================
 # VERIFY RESET TOKEN
