@@ -112,6 +112,14 @@ class Settings(BaseSettings):
     BASE_DOMAIN: str = "zendbx.in"  # Production domain
     ENABLE_SUBDOMAIN_ROUTING: bool = True  # Enable project.zendbx.in routing
     
+    # Email Configuration
+    EMAIL_HOST: str = "smtp.gmail.com"
+    EMAIL_PORT: int = 587
+    EMAIL_USER: str = ""  # zendbx@gmail.com
+    EMAIL_PASSWORD: str = ""  # App-specific password
+    EMAIL_FROM: str = "ZenDBX <zendbx@gmail.com>"
+    EMAIL_USE_TLS: bool = True
+    
     class Config:
         # Never load a .env file in production.
         # Check both the raw os.environ AND the default — if ENVIRONMENT is

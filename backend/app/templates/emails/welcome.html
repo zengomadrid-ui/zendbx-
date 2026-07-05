@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome to ZenDBX{% endblock %}
+
+{% block content %}
+<!-- Greeting -->
+<h1>Welcome to ZenDBX!</h1>
+
+<p>Hi <span class="highlight">{{ user_name }}</span>,</p>
+
+<p>Welcome to ZenDBX. Your account has been created successfully and you're ready to build.</p>
+
+<p>With ZenDBX you can:</p>
+
+<!-- Features List -->
+<div class="feature-list">
+    <div class="feature-item">
+        <span class="feature-icon">⚡</span>
+        <span class="feature-text"><strong>Create PostgreSQL databases</strong> with just a few clicks</span>
+    </div>
+    <div class="feature-item">
+        <span class="feature-icon">🔐</span>
+        <span class="feature-text"><strong>Authentication</strong> built-in with JWT, OAuth, and session management</span>
+    </div>
+    <div class="feature-item">
+        <span class="feature-icon">📦</span>
+        <span class="feature-text"><strong>Storage</strong> with powerful file management and CDN</span>
+    </div>
+    <div class="feature-item">
+        <span class="feature-icon">🔄</span>
+        <span class="feature-text"><strong>Realtime APIs</strong> for live data synchronization</span>
+    </div>
+    <div class="feature-item">
+        <span class="feature-icon">🤖</span>
+        <span class="feature-text"><strong>AI Native Backend</strong> with smart query generation</span>
+    </div>
+    <div class="feature-item">
+        <span class="feature-icon">🧠</span>
+        <span class="feature-text"><strong>MCP Integration</strong> for seamless AI agent connectivity</span>
+    </div>
+    <div class="feature-item">
+        <span class="feature-icon">🚀</span>
+        <span class="feature-text"><strong>Deploy faster</strong> with automatic scaling and backups</span>
+    </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- Call to Action Buttons -->
+<div class="cta-container">
+    <a href="{{ dashboard_url }}" class="btn btn-primary">Create Your First Project</a>
+    <a href="{{ docs_url }}" class="btn btn-secondary">Documentation</a>
+</div>
+
+<div class="divider"></div>
+
+<!-- Help Section -->
+<div class="help-section">
+    <p class="help-title">Need help?</p>
+    <p class="help-text">Simply reply to this email or contact our support team at <a href="mailto:{{ support_email }}" style="color: #FF6B00; text-decoration: none;">{{ support_email }}</a></p>
+</div>
+
+<!-- Closing -->
+<p style="margin-top: 32px;">Happy Building!</p>
+<p style="color: #BDBDBD; margin: 0;">— Team ZenDBX</p>
+{% endblock %}

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>{% block title %}ZenDBX{% endblock %}</title>
+    <!--[if mso]>
+    <style type="text/css">
+        body, table, td {font-family: Arial, Helvetica, sans-serif !important;}
+    </style>
+    <![endif]-->
+    <style>
+        /* Reset styles */
+        body {
+            margin: 0;
+            padding: 0;
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+        }
+        
+        table {
+            border-collapse: collapse;
+            mso-table-lspace: 0pt;
+            mso-table-rspace: 0pt;
+        }
+        
+        img {
+            border: 0;
+            height: auto;
+            line-height: 100%;
+            outline: none;
+            text-decoration: none;
+            -ms-interpolation-mode: bicubic;
+        }
+        
+        /* Base styles */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #F5F5F5;
+            color: #1A1A1A;
+            line-height: 1.6;
+        }
+        
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #F5F5F5;
+        }
+        
+        .email-card {
+            background-color: #FFFFFF;
+            border-radius: 16px;
+            margin: 40px 20px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            border: 1px solid #E5E5E5;
+        }
+        
+        .email-header {
+            text-align: center;
+            padding: 40px 20px 30px;
+            background: linear-gradient(135deg, #FFFFFF 0%, #FFF5EE 100%);
+            border-bottom: 3px solid #FF6B00;
+        }
+        
+        .logo {
+            max-width: 180px;
+            height: auto;
+            margin-bottom: 10px;
+        }
+        
+        .email-body {
+            padding: 30px 40px;
+            color: #1A1A1A;
+            background-color: #FFFFFF;
+        }
+        
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1A1A1A;
+            margin: 0 0 20px;
+            line-height: 1.2;
+        }
+        
+        p {
+            font-size: 16px;
+            color: #4A4A4A;
+            margin: 0 0 16px;
+            line-height: 1.6;
+        }
+        
+        .highlight {
+            color: #FF6B00;
+            font-weight: 600;
+        }
+        
+        .feature-list {
+            margin: 24px 0;
+            padding: 0;
+        }
+        
+        .feature-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 12px;
+            padding: 0;
+        }
+        
+        .feature-icon {
+            font-size: 18px;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        
+        .feature-text {
+            color: #4A4A4A;
+            font-size: 15px;
+        }
+        
+        .cta-container {
+            text-align: center;
+            margin: 32px 0;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 14px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background-color: #FF6B00;
+            color: #FFFFFF;
+            box-shadow: 0 4px 12px rgba(255, 107, 0, 0.3);
+        }
+        
+        .btn-primary:hover {
+            background-color: #FF8A33;
+        }
+        
+        .btn-secondary {
+            background-color: #FFFFFF;
+            color: #FF6B00;
+            border: 2px solid #FF6B00;
+            margin-left: 12px;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #FFF5EE;
+        }
+        
+        .help-section {
+            background-color: #FFF5EE;
+            border-left: 4px solid #FF6B00;
+            padding: 20px;
+            margin: 24px 0;
+            border-radius: 8px;
+        }
+        
+        .help-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1A1A1A;
+            margin: 0 0 8px;
+        }
+        
+        .help-text {
+            font-size: 14px;
+            color: #4A4A4A;
+            margin: 0;
+        }
+        
+        .email-footer {
+            background-color: #F5F5F5;
+            padding: 30px 40px;
+            text-align: center;
+            border-top: 1px solid #E5E5E5;
+        }
+        
+        .footer-text {
+            font-size: 14px;
+            color: #888888;
+            margin: 8px 0;
+        }
+        
+        .footer-link {
+            color: #FF6B00;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        
+        .footer-link:hover {
+            text-decoration: underline;
+        }
+        
+        .divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #E5E5E5, transparent);
+            margin: 24px 0;
+        }
+        
+        /* Responsive styles */
+        @media only screen and (max-width: 600px) {
+            .email-card {
+                margin: 20px 10px;
+            }
+            
+            .email-body {
+                padding: 20px;
+            }
+            
+            .email-footer {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 24px;
+            }
+            
+            .btn {
+                display: block;
+                margin: 10px 0;
+            }
+            
+            .btn-secondary {
+                margin-left: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="email-card">
+            <!-- Header -->
+            <div class="email-header">
+                {% block logo %}
+                <!-- ZenDBX Logo -->
+                <img src="cid:logo" alt="ZenDBX" class="logo" style="max-width: 180px; height: auto; display: block; margin: 0 auto;">
+                {% endblock %}
+            </div>
+            
+            <!-- Body Content -->
+            <div class="email-body">
+                {% block content %}
+                {% endblock %}
+            </div>
+            
+            <!-- Footer -->
+            <div class="email-footer">
+                {% block footer %}
+                <p class="footer-text">© {{ year }} ZenDBX</p>
+                <p class="footer-text">Built with ❤️ in India</p>
+                <p class="footer-text">
+                    <a href="https://zendbx.in" class="footer-link">zendbx.in</a>
+                </p>
+                {% endblock %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

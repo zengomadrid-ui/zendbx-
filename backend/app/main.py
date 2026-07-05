@@ -1,5 +1,4 @@
 from fastapi import FastAPI, Request, status
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi import Header
 from typing import Optional
@@ -22,23 +21,43 @@ app = FastAPI(
     description="ZendBX — instant backend platform. Postgres, REST APIs, auth, storage and realtime in one.",
 )
 
-# Global exception handler — re-raise HTTPException so FastAPI handles it correctly,
-# catch everything else as 500
+# Global exception handlers to ensure CORS headers on all error responses
+# Note: The CORS middleware handles the actual header injection, but we need
+# to ensure proper JSON responses for all exception types
 from fastapi import HTTPException as _HTTPException
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(_HTTPException)
+async def http_exception_handler(request: Request, exc: _HTTPException):
+    """Handle FastAPI HTTPException with proper error response."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+@app.exception_handler(StarletteHTTPException)
+async def starlette_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Handle Starlette HTTPException with proper error response."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle request validation errors (422) with detailed error info."""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": "Request validation failed",
+            "errors": exc.errors(),
+        },
+    )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    # Let FastAPI's own HTTPException handler deal with known HTTP errors
-    if isinstance(exc, _HTTPException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail},
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Credentials": "true",
-            }
-        )
-
+    """Handle all unhandled exceptions as 500 errors."""
     print(f"❌ UNHANDLED EXCEPTION: {type(exc).__name__}: {str(exc)}")
     print(f"❌ Traceback:")
     print(traceback.format_exc())
@@ -49,50 +68,24 @@ async def global_exception_handler(request: Request, exc: Exception):
             "detail": f"Internal server error: {str(exc)}",
             "type": type(exc).__name__
         },
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Allow-Methods": "*",
-            "Access-Control-Allow-Headers": "*",
-        }
     )
 
 # CORS middleware - Must be added before routes
-# Production-safe CORS configuration
+# Use our comprehensive CORS middleware that handles all response types
+from app.middleware.cors_middleware import CORSMiddleware, get_allowed_origins_for_environment
+
+allowed_origins = get_allowed_origins_for_environment(settings.ENVIRONMENT)
+
 if settings.ENVIRONMENT == "production":
-    # Production: Strict CORS — no localhost origins.
-    # HIGH-6 FIX: Removed http://localhost:* origins from production.
-    # Localhost origins allow any local attacker to make credentialed
-    # cross-origin requests to the production API from their machine.
-    allowed_origins = [
-        "https://devapp.zendbx.in",
-        "https://zendbx.in",
-        "https://www.zendbx.in",
-        "https://zendbx-2-zpp9.onrender.com",
-    ]
-    allow_credentials = True
     print(f"🔒 Production CORS enabled for: {allowed_origins}")
 else:
-    # Development: Allow specific origins for better security
-    allowed_origins = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:8000",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:8000",
-    ]
-    allow_credentials = True
     print(f"🔓 Development CORS enabled for: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=allow_credentials,
+    allowed_origins=allowed_origins,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
-    # HIGH-6 FIX: Explicit header allowlist instead of wildcard.
-    # Browsers reject wildcard Access-Control-Allow-Headers when
-    # credentials:true is set, and it also leaks internal header names.
     allow_headers=[
         "Authorization",
         "apikey",
@@ -103,8 +96,15 @@ app.add_middleware(
         "x-internal-secret",
         "Cache-Control",
         "Pragma",
+        "X-Requested-With",
     ],
-    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Used"],
+    expose_headers=[
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Used",
+        "Content-Length",
+        "Content-Range",
+    ],
     max_age=3600,
 )
 

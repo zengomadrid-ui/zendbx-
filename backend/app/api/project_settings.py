@@ -1,10 +1,10 @@
 """
 Project Settings API
-Manage project-wide settings like RLS and Realtime
+Manage project-wide settings like RLS, Realtime, and CORS
 """
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from app.core.database import execute_on_main_db, execute_on_project_db
 from app.api.auth import get_current_user
 import logging
@@ -18,9 +18,17 @@ class ProjectSettingsResponse(BaseModel):
     realtime_enabled: bool
     rls_table_count: int
     realtime_table_count: int
+    allowed_origins: Optional[List[str]] = None
+    cors_max_age: int = 3600
+    cors_allow_credentials: bool = True
 
 class ToggleSettingRequest(BaseModel):
     enabled: bool
+
+class CORSSettingsRequest(BaseModel):
+    allowed_origins: Optional[List[str]] = None
+    cors_max_age: Optional[int] = 3600
+    cors_allow_credentials: Optional[bool] = True
 
 @router.get("/{project_id}/settings", response_model=ProjectSettingsResponse)
 async def get_project_settings(

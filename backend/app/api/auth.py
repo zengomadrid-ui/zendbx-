@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Request
+from fastapi import APIRouter, HTTPException, Depends, status, Request, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models.schemas import (
     UserCreate, UserLogin, UserResponse, UserUpdate,
@@ -14,6 +14,7 @@ from app.utils.input_validation import (
     validate_and_sanitize_input, log_validation_failure,
     log_suspicious_activity
 )
+from app.services.email_service import get_email_service
 from typing import Optional
 from uuid import UUID
 import secrets
@@ -87,10 +88,11 @@ async def get_current_user(
 # ============================================
 
 @router.post("/signup", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def signup(request: Request, raw_data: dict):
+async def signup(request: Request, raw_data: dict, background_tasks: BackgroundTasks):
     """
     Register a new user with comprehensive server-side validation.
     All inputs are validated and sanitized regardless of frontend checks.
+    Sends welcome email in background.
     """
     
     try:
@@ -178,6 +180,15 @@ async def signup(request: Request, raw_data: dict):
                 detail="Unable to complete registration. Please try again."
             )
         
+        # Schedule welcome email in background (never blocks signup)
+        background_tasks.add_task(
+            send_welcome_email_background,
+            user_id=user["id"],
+            user_email=user["email"],
+            user_name=user.get("full_name") or user["email"]
+        )
+        logger.info(f"📧 Welcome email scheduled for: {user['email']}")
+        
         logger.info(f"🎉 Signup successful for: {user['email']} from IP: {client_ip}")
         
         return Token(
@@ -206,6 +217,40 @@ async def signup(request: Request, raw_data: dict):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to process request. Please try again."
         )
+
+
+async def send_welcome_email_background(user_id: UUID, user_email: str, user_name: str):
+    """
+    Background task to send welcome email and update database.
+    Never blocks signup - runs asynchronously.
+    """
+    try:
+        logger.info(f"📧 Starting welcome email background task for: {user_email}")
+        
+        # Get email service
+        email_service = get_email_service()
+        
+        # Send welcome email
+        success = await email_service.send_welcome_email(user_email, user_name)
+        
+        if success:
+            # Update database to mark email as sent
+            await execute_on_main_db(
+                """
+                UPDATE users 
+                SET welcome_email_sent = TRUE, welcome_email_sent_at = NOW()
+                WHERE id = $1
+                """,
+                user_id
+            )
+            logger.info(f"✅ Welcome email sent and database updated for: {user_email}")
+        else:
+            logger.error(f"❌ Failed to send welcome email for: {user_email}")
+            
+    except Exception as e:
+        # Log error but don't raise - never block signup
+        logger.error(f"❌ Error in welcome email background task for {user_email}: {str(e)}")
+
 
 # ============================================
 # LOGIN
@@ -793,3 +838,49 @@ async def update_last_selected_project(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update last selected project: {str(e)}"
         )
+
+
+# ============================================
+# TEST ENDPOINT: Send Welcome Email
+# ============================================
+
+@router.post("/test/send-welcome-email", response_model=MessageResponse)
+async def test_send_welcome_email(
+    email: EmailStr,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Test endpoint to send welcome email to any address.
+    Protected - requires authentication.
+    """
+    
+    try:
+        logger.info(f"🧪 Test welcome email request from: {current_user['email']} to: {email}")
+        
+        # Get email service
+        email_service = get_email_service()
+        
+        # Send welcome email
+        user_name = email.split('@')[0].title()  # Use email prefix as name
+        success = await email_service.send_welcome_email(email, user_name)
+        
+        if success:
+            logger.info(f"✅ Test welcome email sent to: {email}")
+            return MessageResponse(
+                message=f"Welcome email sent successfully to {email}",
+                success=True
+            )
+        else:
+            logger.error(f"❌ Failed to send test welcome email to: {email}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send welcome email. Check server logs for details."
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ Error in test welcome email: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send test email: {str(e)}"
+        )
+
