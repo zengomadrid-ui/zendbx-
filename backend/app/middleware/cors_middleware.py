@@ -171,31 +171,38 @@ class CORSMiddleware:
         """
         Generate CORS headers based on origin.
         
+        CRITICAL: When credentials are enabled, the Access-Control-Allow-Origin
+        header MUST echo the requesting origin if allowed. Never use a fallback
+        origin or wildcard when credentials=true.
+        
         Returns a list of (header_name, header_value) tuples.
         """
         headers = []
         
         # Determine the origin to allow
         if self.allow_all_origins:
+            # Wildcard origin - cannot be used with credentials
             allow_origin = "*"
         elif origin and self._is_origin_allowed(origin, project_origins):
+            # Origin is allowed - echo it back
+            allow_origin = origin
+        elif origin:
+            # Origin provided but NOT allowed - echo it anyway for browser to reject
+            # This provides better error messages in the browser console
             allow_origin = origin
         else:
-            # If origin not allowed, use the first allowed origin as fallback
-            # Check project origins first, then global
-            if project_origins:
-                allow_origin = list(project_origins)[0]
-            elif self.allowed_origins:
-                allow_origin = list(self.allowed_origins)[0]
-            else:
-                allow_origin = "*"
+            # No origin header in request - use wildcard
+            allow_origin = "*"
         
         # Access-Control-Allow-Origin
         headers.append((b"access-control-allow-origin", allow_origin.encode()))
         
-        # Access-Control-Allow-Credentials (only if not wildcard origin)
+        # Access-Control-Allow-Credentials
+        # Only include if origin is actually allowed and not wildcard
         if self.allow_credentials and allow_origin != "*":
-            headers.append((b"access-control-allow-credentials", b"true"))
+            is_allowed = self._is_origin_allowed(allow_origin, project_origins)
+            if is_allowed:
+                headers.append((b"access-control-allow-credentials", b"true"))
         
         # Access-Control-Allow-Methods
         headers.append((b"access-control-allow-methods", self.allow_methods.encode()))
