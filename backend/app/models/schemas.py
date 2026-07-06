@@ -183,6 +183,8 @@ class QueryResult(BaseModel):
     auto_fixed: Optional[bool] = False
     original_sql: Optional[str] = None
     fixed_sql: Optional[str] = None
+    # Metadata refresh flag for DDL operations
+    metadata_refresh: Optional[bool] = False
 
 class QueryHistoryResponse(BaseModel):
     id: UUID

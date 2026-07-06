@@ -48,28 +48,43 @@ async def ensure_table_exists(
 
 
 async def create_users_table(conn: asyncpg.Connection):
-    """Create standard users table"""
+    """Create auth.users table (Phase 1 Authentication Foundation)"""
+    # Create auth schema if it doesn't exist
+    await conn.execute("CREATE SCHEMA IF NOT EXISTS auth")
+    
+    # Create auth.users table with all Phase 1 fields
     await conn.execute("""
-        CREATE TABLE users (
+        CREATE TABLE IF NOT EXISTS auth.users (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email TEXT UNIQUE NOT NULL,
-            name TEXT,
-            provider TEXT DEFAULT 'email',
+            email TEXT NOT NULL,
+            username TEXT,
+            password_hash TEXT NOT NULL DEFAULT '',
+            provider TEXT NOT NULL DEFAULT 'email',
+            email_verified BOOLEAN DEFAULT FALSE,
+            is_active BOOLEAN DEFAULT TRUE,
             avatar_url TEXT,
             metadata JSONB DEFAULT '{}'::jsonb,
-            is_active BOOLEAN DEFAULT TRUE,
+            last_login_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW(),
-            last_login_at TIMESTAMPTZ
+            updated_at TIMESTAMPTZ DEFAULT NOW()
         );
         
-        CREATE INDEX idx_users_email ON users(email);
-        CREATE INDEX idx_users_created_at ON users(created_at DESC);
+        ALTER TABLE auth.users ADD CONSTRAINT IF NOT EXISTS auth_users_email_unique UNIQUE (email);
+        ALTER TABLE auth.users ADD CONSTRAINT IF NOT EXISTS auth_users_username_unique UNIQUE (username);
+        
+        CREATE INDEX IF NOT EXISTS idx_auth_users_email_lower ON auth.users (LOWER(email));
+        CREATE INDEX IF NOT EXISTS idx_auth_users_username_lower ON auth.users (LOWER(username)) WHERE username IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_auth_users_provider ON auth.users (provider);
+        CREATE INDEX IF NOT EXISTS idx_auth_users_is_active ON auth.users (is_active);
+        CREATE INDEX IF NOT EXISTS idx_auth_users_created_at ON auth.users (created_at DESC);
     """)
-    logger.info("Created users table with indexes")
+    logger.info("Created auth.users table with indexes (Phase 1)")
 
-    # Install auth.users compatibility view now that the table exists
+    # Install auth.users compatibility view
     await _install_auth_users_view(conn)
+    
+    # Also create a view in public schema for backward compatibility
+    await _create_public_users_view(conn)
 
 
 async def _install_auth_users_view(conn: asyncpg.Connection):
@@ -81,49 +96,37 @@ async def _install_auth_users_view(conn: asyncpg.Connection):
     try:
         # Ensure auth schema exists first
         await conn.execute("CREATE SCHEMA IF NOT EXISTS auth")
-        # Call the installer function if it exists, otherwise create the view directly
-        fn_exists = await conn.fetchval("""
-            SELECT EXISTS(
-                SELECT 1 FROM pg_proc p
-                JOIN pg_namespace n ON p.pronamespace = n.oid
-                WHERE n.nspname = 'auth' AND p.proname = '_install_users_view'
-            )
-        """)
-        if fn_exists:
-            await conn.execute("SELECT auth._install_users_view()")
-        else:
-            # Fallback: create view directly (functions not yet installed)
-            await conn.execute("""
-                CREATE OR REPLACE VIEW auth.users AS
-                SELECT
-                    id,
-                    email,
-                    name,
-                    name                                        AS full_name,
-                    provider,
-                    provider                                    AS oauth_provider,
-                    (metadata ->> 'oauth_id')                  AS oauth_id,
-                    avatar_url,
-                    is_active,
-                    CASE
-                        WHEN provider = 'email'
-                        THEN COALESCE((metadata ->> 'is_verified')::BOOLEAN, FALSE)
-                        ELSE TRUE
-                    END                                         AS is_verified,
-                    COALESCE(metadata ->> 'plan', 'free')          AS plan,
-                    COALESCE(metadata ->> 'role', 'authenticated') AS role,
-                    metadata,
-                    created_at,
-                    updated_at,
-                    last_login_at,
-                    email       AS email_confirmed_at,
-                    last_login_at AS last_sign_in_at
-                FROM users
-            """)
-        logger.info("auth.users compatibility view installed")
+        # The auth.users table is the real table now, no view needed
+        logger.info("auth.users table is primary - no view needed")
     except Exception as e:
         # Non-fatal — view will be created on next migration run
-        logger.warning(f"Could not install auth.users view: {e}")
+        logger.warning(f"Note: auth.users is the primary table: {e}")
+
+
+async def _create_public_users_view(conn: asyncpg.Connection):
+    """
+    Create a backward-compatible view in public schema that maps to auth.users.
+    This ensures existing code that queries 'users' or 'public.users' still works.
+    """
+    try:
+        await conn.execute("""
+            CREATE OR REPLACE VIEW public.users AS
+            SELECT
+                id,
+                email,
+                username AS name,
+                provider,
+                avatar_url,
+                is_active,
+                metadata,
+                created_at,
+                updated_at,
+                last_login_at
+            FROM auth.users;
+        """)
+        logger.info("Created public.users backward-compatibility view -> auth.users")
+    except Exception as e:
+        logger.warning(f"Could not create public.users view: {e}")
 
 
 async def create_generic_table(
@@ -206,37 +209,39 @@ async def auto_sync_user(
     name: Optional[str] = None,
     provider: str = "email",
     avatar_url: Optional[str] = None,
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict] = None,
+    password_hash: str = ""
 ):
     """
-    Automatically sync user to users table
+    Automatically sync user to auth.users table (Phase 1)
     Creates table if doesn't exist, uses UPSERT to avoid duplicates
     
     Args:
         pool: Database connection pool
         user_id: User UUID
         email: User email
-        name: User name
+        name: User name (mapped to username field)
         provider: Auth provider (email, google, github, etc.)
         avatar_url: Avatar URL
         metadata: Additional metadata
+        password_hash: Bcrypt hashed password (empty string for OAuth users)
     """
-    # Ensure users table exists
+    # Ensure auth.users table exists
     await ensure_table_exists(pool, "users")
     
-    # UPSERT user
+    # UPSERT user into auth.users
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO users (id, email, name, provider, avatar_url, metadata, last_login_at)
-            VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            INSERT INTO auth.users (id, email, username, password_hash, provider, avatar_url, metadata, last_login_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
             ON CONFLICT (id) DO UPDATE SET
                 email = EXCLUDED.email,
-                name = EXCLUDED.name,
+                username = EXCLUDED.username,
                 provider = EXCLUDED.provider,
                 avatar_url = EXCLUDED.avatar_url,
                 metadata = EXCLUDED.metadata,
                 last_login_at = NOW(),
                 updated_at = NOW()
-        """, user_id, email, name, provider, avatar_url, metadata or {})
+        """, user_id, email, name, password_hash, provider, avatar_url, metadata or {})
     
-    logger.info(f"User {email} synced to users table")
+    logger.info(f"User {email} synced to auth.users table")

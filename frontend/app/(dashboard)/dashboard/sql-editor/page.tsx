@@ -112,7 +112,7 @@ export default function SQLEditorPage() {
     setShowExplanation(false);
 
     try {
-      const res = await apiFetch(`api/projects/${projectId}/query`, {
+      const res = await apiFetch(`/api/projects/${projectId}/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -137,6 +137,15 @@ export default function SQLEditorPage() {
       }
       setResult(data);
       
+      // Check if this was a DDL operation that requires metadata refresh
+      if (data.metadata_refresh) {
+        console.log('DDL operation detected. Table metadata will be refreshed automatically.');
+        // Emit a custom event to notify table explorer to refresh
+        window.dispatchEvent(new CustomEvent('tables-metadata-refresh', { 
+          detail: { timestamp: Date.now() } 
+        }));
+      }
+      
       // Notify user if data was modified (INSERT/UPDATE/DELETE)
       const isDataModification = /^\s*(INSERT|UPDATE|DELETE)/i.test(sql.trim());
       if (isDataModification && data.row_count !== undefined) {
@@ -157,7 +166,7 @@ export default function SQLEditorPage() {
     setAiLoading(true);
 
     try {
-      const res = await apiFetch(`api/ai/${projectId}/explain-error`, {
+      const res = await apiFetch(`/api/ai/${projectId}/explain-error`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -200,7 +209,7 @@ export default function SQLEditorPage() {
     setAiResponse(null);
 
     try {
-      const res = await apiFetch(`api/ai/${projectId}/query`, {
+      const res = await apiFetch(`/api/ai/${projectId}/query`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -234,7 +243,7 @@ export default function SQLEditorPage() {
     setExplanation(null);
 
     try {
-      const res = await apiFetch(`api/ai/${projectId}/explain`, {
+      const res = await apiFetch(`/api/ai/${projectId}/explain`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

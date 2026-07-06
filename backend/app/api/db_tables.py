@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
+import time
 from app.services.db_manager import TableManager
 from app.services.schema_parser import SchemaParser
 from app.api.auth import get_current_user
@@ -141,5 +142,23 @@ async def drop_column(
     try:
         result = await TableManager.drop_column(db_info["pool"], table_name, column_name, db_info["schema"])
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/metadata/refresh")
+async def refresh_metadata(
+    db_info = Depends(get_project_db_from_header),
+    current_user: dict = Depends(get_current_user)
+):
+    """Refresh cached table metadata after DDL operations"""
+    try:
+        # For now, this endpoint signals success
+        # In the future, we can add actual caching and invalidation logic here
+        return {
+            "success": True,
+            "message": "Metadata refresh triggered successfully",
+            "timestamp": time.time()
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

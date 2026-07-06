@@ -27,7 +27,7 @@ export default function SQLQueryPage() {
 
     try {
       const { apiFetch } = await import('@/lib/fetch-utils');
-      const res = await apiFetch(`api/projects/${projectId}/query`, {
+      const res = await apiFetch(`/api/projects/${projectId}/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql }),

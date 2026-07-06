@@ -41,33 +41,52 @@ class SchemaParser:
     })
 
     @staticmethod
-    async def get_tables(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
+    async def get_tables(db: asyncpg.Pool, schema_name: str = None, include_system: bool = False) -> List[Dict]:
         """
         Get all user-created tables with their columns from the project's schema.
+        BY DEFAULT: Only shows tables in 'public' schema.
         Excludes system schemas (auth, information_schema, pg_catalog) and
         all internal platform tables regardless of which schema they live in.
+        
+        Args:
+            db: Database connection pool
+            schema_name: Specific schema to query (default: 'public')
+            include_system: If True, include system tables in results (default: False)
         """
         try:
-            # If schema_name is provided, ONLY search that schema
-            # Otherwise search all non-system schemas (for backwards compatibility)
-            if schema_name:
-                schema_filter = f"AND t.table_schema = '{schema_name}'"
-                # Only exclude system tables if we're NOT in a project-specific schema
-                # Project schemas (proj_*, custom names like 'zenhire') can have 'users' tables
-                is_project_schema = schema_name.startswith('proj_') or schema_name not in ['public', 'auth']
-                if is_project_schema:
-                    # For project schemas, don't exclude common table names like 'users'
-                    # Only exclude internal ZenDBX tables
-                    exclude_filter = ""
-                else:
-                    # For public/auth schemas, exclude system tables
+            # DEFAULT: If no schema specified, use 'public' schema only
+            if not schema_name:
+                schema_name = 'public'
+            
+            # Always filter to the specified schema (default: public)
+            schema_filter = f"AND t.table_schema = '{schema_name}'"
+            
+            # For 'public' schema: exclude system/platform tables
+            # For 'auth' schema: always exclude (unless explicitly requested)
+            # For project schemas (proj_*): allow all user tables
+            if schema_name == 'public':
+                # Public schema: exclude ZenDBX platform tables
+                if not include_system:
                     excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
                     exclude_filter = f"AND t.table_name NOT IN ({excluded_tables})"
+                else:
+                    exclude_filter = ""
+            elif schema_name == 'auth':
+                # Auth schema: hide by default (internal authentication tables)
+                if not include_system:
+                    exclude_filter = "AND 1=0"  # Hide all auth tables by default
+                else:
+                    exclude_filter = ""
+            elif schema_name.startswith('proj_'):
+                # Project-specific schemas: show all user tables
+                exclude_filter = ""
             else:
-                schema_filter = "AND t.table_schema NOT IN ('auth', 'information_schema', 'pg_catalog', 'pg_toast', 'public')"
-                # When no schema specified, exclude system tables
-                excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
-                exclude_filter = f"AND t.table_name NOT IN ({excluded_tables})"
+                # Other schemas: apply system table filter
+                if not include_system:
+                    excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
+                    exclude_filter = f"AND t.table_name NOT IN ({excluded_tables})"
+                else:
+                    exclude_filter = ""
 
             # Query only the project's schema
             query = f"""

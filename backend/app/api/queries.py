@@ -14,6 +14,30 @@ import re
 
 router = APIRouter()
 
+# Maximum SQL query length to store in database (to avoid asyncpg parameter limits)
+MAX_SQL_QUERY_LENGTH = 50000  # 50KB should be reasonable
+
+
+def truncate_sql_for_storage(sql: str) -> tuple[str, bool]:
+    """
+    Truncate SQL query if it exceeds maximum storage length.
+    
+    Args:
+        sql: The SQL query string
+        
+    Returns:
+        tuple: (truncated_sql, was_truncated)
+    """
+    if sql is None:
+        return None, False
+        
+    if len(sql) <= MAX_SQL_QUERY_LENGTH:
+        return sql, False
+    
+    # Truncate and add indicator
+    truncated = sql[:MAX_SQL_QUERY_LENGTH] + "\n\n-- [TRUNCATED: Query too long for storage]"
+    return truncated, True
+
 # ============================================
 # HELPER: Get Project Schema for Auto-Fix
 # ============================================
@@ -160,6 +184,12 @@ async def execute_query(
     current_sql = query_data.sql
     auto_fixed = False
     
+    # Detect if this is a DDL operation that should trigger metadata refresh
+    ddl_operations = ['CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'CREATE INDEX', 
+                      'DROP INDEX', 'CREATE SCHEMA', 'DROP SCHEMA']
+    sql_upper = current_sql.upper()
+    is_ddl_operation = any(op in sql_upper for op in ddl_operations)
+    
     try:
         # Execute query
         result = await execute_on_project_db(
@@ -236,6 +266,10 @@ async def execute_query(
             result_data.auto_fixed = True
             result_data.original_sql = original_sql
             result_data.fixed_sql = current_sql
+        
+        # Add metadata_refresh flag if this was a DDL operation
+        if is_ddl_operation:
+            result_data.metadata_refresh = True
         
         return result_data
         

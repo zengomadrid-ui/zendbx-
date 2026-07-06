@@ -30,13 +30,25 @@ export default function TablesPage() {
 
   useEffect(() => {
     fetchTables();
+    
+    // Listen for metadata refresh events from SQL editor
+    const handleMetadataRefresh = () => {
+      console.log('Metadata refresh event received. Refreshing tables...');
+      fetchTables();
+    };
+    
+    window.addEventListener('tables-metadata-refresh', handleMetadataRefresh);
+    
+    return () => {
+      window.removeEventListener('tables-metadata-refresh', handleMetadataRefresh);
+    };
   }, []);
 
   const fetchTables = async () => {
     try {
       const projectId = localStorage.getItem("current_project_id");
       
-      const response = await apiFetch(`api/projects/${projectId}/db/tables`, {
+      const response = await apiFetch(`/api/projects/${projectId}/db/tables`, {
         headers: {
           "x-project-id": projectId || ""
         }
@@ -82,7 +94,7 @@ export default function TablesPage() {
         ORDER BY t.tablename;
       `;
       
-      const response = await apiFetch(`api/projects/${projectId}/query`, {
+      const response = await apiFetch(`/api/projects/${projectId}/query`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -116,7 +128,7 @@ export default function TablesPage() {
     try {
       const projectId = localStorage.getItem("current_project_id");
       
-      const response = await apiFetch(`api/projects/${projectId}/db/tables`, {
+      const response = await apiFetch(`/api/projects/${projectId}/db/tables`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -144,7 +156,7 @@ export default function TablesPage() {
     try {
       const projectId = localStorage.getItem("current_project_id");
       
-      const response = await apiFetch(`api/projects/${projectId}/db/tables/${tableName}`, {
+      const response = await apiFetch(`/api/projects/${projectId}/db/tables/${tableName}`, {
         method: "DELETE",
         headers: {
           "x-project-id": projectId || ""

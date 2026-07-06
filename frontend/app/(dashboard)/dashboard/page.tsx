@@ -115,11 +115,11 @@ export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
 
   const fetchStats = useCallback(async (pid: string) => {
-    try { const r = await apiFetch(`api/projects/${pid}/overview`); if (r.ok) setStats(await r.json()); } catch {}
+    try { const r = await apiFetch(`/api/projects/${pid}/overview`); if (r.ok) setStats(await r.json()); } catch {}
   }, []);
 
   const fetchQueries = useCallback(async (pid: string) => {
-    try { const r = await apiFetch(`api/projects/${pid}/query/history?limit=8`); if (r.ok) setQueries(await r.json()); } catch {}
+    try { const r = await apiFetch(`/api/projects/${pid}/query/history?limit=8`); if (r.ok) setQueries(await r.json()); } catch {}
   }, []);
 
   useEffect(() => {
