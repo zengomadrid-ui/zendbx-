@@ -194,55 +194,90 @@ async def signup(project_id: UUID, request_data: SignUpRequest):
 @router.post("/v1/auth/{project_id}/login")
 async def login(project_id: UUID, request_data: SignInRequest):
     """Public — no API key needed. Verifies credentials against project schema."""
-    project = await get_project_info(project_id)
-    schema = project['database_name']
+    try:
+        project = await get_project_info(project_id)
+        schema = project['database_name']
 
-    pool = await get_main_db_pool()
-    async with pool.acquire() as conn:
-        await conn.execute(f'SET search_path TO "{schema}", public')
-        await set_rls_context(conn, user_id=None, role='service_role')
+        pool = await get_main_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(f'SET search_path TO "{schema}", public')
+            await set_rls_context(conn, user_id=None, role='service_role')
 
-        user = await conn.fetchrow("""
-            SELECT id, email, name, provider, metadata, created_at
-            FROM users WHERE email = $1
-        """, request_data.email)
+            # Check which columns exist to avoid UndefinedColumnError
+            columns_result = await conn.fetch("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'users' 
+                AND table_schema = $1
+            """, schema)
+            
+            available_columns = {row['column_name'] for row in columns_result}
+            
+            # Build query with only available columns
+            select_cols = ['id', 'email']
+            for col in ['name', 'provider', 'metadata', 'created_at']:
+                if col in available_columns:
+                    select_cols.append(col)
+            
+            query = f"SELECT {', '.join(select_cols)} FROM users WHERE email = $1"
+            user = await conn.fetchrow(query, request_data.email)
 
-        if not user:
-            # Generic error - don't reveal if email exists
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials. Please check your email and password."
-            )
+            if not user:
+                # Generic error - don't reveal if email exists
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid credentials. Please check your email and password."
+                )
 
-        metadata = parse_metadata(user['metadata'])
-        password_hash = metadata.get('password_hash')
+            metadata = parse_metadata(user.get('metadata')) if 'metadata' in available_columns else {}
+            password_hash = metadata.get('password_hash')
 
-        if not password_hash or not verify_password(request_data.password, password_hash):
-            # Generic error - don't reveal which part failed
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid credentials. Please check your email and password."
-            )
+            if not password_hash or not verify_password(request_data.password, password_hash):
+                # Generic error - don't reveal which part failed
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid credentials. Please check your email and password."
+                )
 
-        await set_rls_context(conn, user_id=str(user['id']), role='authenticated')
-        await conn.execute(
-            "UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1",
-            user['id']
-        )
-        logger.info(f"✅ Login: {user['email']} in schema '{schema}'")
+            await set_rls_context(conn, user_id=str(user['id']), role='authenticated')
+            
+            # Update last_login if columns exist
+            update_fields = []
+            if 'last_login_at' in available_columns:
+                update_fields.append("last_login_at = NOW()")
+            if 'updated_at' in available_columns:
+                update_fields.append("updated_at = NOW()")
+            
+            if update_fields:
+                await conn.execute(
+                    f"UPDATE users SET {', '.join(update_fields)} WHERE id = $1",
+                    user['id']
+                )
+            
+            logger.info(f"✅ Login: {user['email']} in schema '{schema}'")
 
-    access_token = generate_jwt(user['id'], project_id, user['email'], project['jwt_secret'], project.get('slug'))
+        access_token = generate_jwt(user['id'], project_id, user['email'], project['jwt_secret'], project.get('slug'))
 
-    return {
-        "access_token": access_token,
-        "user": {
-            "id": str(user['id']),
-            "email": user['email'],
-            "name": user['name'],
-            "provider": user['provider'],
-            "created_at": user['created_at'].isoformat()
+        return {
+            "access_token": access_token,
+            "user": {
+                "id": str(user['id']),
+                "email": user['email'],
+                "name": user.get('name') if 'name' in available_columns else None,
+                "provider": user.get('provider', 'email') if 'provider' in available_columns else 'email',
+                "created_at": user['created_at'].isoformat() if 'created_at' in available_columns and user.get('created_at') else None
+            }
         }
-    }
+    except HTTPException:
+        # Re-raise HTTP exceptions (401, 404, etc.)
+        raise
+    except Exception as e:
+        # Log unexpected errors but return 401 to avoid revealing system details
+        logger.error(f"❌ Login error for {request_data.email}: {type(e).__name__}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials. Please check your email and password."
+        )
 
 
 # ── Get user ──────────────────────────────────────────────────────────────────
@@ -272,10 +307,24 @@ async def get_user(project_id: UUID, authorization: str = Header(None)):
         await conn.execute(f'SET search_path TO "{schema}", public')
         await set_rls_context(conn, user_id=str(user_id), role='authenticated')
 
-        user = await conn.fetchrow("""
-            SELECT id, email, name, provider, avatar_url, is_active, created_at, last_login_at
-            FROM users WHERE id = $1
-        """, user_id)
+        # Check which columns exist
+        columns_result = await conn.fetch("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'users' 
+            AND table_schema = $1
+        """, schema)
+        
+        available_columns = {row['column_name'] for row in columns_result}
+        
+        # Build query with available columns
+        select_cols = ['id', 'email']
+        for col in ['name', 'provider', 'avatar_url', 'is_active', 'created_at', 'last_login_at']:
+            if col in available_columns:
+                select_cols.append(col)
+        
+        query = f"SELECT {', '.join(select_cols)} FROM users WHERE id = $1"
+        user = await conn.fetchrow(query, user_id)
 
         if not user:
             # Generic error - don't reveal if user doesn't exist
@@ -287,10 +336,10 @@ async def get_user(project_id: UUID, authorization: str = Header(None)):
     return {
         "id": str(user['id']),
         "email": user['email'],
-        "name": user['name'],
-        "provider": user['provider'],
-        "avatar_url": user['avatar_url'],
-        "is_active": user['is_active'],
-        "created_at": user['created_at'].isoformat() if user['created_at'] else None,
-        "last_login_at": user['last_login_at'].isoformat() if user['last_login_at'] else None
+        "name": user.get('name') if 'name' in available_columns else None,
+        "provider": user.get('provider', 'email') if 'provider' in available_columns else 'email',
+        "avatar_url": user.get('avatar_url') if 'avatar_url' in available_columns else None,
+        "is_active": user.get('is_active', True) if 'is_active' in available_columns else True,
+        "created_at": user['created_at'].isoformat() if 'created_at' in available_columns and user.get('created_at') else None,
+        "last_login_at": user['last_login_at'].isoformat() if 'last_login_at' in available_columns and user.get('last_login_at') else None
     }
