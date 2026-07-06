@@ -5,6 +5,7 @@
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ============================================
 -- HELPER FUNCTIONS
@@ -22,9 +23,74 @@ END;
 ';
 
 -- ============================================
--- CREATE AUTH SCHEMA FOR RLS FUNCTIONS
+-- CREATE AUTH SCHEMA AND USERS TABLE (Phase 1)
 -- ============================================
 CREATE SCHEMA IF NOT EXISTS auth;
+
+-- Create auth.users table (Phase 1 Foundation)
+CREATE TABLE IF NOT EXISTS auth.users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email TEXT NOT NULL,
+    username TEXT,
+    password_hash TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'email',
+    email_verified BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    avatar_url TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT auth_users_email_unique UNIQUE (email),
+    CONSTRAINT auth_users_username_unique UNIQUE (username)
+);
+
+-- Indexes for auth.users
+CREATE INDEX IF NOT EXISTS idx_auth_users_email_lower ON auth.users (LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_auth_users_username_lower ON auth.users (LOWER(username)) WHERE username IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_auth_users_provider ON auth.users (provider);
+CREATE INDEX IF NOT EXISTS idx_auth_users_is_active ON auth.users (is_active);
+CREATE INDEX IF NOT EXISTS idx_auth_users_created_at ON auth.users (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_users_provider_email ON auth.users (provider, LOWER(email));
+
+-- Trigger to auto-update updated_at
+CREATE OR REPLACE FUNCTION auth.update_users_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS '
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+';
+
+DROP TRIGGER IF EXISTS trigger_auth_users_updated_at ON auth.users;
+CREATE TRIGGER trigger_auth_users_updated_at
+    BEFORE UPDATE ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION auth.update_users_updated_at();
+
+-- Trigger to normalize email/username
+CREATE OR REPLACE FUNCTION auth.normalize_user_fields()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS '
+BEGIN
+    IF NEW.email IS NOT NULL THEN
+        NEW.email = LOWER(TRIM(NEW.email));
+    END IF;
+    IF NEW.username IS NOT NULL THEN
+        NEW.username = TRIM(NEW.username);
+    END IF;
+    RETURN NEW;
+END;
+';
+
+DROP TRIGGER IF EXISTS trigger_auth_users_normalize ON auth.users;
+CREATE TRIGGER trigger_auth_users_normalize
+    BEFORE INSERT OR UPDATE ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION auth.normalize_user_fields();
 
 -- ============================================
 -- RLS HELPER FUNCTIONS (SQL Editor Compatible)

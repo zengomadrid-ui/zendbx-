@@ -125,27 +125,47 @@ async def setup_project(
             await project_conn.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto"')
             results["steps"].append("✅ PostgreSQL extensions enabled")
             
-            # Create users table
+            # Create auth schema (Phase 1)
+            await project_conn.execute('CREATE SCHEMA IF NOT EXISTS auth')
+            results["steps"].append("✅ Auth schema created")
+            
+            # Create auth.users table (Phase 1 Foundation)
             await project_conn.execute("""
-                CREATE TABLE IF NOT EXISTS users (
+                CREATE TABLE IF NOT EXISTS auth.users (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    email VARCHAR(255) UNIQUE NOT NULL,
-                    name VARCHAR(255),
-                    provider VARCHAR(50) DEFAULT 'email',
-                    avatar_url TEXT,
+                    email TEXT NOT NULL,
+                    username TEXT,
+                    password_hash TEXT NOT NULL DEFAULT '',
+                    provider TEXT NOT NULL DEFAULT 'email',
+                    email_verified BOOLEAN DEFAULT FALSE,
                     is_active BOOLEAN DEFAULT TRUE,
-                    metadata JSONB DEFAULT '{}',
+                    avatar_url TEXT,
+                    metadata JSONB DEFAULT '{}'::jsonb,
+                    last_login_at TIMESTAMPTZ,
                     created_at TIMESTAMPTZ DEFAULT NOW(),
                     updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    last_login_at TIMESTAMPTZ
+                    CONSTRAINT auth_users_email_unique UNIQUE (email),
+                    CONSTRAINT auth_users_username_unique UNIQUE (username)
                 )
             """)
             
             await project_conn.execute(
-                'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)'
+                'CREATE INDEX IF NOT EXISTS idx_auth_users_email_lower ON auth.users (LOWER(email))'
+            )
+            await project_conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_auth_users_username_lower ON auth.users (LOWER(username)) WHERE username IS NOT NULL'
+            )
+            await project_conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_auth_users_provider ON auth.users (provider)'
+            )
+            await project_conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_auth_users_is_active ON auth.users (is_active)'
+            )
+            await project_conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_auth_users_created_at ON auth.users (created_at DESC)'
             )
             
-            results["steps"].append("✅ Users table created")
+            results["steps"].append("✅ auth.users table created (Phase 1)")
             
             await project_conn.close()
             

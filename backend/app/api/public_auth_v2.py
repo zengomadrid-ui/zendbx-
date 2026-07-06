@@ -10,6 +10,7 @@ from uuid import UUID
 import bcrypt
 import jwt
 import json
+import traceback
 from datetime import datetime, timedelta
 import logging
 
@@ -117,166 +118,177 @@ async def get_user_options(project_id: UUID):
 
 @router.post("/v1/auth/{project_id}/signup")
 async def signup(project_id: UUID, request_data: SignUpRequest):
-    """Public — no API key needed. Creates user in project schema."""
-    project = await get_project_info(project_id)
-    schema = project['database_name']
-
-    pool = await get_main_db_pool()
-    async with pool.acquire() as conn:
-        # Use project schema
-        await conn.execute(f'SET search_path TO "{schema}", public')
-        await set_rls_context(conn, user_id=None, role='service_role')
-
-        # Ensure users table exists with correct schema
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                email VARCHAR(255) UNIQUE NOT NULL,
-                name VARCHAR(255),
-                provider VARCHAR(50) DEFAULT 'email',
-                avatar_url TEXT,
-                is_active BOOLEAN DEFAULT TRUE,
-                metadata JSONB DEFAULT '{}',
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                updated_at TIMESTAMPTZ DEFAULT NOW(),
-                last_login_at TIMESTAMPTZ
-            )
-        """)
-        # Add missing columns for existing tables (safe, idempotent)
-        for col_sql in [
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255)",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS provider VARCHAR(50) DEFAULT 'email'",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ",
-        ]:
-            try:
-                await conn.execute(col_sql)
-            except Exception:
-                pass  # Column already exists
-
-        existing = await conn.fetchrow("SELECT id FROM users WHERE email = $1", request_data.email)
-        if existing:
-            # Generic error - don't reveal if email exists
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Unable to create account. Please check your information and try again."
-            )
-
-        hashed = hash_password(request_data.password)
-        user = await conn.fetchrow("""
-            INSERT INTO users (id, email, name, provider, metadata, created_at, last_login_at)
-            VALUES (gen_random_uuid(), $1, $2, 'email',
-                    jsonb_build_object('password_hash', $3::text), NOW(), NOW())
-            RETURNING id, email, name, provider, created_at
-        """, request_data.email, request_data.name or request_data.email.split('@')[0], hashed)
-
-        logger.info(f"✅ Signup: {user['email']} in schema '{schema}'")
-
-    access_token = generate_jwt(user['id'], project_id, user['email'], project['jwt_secret'], project.get('slug'))
-
-    return {
-        "access_token": access_token,
-        "user": {
-            "id": str(user['id']),
-            "email": user['email'],
-            "name": user['name'],
-            "provider": user['provider'],
-            "created_at": user['created_at'].isoformat()
-        }
-    }
-
-
-# ── Login ─────────────────────────────────────────────────────────────────────
-
-@router.post("/v1/auth/{project_id}/login")
-async def login(project_id: UUID, request_data: SignInRequest):
-    """Public — no API key needed. Verifies credentials against project schema."""
+    """
+    Public signup endpoint - No API key required.
+    Creates user in auth.users table (Phase 1).
+    """
     try:
         project = await get_project_info(project_id)
         schema = project['database_name']
 
         pool = await get_main_db_pool()
         async with pool.acquire() as conn:
-            await conn.execute(f'SET search_path TO "{schema}", public')
+            # Use project schema
+            await conn.execute(f'SET search_path TO "{schema}", public, auth')
             await set_rls_context(conn, user_id=None, role='service_role')
 
-            # Check which columns exist to avoid UndefinedColumnError
-            columns_result = await conn.fetch("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'users' 
-                AND table_schema = $1
-            """, schema)
-            
-            available_columns = {row['column_name'] for row in columns_result}
-            
-            # Build query with only available columns
-            select_cols = ['id', 'email']
-            for col in ['name', 'provider', 'metadata', 'created_at']:
-                if col in available_columns:
-                    select_cols.append(col)
-            
-            query = f"SELECT {', '.join(select_cols)} FROM users WHERE email = $1"
-            user = await conn.fetchrow(query, request_data.email)
+            # Ensure auth schema and auth.users table exist
+            await conn.execute("CREATE SCHEMA IF NOT EXISTS auth")
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS auth.users (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    email TEXT NOT NULL,
+                    username TEXT,
+                    password_hash TEXT NOT NULL DEFAULT '',
+                    provider TEXT NOT NULL DEFAULT 'email',
+                    email_verified BOOLEAN DEFAULT FALSE,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    avatar_url TEXT,
+                    metadata JSONB DEFAULT '{}'::jsonb,
+                    last_login_at TIMESTAMPTZ,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW(),
+                    CONSTRAINT auth_users_email_unique UNIQUE (email)
+                )
+            """)
 
-            if not user:
-                # Generic error - don't reveal if email exists
+            # Check if email already exists (case-insensitive)
+            existing = await conn.fetchrow(
+                "SELECT id FROM auth.users WHERE LOWER(email) = LOWER($1)", 
+                request_data.email
+            )
+            if existing:
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid credentials. Please check your email and password."
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="User with this email already exists"
                 )
 
-            metadata = parse_metadata(user.get('metadata')) if 'metadata' in available_columns else {}
-            password_hash = metadata.get('password_hash')
-
-            if not password_hash or not verify_password(request_data.password, password_hash):
-                # Generic error - don't reveal which part failed
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid credentials. Please check your email and password."
+            # Hash password using bcrypt
+            hashed = hash_password(request_data.password)
+            
+            # Insert user into auth.users
+            user = await conn.fetchrow("""
+                INSERT INTO auth.users (
+                    email, username, password_hash, provider, 
+                    email_verified, created_at, last_login_at
                 )
+                VALUES ($1, $2, $3, 'email', FALSE, NOW(), NOW())
+                RETURNING id, email, username, provider, email_verified, created_at
+            """, request_data.email, request_data.name, hashed)
 
-            await set_rls_context(conn, user_id=str(user['id']), role='authenticated')
-            
-            # Update last_login if columns exist
-            update_fields = []
-            if 'last_login_at' in available_columns:
-                update_fields.append("last_login_at = NOW()")
-            if 'updated_at' in available_columns:
-                update_fields.append("updated_at = NOW()")
-            
-            if update_fields:
-                await conn.execute(
-                    f"UPDATE users SET {', '.join(update_fields)} WHERE id = $1",
-                    user['id']
-                )
-            
-            logger.info(f"✅ Login: {user['email']} in schema '{schema}'")
+            logger.info(f"✅ Signup: {user['email']} in schema '{schema}' (auth.users)")
 
-        access_token = generate_jwt(user['id'], project_id, user['email'], project['jwt_secret'], project.get('slug'))
+        # Generate JWT access token
+        access_token = generate_jwt(
+            user['id'], project_id, user['email'], 
+            project['jwt_secret'], project.get('slug')
+        )
 
         return {
             "access_token": access_token,
             "user": {
                 "id": str(user['id']),
                 "email": user['email'],
-                "name": user.get('name') if 'name' in available_columns else None,
-                "provider": user.get('provider', 'email') if 'provider' in available_columns else 'email',
-                "created_at": user['created_at'].isoformat() if 'created_at' in available_columns and user.get('created_at') else None
+                "username": user['username'],
+                "provider": user['provider'],
+                "email_verified": user['email_verified'],
+                "created_at": user['created_at'].isoformat()
             }
         }
+        
     except HTTPException:
-        # Re-raise HTTP exceptions (401, 404, etc.)
         raise
     except Exception as e:
-        # Log unexpected errors but return 401 to avoid revealing system details
+        logger.error(f"❌ Signup error for {request_data.email}: {type(e).__name__}: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to create account. Please check your information and try again."
+        )
+
+
+# ── Login ─────────────────────────────────────────────────────────────────────
+
+@router.post("/v1/auth/{project_id}/login")
+async def login(project_id: UUID, request_data: SignInRequest):
+    """
+    Public login endpoint - No API key required.
+    Verifies credentials against auth.users table (Phase 1).
+    """
+    try:
+        project = await get_project_info(project_id)
+        schema = project['database_name']
+
+        pool = await get_main_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(f'SET search_path TO "{schema}", public, auth')
+            await set_rls_context(conn, user_id=None, role='service_role')
+
+            # Query auth.users with case-insensitive email lookup
+            user = await conn.fetchrow("""
+                SELECT id, email, username, password_hash, provider, 
+                       email_verified, is_active, metadata, created_at
+                FROM auth.users
+                WHERE LOWER(email) = LOWER($1)
+            """, request_data.email)
+
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password"
+                )
+
+            # Check if account is active
+            if not user['is_active']:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Account is disabled. Please contact support."
+                )
+
+            # Verify password
+            if not verify_password(request_data.password, user['password_hash']):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid email or password"
+                )
+
+            # Update last_login_at
+            await conn.execute("""
+                UPDATE auth.users 
+                SET last_login_at = NOW(), updated_at = NOW()
+                WHERE id = $1
+            """, user['id'])
+
+            logger.info(f"✅ Login: {user['email']} in schema '{schema}' (auth.users)")
+
+        # Generate JWT access token
+        access_token = generate_jwt(
+            user['id'], project_id, user['email'], 
+            project['jwt_secret'], project.get('slug')
+        )
+
+        return {
+            "access_token": access_token,
+            "user": {
+                "id": str(user['id']),
+                "email": user['email'],
+                "username": user['username'],
+                "provider": user['provider'],
+                "email_verified": user['email_verified'],
+                "avatar_url": user.get('avatar_url'),
+                "metadata": parse_metadata(user.get('metadata')),
+                "created_at": user['created_at'].isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
         logger.error(f"❌ Login error for {request_data.email}: {type(e).__name__}: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials. Please check your email and password."
+            detail="Invalid email or password"
         )
 
 
@@ -284,7 +296,10 @@ async def login(project_id: UUID, request_data: SignInRequest):
 
 @router.get("/v1/auth/{project_id}/user")
 async def get_user(project_id: UUID, authorization: str = Header(None)):
-    """Requires JWT token from login/signup."""
+    """
+    Get current user - Requires JWT token.
+    Returns user info from auth.users (NEVER returns password_hash).
+    """
     if not authorization or not authorization.startswith('Bearer '):
         raise HTTPException(status_code=401, detail="Missing authorization header")
 
@@ -304,42 +319,32 @@ async def get_user(project_id: UUID, authorization: str = Header(None)):
 
     pool = await get_main_db_pool()
     async with pool.acquire() as conn:
-        await conn.execute(f'SET search_path TO "{schema}", public')
+        await conn.execute(f'SET search_path TO "{schema}", public, auth')
         await set_rls_context(conn, user_id=str(user_id), role='authenticated')
 
-        # Check which columns exist
-        columns_result = await conn.fetch("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'users' 
-            AND table_schema = $1
-        """, schema)
-        
-        available_columns = {row['column_name'] for row in columns_result}
-        
-        # Build query with available columns
-        select_cols = ['id', 'email']
-        for col in ['name', 'provider', 'avatar_url', 'is_active', 'created_at', 'last_login_at']:
-            if col in available_columns:
-                select_cols.append(col)
-        
-        query = f"SELECT {', '.join(select_cols)} FROM users WHERE id = $1"
-        user = await conn.fetchrow(query, user_id)
+        # Query auth.users - IMPORTANT: Do NOT select password_hash
+        user = await conn.fetchrow("""
+            SELECT id, email, username, provider, email_verified, 
+                   is_active, avatar_url, metadata, created_at, last_login_at
+            FROM auth.users
+            WHERE id = $1
+        """, user_id)
 
         if not user:
-            # Generic error - don't reveal if user doesn't exist
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication credentials"
+                detail="User not found"
             )
 
     return {
         "id": str(user['id']),
         "email": user['email'],
-        "name": user.get('name') if 'name' in available_columns else None,
-        "provider": user.get('provider', 'email') if 'provider' in available_columns else 'email',
-        "avatar_url": user.get('avatar_url') if 'avatar_url' in available_columns else None,
-        "is_active": user.get('is_active', True) if 'is_active' in available_columns else True,
-        "created_at": user['created_at'].isoformat() if 'created_at' in available_columns and user.get('created_at') else None,
-        "last_login_at": user['last_login_at'].isoformat() if 'last_login_at' in available_columns and user.get('last_login_at') else None
+        "username": user['username'],
+        "provider": user['provider'],
+        "email_verified": user['email_verified'],
+        "is_active": user['is_active'],
+        "avatar_url": user['avatar_url'],
+        "metadata": parse_metadata(user['metadata']),
+        "created_at": user['created_at'].isoformat() if user['created_at'] else None,
+        "last_login_at": user['last_login_at'].isoformat() if user['last_login_at'] else None
     }
