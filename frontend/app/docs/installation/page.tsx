@@ -84,12 +84,12 @@ export default function InstallationPage() {
       </ul>
 
       <Heading level={2} id="install">Install the SDK</Heading>
-      <Tabs tabs={[
-        { label: 'npm', content: <CodeBlock code={npmInstall} lang="bash" /> },
-        { label: 'Yarn', content: <CodeBlock code={yarnInstall} lang="bash" /> },
-        { label: 'pnpm', content: <CodeBlock code={pnpmInstall} lang="bash" /> },
-        { label: 'Bun', content: <CodeBlock code={bunInstall} lang="bash" /> },
-      ]} />
+      <Tabs tabs={['npm', 'Yarn', 'pnpm', 'Bun']}>
+        <CodeBlock code={npmInstall} lang="bash" />
+        <CodeBlock code={yarnInstall} lang="bash" />
+        <CodeBlock code={pnpmInstall} lang="bash" />
+        <CodeBlock code={bunInstall} lang="bash" />
+      </Tabs>
 
       <Heading level={2} id="get-credentials">Get Your Credentials</Heading>
       <p className="text-sm text-gray-400 mb-3">
