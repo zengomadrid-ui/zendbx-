@@ -51,37 +51,23 @@ class CORSMiddleware:
         # Cache for project-specific origins (project_id -> set of origins)
         self._project_origins_cache: Dict[str, Set[str]] = {}
         
-        # Default allowed methods
-        if allow_methods is None:
-            allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
-        self.allow_methods = ", ".join(allow_methods)
+        # Default allowed methods - use wildcard if not specified
+        if allow_methods is None or "*" in allow_methods:
+            self.allow_methods = "*"
+        else:
+            self.allow_methods = ", ".join(allow_methods)
         
-        # Default allowed headers
-        if allow_headers is None:
-            allow_headers = [
-                "Authorization",
-                "apikey",
-                "Content-Type",
-                "Accept",
-                "x-project-id",
-                "x-api-key",
-                "x-internal-secret",
-                "Cache-Control",
-                "Pragma",
-                "X-Requested-With",
-            ]
-        self.allow_headers = ", ".join(allow_headers)
+        # Default allowed headers - use wildcard if not specified
+        if allow_headers is None or "*" in allow_headers:
+            self.allow_headers = "*"
+        else:
+            self.allow_headers = ", ".join(allow_headers)
         
-        # Default exposed headers
-        if expose_headers is None:
-            expose_headers = [
-                "X-RateLimit-Limit",
-                "X-RateLimit-Remaining",
-                "X-RateLimit-Used",
-                "Content-Length",
-                "Content-Range",
-            ]
-        self.expose_headers = ", ".join(expose_headers)
+        # Default exposed headers - use wildcard if not specified
+        if expose_headers is None or "*" in expose_headers:
+            self.expose_headers = "*"
+        else:
+            self.expose_headers = ", ".join(expose_headers)
         
         self.max_age = str(max_age)
     
@@ -292,28 +278,22 @@ class CORSMiddleware:
         """
         Send a successful preflight (OPTIONS) response.
         
-        This ensures preflight requests always return 200 OK with proper
+        This ensures preflight requests always return 204 No Content with proper
         CORS headers, never 404 or 400.
         """
         cors_headers = self._get_cors_headers(origin, project_origins)
         
-        # Add Content-Type and Content-Length
-        response_headers = cors_headers + [
-            (b"content-type", b"application/json"),
-            (b"content-length", b"2"),
-        ]
-        
-        # Send response start
+        # Send response start with 204 No Content
         await send({
             "type": "http.response.start",
-            "status": 200,
-            "headers": response_headers,
+            "status": 204,
+            "headers": cors_headers,
         })
         
-        # Send response body (empty JSON object)
+        # Send empty response body
         await send({
             "type": "http.response.body",
-            "body": b"{}",
+            "body": b"",
         })
 
 

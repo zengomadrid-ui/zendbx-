@@ -10,7 +10,7 @@ Schema isolation: SET search_path TO "<schema>", public
 """
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, RedirectResponse
 import logging
 import re
 import jwt as pyjwt
@@ -29,8 +29,8 @@ SKIP_PREFIXES = [
     "/api/storage",
     "/api/admin",
     "/api/ai/",
-    "/api/oauth",       # OAuth provider config — uses project_id as query param
-    "/oauth",           # OAuth login flow — /oauth/{provider}/{project_ref}
+    "/api/oauth",
+    "/oauth",
     "/api/billing",
     "/api/analytics",
     "/api/backups",
@@ -45,44 +45,37 @@ SKIP_PREFIXES = [
     "/openapi.json",
     "/health",
     "/v1/auth/",
-    "/mcp",             # MCP (AI Operating Layer) handles its own auth
-    # Storage v2 handles project resolution internally — skip middleware
-    # Matched via regex in dispatch to handle /p/{any-slug}/storage
+    "/mcp",
 ]
 
-SKIP_EXACT = {"/", "/health", "/version", "/docs", "/openapi.json", "/redoc"}
+SKIP_EXACT = {"/", "/health", "/version", "/docs", "/openapi.json", "/redoc", "/test-logs", "/debug-test"}
 
-# Regex patterns to skip (can't do substring match cleanly in prefix list)
-import re as _re
 SKIP_PATH_PATTERNS = [
-    _re.compile(r"^/p/[^/]+/storage"),  # /p/{slug}/storage/...
+    re.compile(r"^/p/[^/]+/storage"),  # /p/{slug}/storage/...
 ]
 
 
 class ProjectContextMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        
         # Always skip OPTIONS (CORS preflight)
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        path = request.url.path
-
-
-        # ── PUBLIC endpoints — bypass ALL project context checks ─────────────
-        # These must be checked FIRST, before any other logic.
+        # Public endpoints
         PUBLIC_PATHS = {"/", "/health", "/version", "/docs", "/redoc", "/openapi.json"}
         if path in PUBLIC_PATHS:
             return await call_next(request)
 
-        # /p/{slug} with NO sub-path is a public info endpoint — no API key needed
-        # /p/{slug}/docs redirects to the main /docs Swagger UI
-        import re as _re2
-        if _re2.match(r"^/p/[^/]+$", path):
+        # /p/{slug} with NO sub-path is a public info endpoint
+        if re.match(r"^/p/[^/]+$", path):
             return await call_next(request)
-        _slug_sub = _re2.match(r"^/p/[^/]+(/docs|/redoc|/openapi\.json)$", path)
+        
+        # /p/{slug}/docs redirects to main docs
+        _slug_sub = re.match(r"^/p/[^/]+(/docs|/redoc|/openapi\.json)$", path)
         if _slug_sub:
-            from starlette.responses import RedirectResponse
             return RedirectResponse(url=_slug_sub.group(1), status_code=302)
 
         # Skip admin/auth paths
@@ -96,7 +89,7 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         try:
-            # ── Step 1: Resolve project ID ────────────────────────────────────
+            # Resolve project ID
             project_id = None
             project_slug = None
 
@@ -112,33 +105,33 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
             if not project_slug:
                 project_id = request.headers.get("x-project-id")
 
+            # Resolve slug to project ID
             if project_slug and not project_id:
                 project_id = await self._resolve_slug(project_slug)
 
+            # Final check
             if not project_id:
+                logger.error(f"Project context missing for path: {path}")
                 return JSONResponse(
                     status_code=400,
                     content={"detail": "Missing project context. Use /p/{slug}/... or x-project-id header."},
-                    headers=self._cors_headers(request),
                 )
 
-            # ── Step 2: Read apikey and Authorization headers ─────────────────
+            # Read apikey and Authorization headers
             apikey_header = request.headers.get("apikey")
             auth_header = request.headers.get("authorization", "")
             bearer_token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else None
 
-            # ── Step 3: Determine project key ─────────────────────────────────
-            # Priority: apikey header → Bearer token (if anon/service_role)
+            # Priority: apikey header → Bearer token
             project_key = apikey_header or bearer_token
 
             if not project_key:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Missing API key. Provide apikey header or Authorization: Bearer <anon_key>."},
-                    headers=self._cors_headers(request),
                 )
 
-            # ── Step 4: Validate project key ──────────────────────────────────
+            # Validate project key
             try:
                 ctx = await validate_project_key(project_id, project_key)
             except Exception as e:
@@ -147,15 +140,14 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(
                     status_code=status_code,
                     content={"detail": detail},
-                    headers=self._cors_headers(request),
                 )
 
             schema = ctx["schema"]
-            base_role = ctx["role"]      # 'anon' or 'service_role'
+            base_role = ctx["role"]
             jwt_secret = ctx["jwt_secret"]
             pool = ctx["pool"]
 
-            # ── Step 5: Identify authenticated user ───────────────────────────
+            # Identify authenticated user
             user_id = None
             user_role = base_role
             user_email = None
@@ -171,33 +163,25 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
                         user_id = payload.get("sub")
                         user_role = "authenticated"
                         user_email = payload.get("email")
-                        logger.debug(f"Authenticated user: {user_id}")
                 except pyjwt.ExpiredSignatureError:
                     return JSONResponse(
                         status_code=401,
                         content={"detail": "User token expired"},
-                        headers=self._cors_headers(request),
                     )
                 except pyjwt.InvalidTokenError:
                     pass  # Ignore invalid user token, keep base role
 
-            # ── Step 6: Set search_path on request state ──────────────────────
-            # We store context on request.state; actual SET search_path happens
-            # per-connection in RLSEnforcer and auth endpoints.
+            # Set search_path on request state
             request.state.project_id = project_id
             request.state.project_slug = project_slug or ctx.get("slug")
             request.state.project_schema = schema
-            request.state.project_db = pool          # shared pool
+            request.state.project_db = pool
             request.state.anon_key = project_key
             request.state.jwt_secret = jwt_secret
             request.state.rls_user_id = user_id
             request.state.rls_role = user_role
             request.state.rls_project_id = project_id
             request.state.user_email = user_email
-
-            logger.info(
-                f"{request.method} {path} | project={project_id} schema={schema} role={user_role}"
-            )
 
             return await call_next(request)
 
@@ -206,10 +190,9 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=500,
                 content={"detail": f"Internal server error: {str(e)}"},
-                headers=self._cors_headers(request),
             )
 
-    # ── Helpers ────────────────────────────────────────────────────────────────
+    # Helpers
 
     def _slug_from_subdomain(self, host: str) -> str | None:
         if not settings.ENABLE_SUBDOMAIN_ROUTING:
@@ -222,6 +205,7 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
         return None
 
     def _slug_from_path(self, path: str) -> str | None:
+        """Extract project slug from /p/{slug} URL pattern"""
         m = re.match(r"^/p/([^/]+)", path)
         return m.group(1) if m else None
 
@@ -231,35 +215,27 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
             import uuid
             try:
                 uuid.UUID(slug)
-                # It's a valid UUID - check if it's a real project ID
                 result = await execute_on_main_db("SELECT id FROM projects WHERE id = $1", slug)
                 if result:
                     return str(result[0]["id"])
             except ValueError:
-                pass  # Not a UUID, fall through to slug lookup
+                pass
 
-            # Then try as a slug (supports both slug and legacy_slug with backward compat)
-            from ..utils.schema_compat import resolve_project_by_slug
-            from ..core.database import get_main_db_pool
+            # Then try as a slug
+            result = await execute_on_main_db(
+                "SELECT id, status FROM projects WHERE slug = $1 LIMIT 1",
+                slug
+            )
             
-            pool = await get_main_db_pool()
-            async with pool.acquire() as conn:
-                project = await resolve_project_by_slug(
-                    conn,
-                    slug,
-                    additional_columns="id"
-                )
-                return str(project["id"]) if project else None
+            if result:
+                project = result[0]
+                if project['status'] != 'active':
+                    logger.warning(f"Project '{slug}' is not active (status: {project['status']})")
+                return str(project["id"])
+            else:
+                logger.error(f"No project found with slug: {slug}")
+                return None
                 
         except Exception as e:
-            logger.error(f"Slug resolution error: {e}")
+            logger.error(f"Error resolving slug '{slug}': {e}", exc_info=True)
             return None
-
-    def _cors_headers(self, request: Request) -> dict:
-        origin = request.headers.get("origin", "*")
-        return {
-            "Access-Control-Allow-Origin": origin,
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD",
-            "Access-Control-Allow-Headers": "*",
-        }
