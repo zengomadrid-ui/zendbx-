@@ -6,6 +6,11 @@ RLS ENFORCEMENT:
 - All queries respect PostgreSQL Row Level Security policies
 - User context extracted from JWT token
 - Service role can bypass RLS when needed
+
+TYPE CONVERSION:
+- Automatic PostgreSQL type mapping via PostgreSQLTypeMapper
+- Converts Python values (dict/list) to correct PostgreSQL types
+- Supports JSONB, arrays, UUID, dates, and all PostgreSQL types
 """
 from fastapi import APIRouter, Request, HTTPException, Query, Depends
 from typing import Optional, Dict, Any, List
@@ -14,6 +19,7 @@ from uuid import UUID
 
 from ..core.rls_enforcer import RLSEnforcer, get_rls_enforcer
 from ..middleware.rls_context import set_rls_context
+from ..services.postgres_type_mapper import get_type_mapper
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +54,22 @@ async def create_record(
             qualified_table = f'"{schema_part}"."{bare_table}"'
         else:
             bare_table = table_name
+            schema_part = schema
             qualified_table = f'"{schema}"."{bare_table}"' if schema else f'"{bare_table}"'
 
+        # Initialize type mapper
+        type_mapper = get_type_mapper(pool)
+        
+        # Convert values using PostgreSQL type mapper
+        converted_values = await type_mapper.convert_values(
+            table_name=bare_table,
+            data=data,
+            schema=schema_part or "public"
+        )
+        
         # Prepare insert query — never create tables here
         columns = list(data.keys())
-        values = list(data.values())
-        placeholders = [f"${i+1}" for i in range(len(values))]
+        placeholders = [f"${i+1}" for i in range(len(converted_values))]
 
         query = f"""
             INSERT INTO {qualified_table} ({', '.join(f'"{c}"' for c in columns)})
@@ -61,10 +77,8 @@ async def create_record(
             RETURNING *
         """
 
-        logger.info(f"Executing: INSERT INTO {qualified_table} columns={columns}")
-
-        # Insert data with RLS enforcement
-        result = await enforcer.execute_one(pool, query, *values)
+        # Insert data with RLS enforcement using converted values
+        result = await enforcer.execute_one(pool, query, *converted_values)
         
         if not result:
             raise HTTPException(
@@ -190,6 +204,7 @@ async def update_record(
         else:
             qualified_table = f'"{schema}"."{table_name}"' if schema else f'"{table_name}"'
             bare_table_name = table_name
+            schema_part = schema
 
         # Determine filter
         if id:
@@ -199,11 +214,21 @@ async def update_record(
             filter_col = "user_id"
             filter_val = user_id[3:] if user_id.startswith("eq.") else user_id
         
-        # Build SET clause
+        # Initialize type mapper
+        type_mapper = get_type_mapper(pool)
+        
+        # Convert data values using PostgreSQL type mapper
+        converted_data = await type_mapper.convert_dict(
+            table_name=bare_table_name,
+            data=data,
+            schema=schema_part or "public"
+        )
+        
+        # Build SET clause with converted values
         set_parts = []
         values = [filter_val]
         
-        for i, (key, value) in enumerate(data.items(), start=2):
+        for i, (key, value) in enumerate(converted_data.items(), start=2):
             if key in (filter_col,):  # skip the filter column itself
                 continue
             set_parts.append(f"{key} = ${i}")
