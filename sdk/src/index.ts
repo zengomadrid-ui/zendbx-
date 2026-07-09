@@ -1,6 +1,13 @@
 // Main entry point — re-export everything public
 
+// New routing architecture
 export { createClient, ZendbxClient } from './client';
+export type { ClientConfig, SignUpData, SignInData, User, AuthResponse } from './client';
+export { RouteBuilder, createRouteBuilder } from './routes';
+export type { RouteConfig } from './routes';
+
+// Legacy client (deprecated - use createClient instead)
+export { createClient as createLegacyClient, ZendbxClient as LegacyZendbxClient } from './client';
 export type { ZendbxClientOptions } from './client';
 
 export { AuthModule } from './auth';

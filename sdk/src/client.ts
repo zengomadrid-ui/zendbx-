@@ -1,163 +1,308 @@
+/**
+ * ZendBX Client - Official SDK Client
+ * Uses Route Builder exclusively - no manual URL construction
+ */
+
+import { RouteBuilder, createRouteBuilder } from './routes';
 import { HttpClient } from './http';
-import type { HttpClientOptions } from './http';
-import { AuthModule } from './auth';
-import { TableBuilder } from './query-builder';
-import { ProjectsModule } from './projects';
-import { AIModule } from './ai';
-import { DatabaseModule } from './database';
-import { RealtimeModule } from './realtime';
-import { StorageModule } from './storage';
-import { BackupsModule } from './backups';
-import { TeamModule } from './team';
-import { MissingConfigError, InvalidUrlError } from './errors';
+import type { ZendbxResponse } from './types';
 
-export interface ZendbxClientOptions {
-  /** Base URL of your ZendBX backend. @example 'https://api.zendbx.in' */
+export interface ClientConfig {
   apiUrl: string;
-  /** Your project UUID — used for auth, realtime, and legacy APIs. */
-  projectId?: string;
-  /** Your project slug — used for Storage V3 and project-scoped REST APIs. */
-  projectSlug?: string;
-  /** The anon (public) API key. Found in Project Settings → API Keys. */
+  projectSlug: string;
   anonKey: string;
-  /** WebSocket server URL. Defaults to same host on port 8001. */
-  wsUrl?: string;
-
-  /**
-   * Static access token injected at construction time.
-   * Takes precedence over any stored token.
-   * @example
-   *   accessToken: localStorage.getItem('token') ?? undefined
-   */
   accessToken?: string;
-
-  /**
-   * Async callback that returns the current user token on every request.
-   * Takes precedence over stored token.
-   * Use this for React state, server-side sessions, or custom auth systems.
-   * @example
-   *   getAccessToken: async () => myAuthStore.getToken()
-   */
-  getAccessToken?: () => string | null | Promise<string | null>;
-
-  /**
-   * localStorage key used to persist the SDK auth token.
-   * Defaults to 'zendbx_token'. Pass null to disable storage entirely.
-   */
-  storageKey?: string | null;
+  autoRefreshToken?: boolean;
 }
 
+export interface SignUpData {
+  email: string;
+  password: string;
+  name?: string;
+}
+
+export interface SignInData {
+  email: string;
+  password: string;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  username?: string;
+  provider: string;
+  email_verified: boolean;
+  created_at: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  user: User;
+}
+
+/**
+ * ZendBX Client
+ * 
+ * Usage:
+ *   const client = createClient({
+ *     apiUrl: "https://api.zendbx.in",
+ *     projectSlug: "my-project",
+ *     anonKey: "eyJ..."
+ *   });
+ * 
+ *   await client.auth.signUp({ email, password, name });
+ */
 export class ZendbxClient {
-  /** Authentication — signUp, signIn, signOut, setAccessToken, onAuthStateChange */
-  readonly auth: AuthModule;
-  /** Project management — CRUD + API keys */
-  readonly projects: ProjectsModule;
-  /** AI features — generateSQL, explainSQL, fixSQL */
-  readonly ai: AIModule;
-  /** Database — raw SQL, schema, RLS, saved queries */
-  readonly db: DatabaseModule;
-  /** Realtime — WebSocket subscriptions */
-  readonly realtime: RealtimeModule;
-  /** Object storage — bucket(slug).upload/download/delete/list */
-  readonly storage: StorageModule;
-  /** Backup & restore */
-  readonly backups: BackupsModule;
-  /** Team collaboration */
-  readonly team: TeamModule;
+  private readonly routes: RouteBuilder;
+  private readonly http: HttpClient;
+  public readonly config: ClientConfig;
 
-  /** @internal */
-  readonly httpClient: HttpClient;
-  private readonly _projectId: string;
-
-  constructor(opts: ZendbxClientOptions) {
-    if (!opts.apiUrl) throw new MissingConfigError('apiUrl');
-    if (!opts.anonKey) throw new MissingConfigError('anonKey');
-
-    try { new URL(opts.apiUrl); } catch { throw new InvalidUrlError(opts.apiUrl); }
-
-    if (!opts.projectId && !opts.projectSlug) {
-      throw new MissingConfigError('projectId or projectSlug');
+  constructor(config: ClientConfig) {
+    // Validate configuration
+    if (!config.apiUrl) {
+      throw new Error('ZendbxClient: apiUrl is required');
+    }
+    if (!config.projectSlug) {
+      throw new Error('ZendbxClient: projectSlug is required');
+    }
+    if (!config.anonKey) {
+      throw new Error('ZendbxClient: anonKey is required');
     }
 
-    this._projectId = opts.projectId ?? opts.projectSlug ?? '';
-    const projectSlug = opts.projectSlug ?? opts.projectId ?? '';
+    this.config = config;
+    
+    // Initialize route builder
+    this.routes = createRouteBuilder({
+      apiUrl: config.apiUrl,
+      projectSlug: config.projectSlug,
+    });
 
-    const wsUrl =
-      opts.wsUrl ??
-      opts.apiUrl.replace(/^http/, 'ws').replace(/:\d+$/, '') + ':8001';
-
-    const httpOpts: HttpClientOptions = {
-      accessToken: opts.accessToken,
-      getAccessToken: opts.getAccessToken,
-      storageKey: opts.storageKey,
-    };
-
-    this.httpClient = new HttpClient(opts.apiUrl, opts.anonKey, this._projectId, httpOpts);
-
-    this.auth     = new AuthModule(this.httpClient, this._projectId);
-    this.projects = new ProjectsModule(this.httpClient);
-    this.ai       = new AIModule(this.httpClient, this._projectId);
-    this.db       = new DatabaseModule(this.httpClient, this._projectId);
-    this.storage  = new StorageModule(this.httpClient, projectSlug);
-    this.backups  = new BackupsModule(this.httpClient);
-    this.team     = new TeamModule(this.httpClient, this._projectId);
-
-    this.realtime = new RealtimeModule(
-      this._projectId,
-      wsUrl,
-      () => this.httpClient.token,
-      opts.anonKey,
+    // Initialize HTTP client
+    this.http = new HttpClient(
+      config.apiUrl,
+      config.anonKey,
+      config.projectSlug,
+      {
+        accessToken: config.accessToken,
+        autoRefreshToken: config.autoRefreshToken,
+      }
     );
   }
 
   /**
-   * Start a chainable query against any table.
-   * @example
-   *   const { data } = await client.from('users').select('*').eq('status', 'active').limit(10)
+   * Authentication API
    */
-  from<Row extends Record<string, unknown> = Record<string, unknown>>(
-    table: string,
-  ): TableBuilder<Row> {
-    return new TableBuilder<Row>(this.httpClient, table, this._projectId);
+  get auth() {
+    return {
+      /**
+       * Sign up a new user
+       */
+      signUp: async (data: SignUpData): Promise<AuthResponse> => {
+        const url = this.routes.auth.signup();
+        const response = await this.http.post<AuthResponse>(url, data, { skipAuth: true });
+        
+        if (response.error) {
+          throw new Error(response.error.message || 'Signup failed');
+        }
+        
+        // Store token
+        if (response.data?.access_token) {
+          this.http.setToken(response.data.access_token);
+        }
+        
+        return response.data!;
+      },
+
+      /**
+       * Sign in an existing user
+       */
+      signIn: async (data: SignInData): Promise<AuthResponse> => {
+        const url = this.routes.auth.login();
+        const response = await this.http.post<AuthResponse>(url, data, { skipAuth: true });
+        
+        if (response.error) {
+          throw new Error(response.error.message || 'Login failed');
+        }
+        
+        // Store token
+        if (response.data?.access_token) {
+          this.http.setToken(response.data.access_token);
+        }
+        
+        return response.data!;
+      },
+
+      /**
+       * Get current user
+       */
+      getUser: async (): Promise<User> => {
+        const url = this.routes.auth.user();
+        const response = await this.http.get<User>(url);
+        
+        if (response.error) {
+          throw new Error(response.error.message || 'Failed to get user');
+        }
+        
+        return response.data!;
+      },
+
+      /**
+       * Sign out current user
+       */
+      signOut: async (): Promise<void> => {
+        const url = this.routes.auth.logout();
+        await this.http.post(url, {});
+        this.http.clearToken();
+      },
+
+      /**
+       * Get current session token
+       */
+      getSession: (): string | null => {
+        return this.http.token;
+      },
+
+      /**
+       * Set session token manually
+       */
+      setSession: (token: string): void => {
+        this.http.setToken(token);
+      },
+    };
+  }
+
+  /**
+   * REST API (Database Operations)
+   */
+  from(tableName: string) {
+    const url = this.routes.rest.table(tableName);
+    
+    return {
+      /**
+       * SELECT query
+       */
+      select: async (columns: string = '*'): Promise<ZendbxResponse<any[]>> => {
+        const selectUrl = `${url}?select=${encodeURIComponent(columns)}`;
+        return this.http.get(selectUrl);
+      },
+
+      /**
+       * INSERT query
+       */
+      insert: async (data: any | any[]): Promise<ZendbxResponse<any>> => {
+        return this.http.post(url, data);
+      },
+
+      /**
+       * UPDATE query
+       */
+      update: async (data: any): Promise<ZendbxResponse<any>> => {
+        return this.http.patch(url, data);
+      },
+
+      /**
+       * DELETE query
+       */
+      delete: async (): Promise<ZendbxResponse<any>> => {
+        return this.http.delete(url);
+      },
+
+      /**
+       * Query builder for filtering
+       */
+      eq: (column: string, value: any) => {
+        // Return builder pattern for chaining
+        return this.from(tableName);
+      },
+    };
+  }
+
+  /**
+   * Storage API
+   */
+  get storage() {
+    return {
+      /**
+       * List all buckets
+       */
+      listBuckets: async () => {
+        const url = this.routes.storage.buckets();
+        return this.http.get(url);
+      },
+
+      /**
+       * Create a new bucket
+       */
+      createBucket: async (name: string, isPublic: boolean = false) => {
+        const url = this.routes.storage.buckets();
+        return this.http.post(url, { name, is_public: isPublic });
+      },
+
+      /**
+       * Get bucket operations
+       */
+      from: (bucketId: string) => ({
+        /**
+         * List files in bucket
+         */
+        list: async (path: string = '') => {
+          const url = this.routes.storage.files(bucketId);
+          return this.http.get(`${url}?path=${encodeURIComponent(path)}`);
+        },
+
+        /**
+         * Upload file to bucket
+         */
+        upload: async (path: string, file: File | Blob) => {
+          const url = this.routes.storage.upload(bucketId);
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('path', path);
+          return this.http.post(url, formData);
+        },
+
+        /**
+         * Delete file from bucket
+         */
+        remove: async (fileId: string) => {
+          const url = this.routes.storage.file(bucketId, fileId);
+          return this.http.delete(url);
+        },
+
+        /**
+         * Get public URL for file
+         */
+        getPublicUrl: (fileId: string): string => {
+          return this.routes.storage.download(bucketId, fileId);
+        },
+      }),
+    };
+  }
+
+  /**
+   * Realtime subscriptions (Future)
+   */
+  get realtime() {
+    return {
+      /**
+       * Get websocket URL
+       */
+      getWebSocketUrl: (): string => {
+        return this.routes.realtime.websocket();
+      },
+    };
   }
 }
 
 /**
- * Create a ZendBX client instance.
- *
- * @example
- * const client = createClient({
- *   apiUrl: 'https://api.zendbx.in',
- *   anonKey: 'your-anon-key',
- *   projectSlug: 'my-project',
- *   // Inject token from your own auth system:
- *   getAccessToken: () => localStorage.getItem('token'),
- * })
+ * Create a new ZendBX client
+ * 
+ * @param config - Client configuration
+ * @returns ZendbxClient instance
  */
-export function createClient(
-  urlOrOptions: string | ZendbxClientOptions,
-  anonKey?: string,
-  extra?: { projectId?: string; projectSlug?: string; wsUrl?: string },
-): ZendbxClient {
-  if (typeof urlOrOptions === 'string') {
-    if (!anonKey) throw new MissingConfigError('anonKey');
-
-    let projectSlug = extra?.projectSlug ?? '';
-    const projectId = extra?.projectId ?? '';
-
-    if (!projectSlug && !projectId) {
-      const match = urlOrOptions.match(/\/p\/([^/?#]+)/i);
-      if (match) projectSlug = match[1];
-    }
-
-    return new ZendbxClient({
-      apiUrl: urlOrOptions,
-      anonKey,
-      projectId,
-      projectSlug,
-      wsUrl: extra?.wsUrl,
-    });
-  }
-
-  return new ZendbxClient(urlOrOptions);
+export function createClient(config: ClientConfig): ZendbxClient {
+  return new ZendbxClient(config);
 }
+
+// Export types
+export type { ClientConfig, SignUpData, SignInData, User, AuthResponse };

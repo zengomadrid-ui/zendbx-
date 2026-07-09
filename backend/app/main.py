@@ -148,6 +148,42 @@ async def startup():
         print(f"   This will cause all database operations to fail!")
         raise  # Fail fast if we can't connect to database
     
+    # Print all registered routes for debugging
+    print("\n" + "="*80)
+    print("REGISTERED ROUTES")
+    print("="*80)
+    auth_routes = []
+    rest_routes = []
+    other_routes = []
+    
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            path = route.path
+            methods = ', '.join(route.methods) if route.methods else 'N/A'
+            route_str = f"{methods:8} {path}"
+            
+            if '/auth/' in path:
+                auth_routes.append(route_str)
+            elif '/rest/' in path:
+                rest_routes.append(route_str)
+            else:
+                other_routes.append(route_str)
+    
+    if auth_routes:
+        print("\nAUTH ROUTES:")
+        for r in sorted(auth_routes):
+            print(f"  {r}")
+    
+    if rest_routes:
+        print("\nREST API ROUTES:")
+        for r in sorted(rest_routes)[:10]:  # Show first 10
+            print(f"  {r}")
+        if len(rest_routes) > 10:
+            print(f"  ... and {len(rest_routes) - 10} more REST routes")
+    
+    print(f"\nTOTAL ROUTES: {len(app.routes)}")
+    print("="*80 + "\n")
+    
     # Redis setup
     from app.core.redis_client import redis_client
     await redis_client.connect()
@@ -292,14 +328,10 @@ from app.api import (
     project_settings,  # Project Settings API
 )
 
-# Multi-tenant APIs (new) - These MUST come first to override old endpoints
-app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New multi-tenant auth
-app.include_router(rest_v1.router, tags=["rest-api"])  # Universal REST API at /rest/v1/{table}
-
-# Also mount REST API under /p/{slug}/ prefix for Supabase-compatible SDK usage
-from fastapi import APIRouter as _APIRouter
-_p_router = _APIRouter(prefix="/p/{project_slug}")
-app.include_router(rest_v1.router, prefix="/p/{project_slug}", tags=["rest-api-slug"])
+# Multi-tenant APIs (new slug-based routing) - These MUST come first to override old endpoints
+app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New: /p/{slug}/v1/auth/*
+app.include_router(rest_v1.router, tags=["rest-api"])  # New: /p/{slug}/v1/rest/{table}
+app.include_router(storage_v2.router, tags=["storage-v2"])  # New: /p/{slug}/v1/storage/*
 
 # OAuth URL Generator System (public endpoints - no prefix)
 app.include_router(oauth_login.router)  # Public OAuth login URLs
@@ -325,10 +357,10 @@ app.include_router(imports_router.router, prefix="/api", tags=["imports"])  # Si
 app.include_router(auto_api.router, prefix="/api", tags=["auto-api"])
 app.include_router(api_keys.router, tags=["api-keys"])
 
-# Object Storage API v2 — MUST come before project_api.router to prevent
-# /p/{slug}/storage/... from being swallowed by the /p/{slug}/{table_name} catch-all
-app.include_router(storage_v2.router, tags=["storage-v2"])
+# Object Storage API (legacy — dashboard uses these endpoints with /api/storage)
+app.include_router(storage.router, tags=["storage"])
 
+# Project API (catch-all for project-scoped routes)
 app.include_router(project_api.router, tags=["project-api"])
 
 # Database Management APIs
@@ -357,9 +389,6 @@ app.include_router(billing.router, tags=["billing"])
 
 # Admin Quota Management API
 app.include_router(admin_quotas.router, tags=["admin-quotas"])
-
-# Object Storage API (legacy — dashboard uses these)
-app.include_router(storage.router, tags=["storage"])
 
 # Database Migration API (one-time use)
 app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])

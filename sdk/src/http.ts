@@ -17,6 +17,7 @@ export interface HttpClientOptions {
 export class HttpClient {
   readonly baseUrl: string;
   private readonly anonKey: string;
+  private readonly projectSlug: string;
   private _token: string | null = null;
   private readonly _getAccessToken: (() => string | null | Promise<string | null>) | null;
   private readonly _storageKey: string | null;
@@ -24,11 +25,12 @@ export class HttpClient {
   constructor(
     apiUrl: string,
     anonKey: string,
-    _projectId: string,
+    projectSlug: string,
     opts: HttpClientOptions = {},
   ) {
     this.baseUrl = apiUrl.replace(/\/$/, '');
     this.anonKey = anonKey;
+    this.projectSlug = projectSlug;
     this._getAccessToken = opts.getAccessToken ?? null;
     this._storageKey = opts.storageKey !== undefined ? opts.storageKey : 'zendbx_token';
     if (opts.accessToken) {
@@ -59,6 +61,22 @@ export class HttpClient {
       if (t) return t;
     }
     return null;
+  }
+
+  async get<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<ZendbxResponse<T>> {
+    return this.request<T>(endpoint, { ...options, method: 'GET' });
+  }
+
+  async post<T = unknown>(endpoint: string, body?: unknown, options: RequestOptions = {}): Promise<ZendbxResponse<T>> {
+    return this.request<T>(endpoint, { ...options, method: 'POST', body });
+  }
+
+  async patch<T = unknown>(endpoint: string, body?: unknown, options: RequestOptions = {}): Promise<ZendbxResponse<T>> {
+    return this.request<T>(endpoint, { ...options, method: 'PATCH', body });
+  }
+
+  async delete<T = unknown>(endpoint: string, options: RequestOptions = {}): Promise<ZendbxResponse<T>> {
+    return this.request<T>(endpoint, { ...options, method: 'DELETE' });
   }
 
   async request<T = unknown>(

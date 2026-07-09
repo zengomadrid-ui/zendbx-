@@ -1,6 +1,6 @@
 """
-Public Authentication API v2 - Multi-Tenant
-Uses PostgreSQL schemas (same as the rest of the system - NOT separate databases).
+Public Authentication API v2 - Multi-Tenant (Slug-Based Routing)
+Uses project_slug for all public endpoints.
 Auth endpoints are fully public - no API key required for signup/login.
 """
 from fastapi import APIRouter, HTTPException, Header, status
@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 import logging
 
 from ..core.db_router import get_main_db_pool
+from ..core.routes import Routes
+from ..services.project_resolver import get_project_resolver
 from ..middleware.rls_context import set_rls_context
 
 logger = logging.getLogger(__name__)
@@ -84,8 +86,18 @@ def parse_metadata(metadata) -> dict:
     return {}
 
 
+async def get_project_by_slug(project_slug: str) -> dict:
+    """Get project from main DB using slug (public identifier)."""
+    pool = await get_main_db_pool()
+    resolver = get_project_resolver()
+    return await resolver.resolve_project(project_slug, pool)
+
+
 async def get_project_info(project_id: UUID) -> dict:
-    """Get project from main DB."""
+    """
+    DEPRECATED: Get project by UUID (internal use only).
+    Public APIs should use get_project_by_slug instead.
+    """
     pool = await get_main_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -101,29 +113,33 @@ async def get_project_info(project_id: UUID) -> dict:
 
 # ── CORS preflight ────────────────────────────────────────────────────────────
 
-@router.options("/v1/auth/{project_id}/signup")
-async def signup_options(project_id: UUID):
+@router.options(Routes.AUTH_SIGNUP)
+async def signup_options(project_slug: str):
     return Response(status_code=200)
 
-@router.options("/v1/auth/{project_id}/login")
-async def login_options(project_id: UUID):
+@router.options(Routes.AUTH_LOGIN)
+async def login_options(project_slug: str):
     return Response(status_code=200)
 
-@router.options("/v1/auth/{project_id}/user")
-async def get_user_options(project_id: UUID):
+@router.options(Routes.AUTH_USER)
+async def get_user_options(project_slug: str):
     return Response(status_code=200)
 
 
 # ── Signup ────────────────────────────────────────────────────────────────────
 
-@router.post("/v1/auth/{project_id}/signup")
-async def signup(project_id: UUID, request_data: SignUpRequest):
+@router.post(Routes.AUTH_SIGNUP)
+async def signup(project_slug: str, request_data: SignUpRequest):
     """
     Public signup endpoint - No API key required.
     Creates user in auth.users table (Phase 1).
+    Uses project_slug (public identifier).
     """
     try:
-        project = await get_project_info(project_id)
+        pool = await get_main_db_pool()
+        resolver = get_project_resolver()
+        project = await resolver.resolve_project(project_slug, pool)
+        project_id = project['id']
         schema = project['database_name']
 
         pool = await get_main_db_pool()
@@ -176,7 +192,25 @@ async def signup(project_id: UUID, request_data: SignUpRequest):
                 RETURNING id, email, username, provider, email_verified, created_at
             """, request_data.email, request_data.name, hashed)
 
-            logger.info(f"✅ Signup: {user['email']} in schema '{schema}' (auth.users)")
+            # Ensure public.users view exists for application queries
+            await conn.execute("""
+                CREATE OR REPLACE VIEW public.users AS
+                SELECT
+                    id,
+                    email,
+                    username,
+                    provider,
+                    avatar_url,
+                    is_active,
+                    email_verified,
+                    metadata,
+                    created_at,
+                    updated_at,
+                    last_login_at
+                FROM auth.users;
+            """)
+
+            logger.info(f"✅ Signup: {user['email']} in schema '{schema}' (auth.users + public.users view)")
 
         # Generate JWT access token
         access_token = generate_jwt(
@@ -209,14 +243,16 @@ async def signup(project_id: UUID, request_data: SignUpRequest):
 
 # ── Login ─────────────────────────────────────────────────────────────────────
 
-@router.post("/v1/auth/{project_id}/login")
-async def login(project_id: UUID, request_data: SignInRequest):
+@router.post(Routes.AUTH_LOGIN)
+async def login(project_slug: str, request_data: SignInRequest):
     """
     Public login endpoint - No API key required.
     Verifies credentials against auth.users table (Phase 1).
+    Uses project_slug (public identifier).
     """
     try:
-        project = await get_project_info(project_id)
+        project = await get_project_by_slug(project_slug)
+        project_id = project['id']
         schema = project['database_name']
 
         pool = await get_main_db_pool()
@@ -294,17 +330,18 @@ async def login(project_id: UUID, request_data: SignInRequest):
 
 # ── Get user ──────────────────────────────────────────────────────────────────
 
-@router.get("/v1/auth/{project_id}/user")
-async def get_user(project_id: UUID, authorization: str = Header(None)):
+@router.get(Routes.AUTH_USER)
+async def get_user(project_slug: str, authorization: str = Header(None)):
     """
     Get current user - Requires JWT token.
     Returns user info from auth.users (NEVER returns password_hash).
+    Uses project_slug (public identifier).
     """
     if not authorization or not authorization.startswith('Bearer '):
         raise HTTPException(status_code=401, detail="Missing authorization header")
 
     token = authorization.removeprefix('Bearer ').strip()
-    project = await get_project_info(project_id)
+    project = await get_project_by_slug(project_slug)
     schema = project['database_name']
 
     try:

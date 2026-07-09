@@ -1,6 +1,6 @@
 """
-Universal REST API (Supabase-style)
-Automatically works for any table without manual endpoint creation
+Universal REST API (Supabase-style) - Slug-Based Routing
+Pattern: /p/{project_slug}/v1/rest/{table}
 
 RLS ENFORCEMENT:
 - All queries respect PostgreSQL Row Level Security policies
@@ -18,29 +18,40 @@ import logging
 from uuid import UUID
 
 from ..core.rls_enforcer import RLSEnforcer, get_rls_enforcer
+from ..core.routes import Routes
+from ..services.project_resolver import get_project_resolver
+from ..core.db_router import get_main_db_pool
 from ..middleware.rls_context import set_rls_context
 from ..services.postgres_type_mapper import get_type_mapper
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/rest/v1", tags=["REST API"])
+router = APIRouter(tags=["REST API"])
 
 
-@router.post("/{table_name}")
+@router.post(Routes.REST_CREATE)
 async def create_record(
-    table_name: str,
+    project_slug: str,
+    table: str,
     data: Dict[str, Any],
     request: Request,
     enforcer: RLSEnforcer = Depends(get_rls_enforcer)
 ):
     """
     Universal POST endpoint - creates a record in any table
-    Automatically creates table if it doesn't exist
+    Uses project_slug (public identifier)
     
     RLS: Respects INSERT policies on the table
     """
+    # Resolve project using slug
+    pool = await get_main_db_pool()
+    resolver = get_project_resolver()
+    project = await resolver.resolve_project(project_slug, pool)
+    project_id = project['id']
+    
+    # Get project database pool
     pool = request.state.project_db
-    project_id = request.state.project_id
+    table_name = table
     
     # Get schema from enforcer or fall back to request.state directly
     schema = enforcer.schema or getattr(request.state, 'project_schema', None)
@@ -60,11 +71,20 @@ async def create_record(
         # Initialize type mapper
         type_mapper = get_type_mapper(pool)
         
+        # 🔧 FIX: Use schema_part (from table name) or enforcer schema, never fallback to 'public'
+        if not schema_part:
+            if not schema:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Project schema is required. Table name must be qualified (schema.table) or project context must be set."
+                )
+            schema_part = schema
+        
         # Convert values using PostgreSQL type mapper
         converted_values = await type_mapper.convert_values(
             table_name=bare_table,
             data=data,
-            schema=schema_part or "public"
+            schema=schema_part
         )
         
         # Prepare insert query — never create tables here
@@ -96,9 +116,10 @@ async def create_record(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/{table_name}")
+@router.get(Routes.REST_LIST)
 async def get_records(
-    table_name: str,
+    project_slug: str,
+    table: str,
     request: Request,
     enforcer: RLSEnforcer = Depends(get_rls_enforcer),
     id: Optional[str] = Query(None, description="Filter by ID (eq.{uuid})"),
@@ -109,12 +130,20 @@ async def get_records(
 ):
     """
     Universal GET endpoint - retrieves records from any table
+    Uses project_slug (public identifier)
     Supports Supabase-style query parameters
     
     RLS: Respects SELECT policies on the table
     """
+    # Resolve project using slug
+    pool = await get_main_db_pool()
+    resolver = get_project_resolver()
+    project = await resolver.resolve_project(project_slug, pool)
+    project_id = project['id']
+    
+    # Get project database pool
     pool = request.state.project_db
-    project_id = request.state.project_id
+    table_name = table
     
     logger.info(f"GET /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
@@ -172,9 +201,10 @@ async def get_records(
         raise HTTPException(status_code=500, detail=error_msg)
 
 
-@router.patch("/{table_name}")
+@router.patch(Routes.REST_UPDATE)
 async def update_record(
-    table_name: str,
+    project_slug: str,
+    table: str,
     data: Dict[str, Any],
     request: Request,
     enforcer: RLSEnforcer = Depends(get_rls_enforcer),
@@ -182,12 +212,20 @@ async def update_record(
     user_id: Optional[str] = Query(None, description="Filter by user_id (eq.{uuid})")
 ):
     """
-    Universal PATCH endpoint - updates records in any table.
-    Supports filtering by id or user_id.
+    Universal PATCH endpoint - updates records in any table
+    Uses project_slug (public identifier)
+    Supports filtering by id or user_id
     RLS: Respects UPDATE policies on the table
     """
+    # Resolve project using slug
+    pool = await get_main_db_pool()
+    resolver = get_project_resolver()
+    project = await resolver.resolve_project(project_slug, pool)
+    project_id = project['id']
+    
+    # Get project database pool
     pool = request.state.project_db
-    project_id = request.state.project_id
+    table_name = table
     
     logger.info(f"PATCH /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
@@ -217,11 +255,20 @@ async def update_record(
         # Initialize type mapper
         type_mapper = get_type_mapper(pool)
         
+        # 🔧 FIX: Use schema_part (from table name) or enforcer schema, never fallback to 'public'
+        if not schema_part:
+            if not schema:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Project schema is required. Table name must be qualified (schema.table) or project context must be set."
+                )
+            schema_part = schema
+        
         # Convert data values using PostgreSQL type mapper
         converted_data = await type_mapper.convert_dict(
             table_name=bare_table_name,
             data=data,
-            schema=schema_part or "public"
+            schema=schema_part
         )
         
         # Build SET clause with converted values
@@ -275,20 +322,29 @@ async def update_record(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/{table_name}")
+@router.delete(Routes.REST_DELETE)
 async def delete_record(
-    table_name: str,
+    project_slug: str,
+    table: str,
     request: Request,
     enforcer: RLSEnforcer = Depends(get_rls_enforcer),
     id: Optional[str] = Query(None, description="Filter by ID (eq.{uuid})")
 ):
     """
     Universal DELETE endpoint - deletes a record from any table
+    Uses project_slug (public identifier)
     
     RLS: Respects DELETE policies on the table
     """
+    # Resolve project using slug
+    pool = await get_main_db_pool()
+    resolver = get_project_resolver()
+    project = await resolver.resolve_project(project_slug, pool)
+    project_id = project['id']
+    
+    # Get project database pool
     pool = request.state.project_db
-    project_id = request.state.project_id
+    table_name = table
     
     logger.info(f"DELETE /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
