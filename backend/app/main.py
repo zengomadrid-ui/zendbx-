@@ -135,8 +135,32 @@ app.add_middleware(RLSContextMiddleware)
 @app.on_event("startup")
 async def startup():
     """Initialize application"""
-    print(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}...")
+    print("=" * 80)
+    print(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     print(f"Environment: {settings.ENVIRONMENT}")
+    
+    # Show Git version information
+    try:
+        import subprocess
+        import os
+        git_commit = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], 
+                                            cwd=os.path.dirname(os.path.dirname(__file__)),
+                                            stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        git_branch = subprocess.check_output(['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                                            cwd=os.path.dirname(os.path.dirname(__file__)),
+                                            stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        print(f"📦 Git Version: {git_branch}@{git_commit}")
+    except Exception:
+        print(f"📦 Git Version: Not available")
+    
+    # Show auth module file path
+    try:
+        import app.api.public_auth_v2 as auth_v2_module
+        print(f"📄 Auth Module v2: {auth_v2_module.__file__}")
+    except Exception as e:
+        print(f"⚠️  Could not load auth_v2 module: {e}")
+    
+    print("=" * 80 + "\n")
     
     # Initialize database connection pool FIRST
     try:
@@ -329,6 +353,7 @@ from app.api import (
 )
 
 # Multi-tenant APIs (new slug-based routing) - These MUST come first to override old endpoints
+logger.info("📍 Registering slug-based auth router from: app.api.public_auth_v2")
 app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New: /p/{slug}/v1/auth/*
 app.include_router(rest_v1.router, tags=["rest-api"])  # New: /p/{slug}/v1/rest/{table}
 app.include_router(storage_v2.router, tags=["storage-v2"])  # New: /p/{slug}/v1/storage/*

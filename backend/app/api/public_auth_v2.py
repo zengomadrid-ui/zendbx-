@@ -134,7 +134,10 @@ async def signup(project_slug: str, request_data: SignUpRequest):
     Public signup endpoint - No API key required.
     Creates user in auth.users table (Phase 1).
     Uses project_slug (public identifier).
+    
+    VERSION: v2.0 - Slug-based routing, no user_profiles dependency
     """
+    logger.info(f"🔵 SIGNUP v2.0 EXECUTING - Slug: {project_slug}, Module: public_auth_v2.py")
     try:
         pool = await get_main_db_pool()
         resolver = get_project_resolver()
