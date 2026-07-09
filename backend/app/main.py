@@ -5,6 +5,10 @@ from typing import Optional
 from app.core.config import settings
 from app.core.database import close_all_pools
 import traceback
+import logging
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # Disable Swagger / ReDoc / OpenAPI schema in production so they are never
 # indexed or discovered by search engines.
