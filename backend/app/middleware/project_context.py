@@ -152,13 +152,30 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
             user_role = base_role
             user_email = None
 
-            # If apikey was used for project identification and Bearer is a separate user JWT
-            user_bearer = bearer_token if apikey_header else None
+            # Determine user JWT for authentication
+            # Priority: If apikey is present, use bearer_token for user auth
+            #           Otherwise, bearer_token was already used for project auth
+            user_bearer = None
+            if apikey_header and bearer_token and bearer_token != apikey_header:
+                # Case 1: Both apikey and different Authorization Bearer
+                user_bearer = bearer_token
+            elif not apikey_header and bearer_token:
+                # Case 2: Only Authorization Bearer (already validated as project_key)
+                # Check if it's a user token (role=authenticated) or project key (role=anon/service_role)
+                try:
+                    payload = pyjwt.decode(bearer_token, jwt_secret, algorithms=["HS256"])
+                    token_role = payload.get("role", "")
+                    if token_role == "authenticated":
+                        user_bearer = bearer_token
+                except Exception:
+                    pass  # Keep user_bearer as None
 
+            # Decode user JWT if present
             if user_bearer:
                 try:
                     payload = pyjwt.decode(user_bearer, jwt_secret, algorithms=["HS256"])
                     token_role = payload.get("role", "")
+                    
                     if token_role == "authenticated":
                         user_id = payload.get("sub")
                         user_role = "authenticated"

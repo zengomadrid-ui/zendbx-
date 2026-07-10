@@ -151,26 +151,6 @@ async def signup(project_slug: str, request_data: SignUpRequest):
             await conn.execute(f'SET search_path TO "{schema}", public, auth')
             await set_rls_context(conn, user_id=None, role='service_role')
 
-            # Ensure auth schema and auth.users table exist
-            await conn.execute("CREATE SCHEMA IF NOT EXISTS auth")
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS auth.users (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    email TEXT NOT NULL,
-                    username TEXT,
-                    password_hash TEXT NOT NULL DEFAULT '',
-                    provider TEXT NOT NULL DEFAULT 'email',
-                    email_verified BOOLEAN DEFAULT FALSE,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    avatar_url TEXT,
-                    metadata JSONB DEFAULT '{}'::jsonb,
-                    last_login_at TIMESTAMPTZ,
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW(),
-                    CONSTRAINT auth_users_email_unique UNIQUE (email)
-                )
-            """)
-
             # Check if email already exists (case-insensitive)
             existing = await conn.fetchrow(
                 "SELECT id FROM auth.users WHERE LOWER(email) = LOWER($1)", 
@@ -195,25 +175,7 @@ async def signup(project_slug: str, request_data: SignUpRequest):
                 RETURNING id, email, username, provider, email_verified, created_at
             """, request_data.email, request_data.name, hashed)
 
-            # Ensure public.users view exists for application queries
-            await conn.execute("""
-                CREATE OR REPLACE VIEW public.users AS
-                SELECT
-                    id,
-                    email,
-                    username,
-                    provider,
-                    avatar_url,
-                    is_active,
-                    email_verified,
-                    metadata,
-                    created_at,
-                    updated_at,
-                    last_login_at
-                FROM auth.users;
-            """)
-
-            logger.info(f"✅ Signup: {user['email']} in schema '{schema}' (auth.users + public.users view)")
+            logger.info(f"✅ Signup: {user['email']} in schema '{schema}'")
 
         # Generate JWT access token
         access_token = generate_jwt(
@@ -236,12 +198,42 @@ async def signup(project_slug: str, request_data: SignUpRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Signup error for {request_data.email}: {type(e).__name__}: {str(e)}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unable to create account. Please check your information and try again."
-        )
+        # Log complete exception details
+        exception_type = type(e).__name__
+        exception_message = str(e)
+        exception_traceback = traceback.format_exc()
+        
+        logger.error(f"=" * 80)
+        logger.error(f"SIGNUP EXCEPTION DETAILS")
+        logger.error(f"=" * 80)
+        logger.error(f"Email: {request_data.email}")
+        logger.error(f"Exception Type: {exception_type}")
+        logger.error(f"Exception Message: {exception_message}")
+        logger.error(f"Full Traceback:")
+        logger.error(exception_traceback)
+        logger.error(f"=" * 80)
+        
+        # Import settings to check DEBUG mode
+        from ..core.config import Settings
+        settings = Settings()
+        
+        # In DEBUG mode, return the actual exception
+        if settings.DEBUG or settings.ENVIRONMENT == "development":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": exception_type,
+                    "message": exception_message,
+                    "traceback": exception_traceback.split('\n'),
+                    "debug": "This detailed error is only shown in DEBUG/development mode"
+                }
+            )
+        else:
+            # Production: generic message
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to create account. Please check your information and try again."
+            )
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────
