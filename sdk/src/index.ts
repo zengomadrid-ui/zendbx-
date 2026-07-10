@@ -1,15 +1,15 @@
 // Main entry point — re-export everything public
 
-// New routing architecture
+// New routing architecture (v1.2.0+)
 export { createClient, ZendbxClient } from './client';
-export type { ClientConfig, SignUpData, SignInData, User, AuthResponse } from './client';
+export type { ClientConfig, SignUpData, SignInData, AuthResponse } from './client';
+export type { User } from './types';
 export { RouteBuilder, createRouteBuilder } from './routes';
 export type { RouteConfig } from './routes';
+export { QueryBuilder } from './query-builder-v2';
+export type { QueryFilter, QueryOptions } from './query-builder-v2';
 
-// Legacy client (deprecated - use createClient instead)
-export { createClient as createLegacyClient, ZendbxClient as LegacyZendbxClient } from './client';
-export type { ZendbxClientOptions } from './client';
-
+// Legacy exports - maintained for backward compatibility
 export { AuthModule } from './auth';
 export { TableBuilder, SelectBuilder, InsertBuilder, UpdateBuilder, DeleteBuilder } from './query-builder';
 export type { ZendbxQueryResponse } from './query-builder';
@@ -36,7 +36,6 @@ export {
 export type {
   ZendbxResponse,
   ZendbxError,
-  User,
   Session,
   AuthData,
   SignUpCredentials,

@@ -1,4 +1,5 @@
 import type { HttpClient } from './http';
+import type { RouteBuilder } from './routes';
 import type {
   ZendbxResponse,
   User,
@@ -17,6 +18,8 @@ export class AuthModule {
 
   constructor(
     private http: HttpClient,
+    private routes: RouteBuilder,
+    /** @deprecated kept for backward compatibility */
     private projectId: string,
   ) {}
 
@@ -60,7 +63,7 @@ export class AuthModule {
   async signUp(credentials: SignUpCredentials): Promise<ZendbxResponse<AuthData>> {
     const { email, password, name } = credentials;
     const result = await this.http.request<{ access_token: string; user: User }>(
-      `/v1/auth/${this.projectId}/signup`,
+      this.routes.auth.signup(),
       {
         method: 'POST',
         body: { email, password, name: name ?? email.split('@')[0] },
@@ -79,7 +82,7 @@ export class AuthModule {
    */
   async signIn(credentials: SignInCredentials): Promise<ZendbxResponse<AuthData>> {
     const result = await this.http.request<{ access_token: string; user: User }>(
-      `/v1/auth/${this.projectId}/login`,
+      this.routes.auth.login(),
       { method: 'POST', body: credentials, allowAnon: true },
     );
     const auth = this._toAuthData(result);
@@ -96,7 +99,7 @@ export class AuthModule {
   async getUser(): Promise<ZendbxResponse<{ user: User | null }>> {
     if (!this.http.token) return { data: { user: null }, error: null };
 
-    const result = await this.http.request<User>(`/v1/auth/${this.projectId}/user`);
+    const result = await this.http.request<User>(this.routes.auth.user());
     if (result.error) {
       if (result.error.status === 401) {
         this.http.clearToken();
@@ -159,7 +162,7 @@ export class AuthModule {
 
   /** Update the currently authenticated user's profile. */
   async updateUser(updates: { name?: string; email?: string }): Promise<ZendbxResponse<User>> {
-    const result = await this.http.request<User>(`/v1/auth/${this.projectId}/user`, {
+    const result = await this.http.request<User>(this.routes.auth.user(), {
       method: 'PATCH',
       body: updates,
     });

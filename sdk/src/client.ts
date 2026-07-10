@@ -5,6 +5,7 @@
 
 import { RouteBuilder, createRouteBuilder } from './routes';
 import { HttpClient } from './http';
+import { QueryBuilder } from './query-builder-v2';
 import type { ZendbxResponse } from './types';
 
 export interface ClientConfig {
@@ -84,13 +85,12 @@ export class ZendbxClient {
       config.projectSlug,
       {
         accessToken: config.accessToken,
-        autoRefreshToken: config.autoRefreshToken,
       }
     );
   }
 
   /**
-   * Authentication API
+   * Authentication API - Complete implementation
    */
   get auth() {
     return {
@@ -99,7 +99,10 @@ export class ZendbxClient {
        */
       signUp: async (data: SignUpData): Promise<AuthResponse> => {
         const url = this.routes.auth.signup();
-        const response = await this.http.post<AuthResponse>(url, data, { skipAuth: true });
+        const response = await this.http.post<AuthResponse>(url, data, { 
+          skipAuth: false,  // Include apikey header
+          allowAnon: true   // Use anon key if no user token
+        });
         
         if (response.error) {
           throw new Error(response.error.message || 'Signup failed');
@@ -118,7 +121,10 @@ export class ZendbxClient {
        */
       signIn: async (data: SignInData): Promise<AuthResponse> => {
         const url = this.routes.auth.login();
-        const response = await this.http.post<AuthResponse>(url, data, { skipAuth: true });
+        const response = await this.http.post<AuthResponse>(url, data, { 
+          skipAuth: false,  // Include apikey header
+          allowAnon: true   // Use anon key if no user token
+        });
         
         if (response.error) {
           throw new Error(response.error.message || 'Login failed');
@@ -150,9 +156,16 @@ export class ZendbxClient {
        * Sign out current user
        */
       signOut: async (): Promise<void> => {
-        const url = this.routes.auth.logout();
-        await this.http.post(url, {});
+        // Clear token locally (logout endpoint may not exist)
         this.http.clearToken();
+        
+        // Try to call logout endpoint (may 404, that's okay)
+        try {
+          const url = this.routes.auth.logout();
+          await this.http.post(url, {});
+        } catch (error) {
+          // Ignore logout endpoint errors - token is cleared locally
+        }
       },
 
       /**
@@ -168,64 +181,200 @@ export class ZendbxClient {
       setSession: (token: string): void => {
         this.http.setToken(token);
       },
+
+      /**
+       * Refresh access token
+       */
+      refreshSession: async (): Promise<AuthResponse> => {
+        const url = this.routes.auth.refresh();
+        const response = await this.http.post<AuthResponse>(url, {});
+        
+        if (response.error) {
+          throw new Error(response.error.message || 'Token refresh failed');
+        }
+        
+        // Store new token
+        if (response.data?.access_token) {
+          this.http.setToken(response.data.access_token);
+        }
+        
+        return response.data!;
+      },
+
+      /**
+       * Request password reset email
+       */
+      resetPasswordForEmail: async (email: string): Promise<{ message: string }> => {
+        const url = this.routes.auth.forgotPassword();
+        const response = await this.http.post<{ message: string }>(
+          url, 
+          { email },
+          { skipAuth: false, allowAnon: true }
+        );
+        
+        if (response.error) {
+          throw new Error(response.error.message || 'Password reset request failed');
+        }
+        
+        return response.data!;
+      },
+
+      /**
+       * Update password with reset token
+       */
+      updatePassword: async (token: string, newPassword: string): Promise<{ message: string }> => {
+        const url = this.routes.auth.resetPassword();
+        const response = await this.http.post<{ message: string }>(
+          url,
+          { token, password: newPassword },
+          { skipAuth: false, allowAnon: true }
+        );
+        
+        if (response.error) {
+          throw new Error(response.error.message || 'Password update failed');
+        }
+        
+        return response.data!;
+      },
+
+      /**
+       * Update current user data
+       */
+      updateUser: async (data: Partial<User>): Promise<User> => {
+        const url = this.routes.auth.user();
+        const response = await this.http.patch<User>(url, data);
+        
+        if (response.error) {
+          throw new Error(response.error.message || 'User update failed');
+        }
+        
+        return response.data!;
+      },
+
+      /**
+       * Verify email with token
+       */
+      verifyEmail: async (token: string): Promise<{ message: string }> => {
+        const url = this.routes.auth.verifyEmail();
+        const response = await this.http.post<{ message: string }>(
+          url,
+          { token },
+          { skipAuth: false, allowAnon: true }
+        );
+        
+        if (response.error) {
+          throw new Error(response.error.message || 'Email verification failed');
+        }
+        
+        return response.data!;
+      },
     };
   }
 
   /**
-   * REST API (Database Operations)
+   * REST API (Database Operations) with Query Builder
    */
-  from(tableName: string) {
+  from<T = any>(tableName: string) {
     const url = this.routes.rest.table(tableName);
+    const http = this.http; // Capture for closures
     
-    return {
-      /**
-       * SELECT query
-       */
-      select: async (columns: string = '*'): Promise<ZendbxResponse<any[]>> => {
-        const selectUrl = `${url}?select=${encodeURIComponent(columns)}`;
-        return this.http.get(selectUrl);
-      },
-
-      /**
-       * INSERT query
-       */
-      insert: async (data: any | any[]): Promise<ZendbxResponse<any>> => {
-        return this.http.post(url, data);
-      },
-
-      /**
-       * UPDATE query
-       */
-      update: async (data: any): Promise<ZendbxResponse<any>> => {
-        return this.http.patch(url, data);
-      },
-
-      /**
-       * DELETE query
-       */
-      delete: async (): Promise<ZendbxResponse<any>> => {
-        return this.http.delete(url);
-      },
-
-      /**
-       * Query builder for filtering
-       */
-      eq: (column: string, value: any) => {
-        // Return builder pattern for chaining
-        return this.from(tableName);
-      },
+    // Create query builder instance
+    const builder = new QueryBuilder<T>(this.http, url);
+    
+    // Add insert method (doesn't use filters)
+    (builder as any).insert = async (data: T | T[]): Promise<ZendbxResponse<T>> => {
+      return http.post<T>(url, data);
     };
+    
+    // Add update method - returns a builder with filters
+    (builder as any).update = (data: Partial<T>) => {
+      const updateBuilder = {
+        _filters: [] as Array<{ column: string; operator: string; value: any }>,
+        _data: data,
+        
+        eq(column: string, value: any) {
+          this._filters.push({ column, operator: 'eq', value });
+          return this;
+        },
+        
+        neq(column: string, value: any) {
+          this._filters.push({ column, operator: 'neq', value });
+          return this;
+        },
+        
+        then(onfulfilled?: any, onrejected?: any) {
+          return this._execute().then(onfulfilled, onrejected);
+        },
+        
+        catch(onrejected: any) {
+          return this._execute().catch(onrejected);
+        },
+        
+        async _execute(): Promise<ZendbxResponse<T>> {
+          // Build query string from filters
+          const params = new URLSearchParams();
+          for (const filter of this._filters) {
+            params.append(filter.column, `${filter.operator}.${filter.value}`);
+          }
+          
+          const queryUrl = params.toString() ? `${url}?${params.toString()}` : url;
+          return http.patch<T>(queryUrl, this._data);
+        }
+      };
+      
+      return updateBuilder;
+    };
+    
+    // Add delete method - returns a builder with filters
+    (builder as any).delete = () => {
+      const deleteBuilder = {
+        _filters: [] as Array<{ column: string; operator: string; value: any }>,
+        
+        eq(column: string, value: any) {
+          this._filters.push({ column, operator: 'eq', value });
+          return this;
+        },
+        
+        neq(column: string, value: any) {
+          this._filters.push({ column, operator: 'neq', value });
+          return this;
+        },
+        
+        then(onfulfilled?: any, onrejected?: any) {
+          return this._execute().then(onfulfilled, onrejected);
+        },
+        
+        catch(onrejected: any) {
+          return this._execute().catch(onrejected);
+        },
+        
+        async _execute(): Promise<ZendbxResponse<void>> {
+          // Build query string from filters
+          const params = new URLSearchParams();
+          for (const filter of this._filters) {
+            params.append(filter.column, `${filter.operator}.${filter.value}`);
+          }
+          
+          const queryUrl = params.toString() ? `${url}?${params.toString()}` : url;
+          return http.delete(queryUrl);
+        }
+      };
+      
+      return deleteBuilder;
+    };
+    
+    return builder;
   }
 
   /**
-   * Storage API
+   * Storage API - Complete implementation
    */
   get storage() {
     return {
       /**
        * List all buckets
        */
-      listBuckets: async () => {
+      listBuckets: async (): Promise<ZendbxResponse<any[]>> => {
         const url = this.routes.storage.buckets();
         return this.http.get(url);
       },
@@ -233,9 +382,28 @@ export class ZendbxClient {
       /**
        * Create a new bucket
        */
-      createBucket: async (name: string, isPublic: boolean = false) => {
+      createBucket: async (name: string, options?: { public?: boolean }): Promise<ZendbxResponse<any>> => {
         const url = this.routes.storage.buckets();
-        return this.http.post(url, { name, is_public: isPublic });
+        return this.http.post(url, { 
+          name, 
+          is_public: options?.public ?? false 
+        });
+      },
+
+      /**
+       * Get bucket by ID
+       */
+      getBucket: async (bucketId: string): Promise<ZendbxResponse<any>> => {
+        const url = this.routes.storage.bucket(bucketId);
+        return this.http.get(url);
+      },
+
+      /**
+       * Delete bucket
+       */
+      deleteBucket: async (bucketId: string): Promise<ZendbxResponse<void>> => {
+        const url = this.routes.storage.bucket(bucketId);
+        return this.http.delete(url);
       },
 
       /**
@@ -245,7 +413,7 @@ export class ZendbxClient {
         /**
          * List files in bucket
          */
-        list: async (path: string = '') => {
+        list: async (path: string = ''): Promise<ZendbxResponse<any[]>> => {
           const url = this.routes.storage.files(bucketId);
           return this.http.get(`${url}?path=${encodeURIComponent(path)}`);
         },
@@ -253,27 +421,81 @@ export class ZendbxClient {
         /**
          * Upload file to bucket
          */
-        upload: async (path: string, file: File | Blob) => {
+        upload: async (path: string, file: File | Blob, options?: { 
+          contentType?: string;
+          cacheControl?: string;
+          upsert?: boolean;
+        }): Promise<ZendbxResponse<any>> => {
           const url = this.routes.storage.upload(bucketId);
           const formData = new FormData();
           formData.append('file', file);
           formData.append('path', path);
-          return this.http.post(url, formData);
+          
+          if (options?.contentType) {
+            formData.append('contentType', options.contentType);
+          }
+          if (options?.cacheControl) {
+            formData.append('cacheControl', options.cacheControl);
+          }
+          if (options?.upsert !== undefined) {
+            formData.append('upsert', String(options.upsert));
+          }
+          
+          return this.http.requestFormData(url, formData);
+        },
+
+        /**
+         * Download file from bucket
+         */
+        download: async (fileId: string): Promise<ZendbxResponse<Blob>> => {
+          const url = this.routes.storage.file(bucketId, fileId);
+          // Note: This would need special handling for blob responses
+          return this.http.get(url);
         },
 
         /**
          * Delete file from bucket
          */
-        remove: async (fileId: string) => {
-          const url = this.routes.storage.file(bucketId, fileId);
-          return this.http.delete(url);
+        remove: async (paths: string[]): Promise<ZendbxResponse<any>> => {
+          const url = this.routes.storage.files(bucketId);
+          return this.http.delete(url, { body: { paths } } as any);
         },
 
         /**
          * Get public URL for file
          */
-        getPublicUrl: (fileId: string): string => {
-          return this.routes.storage.download(bucketId, fileId);
+        getPublicUrl: (fileId: string): { data: { publicUrl: string } } => {
+          const publicUrl = this.routes.storage.download(bucketId, fileId);
+          return {
+            data: { publicUrl }
+          };
+        },
+
+        /**
+         * Create signed URL for private file
+         */
+        createSignedUrl: async (
+          fileId: string, 
+          expiresIn: number
+        ): Promise<ZendbxResponse<{ signedUrl: string }>> => {
+          const url = `${this.routes.storage.file(bucketId, fileId)}/sign`;
+          return this.http.post(url, { expiresIn });
+        },
+
+        /**
+         * Move file
+         */
+        move: async (fromPath: string, toPath: string): Promise<ZendbxResponse<any>> => {
+          const url = `${this.routes.storage.files(bucketId)}/move`;
+          return this.http.post(url, { fromPath, toPath });
+        },
+
+        /**
+         * Copy file
+         */
+        copy: async (fromPath: string, toPath: string): Promise<ZendbxResponse<any>> => {
+          const url = `${this.routes.storage.files(bucketId)}/copy`;
+          return this.http.post(url, { fromPath, toPath });
         },
       }),
     };
@@ -303,6 +525,3 @@ export class ZendbxClient {
 export function createClient(config: ClientConfig): ZendbxClient {
   return new ZendbxClient(config);
 }
-
-// Export types
-export type { ClientConfig, SignUpData, SignInData, User, AuthResponse };

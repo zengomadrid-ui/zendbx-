@@ -83,7 +83,11 @@ export class HttpClient {
     endpoint: string,
     options: RequestOptions = {},
   ): Promise<ZendbxResponse<T>> {
-    const url = `${this.baseUrl}${endpoint}`;
+    // If endpoint is already a full URL, use it as-is; otherwise prepend baseUrl
+    const url = endpoint.startsWith('http://') || endpoint.startsWith('https://') 
+      ? endpoint 
+      : `${this.baseUrl}${endpoint}`;
+    
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers ?? {}),
@@ -139,7 +143,12 @@ export class HttpClient {
         },
       };
     }
-    const url = `${this.baseUrl}${endpoint}`;
+    
+    // If endpoint is already a full URL, use it as-is; otherwise prepend baseUrl
+    const url = endpoint.startsWith('http://') || endpoint.startsWith('https://') 
+      ? endpoint 
+      : `${this.baseUrl}${endpoint}`;
+      
     const headers: Record<string, string> = {
       apikey: this.anonKey,
       Authorization: `Bearer ${userToken}`,

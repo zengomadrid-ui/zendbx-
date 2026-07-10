@@ -1,6 +1,6 @@
 {
   "name": "@zendbx/sdk",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Official JavaScript/TypeScript SDK for ZendBX — PostgreSQL Backend-as-a-Service",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,7 +8,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc",
