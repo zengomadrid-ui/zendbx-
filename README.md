@@ -474,12 +474,6 @@ npm run dev
 
 MIT License - see [LICENSE](./LICENSE) for details
 
-## Acknowledgments
-
-- Inspired by [Supabase](https://supabase.com)
-- Powered by [PostgreSQL](https://postgresql.org)
-- Built with [FastAPI](https://fastapi.tiangolo.com) and [Next.js](https://nextjs.org)
-
 ---
 
 **Built with ❤️ for developers**
