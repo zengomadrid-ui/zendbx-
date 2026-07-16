@@ -284,14 +284,17 @@ async def update_record(
         if not set_parts:
             raise HTTPException(status_code=400, detail="No fields to update")
         
-        # Only add updated_at if column exists
+        # Only add updated_at if column exists in THIS project's schema
+        # CRITICAL: Must check project schema to prevent cross-project false positives
         async with pool.acquire() as conn:
             has_updated_at = await conn.fetchval("""
                 SELECT EXISTS (
                     SELECT 1 FROM information_schema.columns
-                    WHERE table_name = $1 AND column_name = 'updated_at'
+                    WHERE table_schema = $1 
+                      AND table_name = $2 
+                      AND column_name = 'updated_at'
                 )
-            """, bare_table_name)
+            """, schema, bare_table_name)
         
         if has_updated_at:
             set_parts.append("updated_at = NOW()")

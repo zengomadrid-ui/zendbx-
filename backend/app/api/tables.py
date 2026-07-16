@@ -73,8 +73,11 @@ async def list_tables(
     print(f"User ID: {current_user['id']}")
     
     try:
-        # First, try to find tables in a schema matching the database name (production)
+        # 🔧 FIX: Query ONLY the project schema - never fallback to 'public'
         schema_name = database_name
+        
+        print(f"🔍 Querying schema: '{schema_name}'")
+        
         result = await execute_on_project_db(
             database_name,
             f"""
@@ -108,44 +111,6 @@ async def list_tables(
             ORDER BY t.table_name
             """
         )
-        
-        # If no tables found in project schema, try public schema (local dev)
-        if not result or len(result) == 0:
-            print(f"⚠️  No tables found in schema '{schema_name}', trying 'public' schema...")
-            schema_name = "public"
-            result = await execute_on_project_db(
-                database_name,
-                f"""
-                SELECT 
-                    t.table_name,
-                    t.table_schema,
-                    COUNT(c.column_name) as column_count
-                FROM information_schema.tables t
-                LEFT JOIN information_schema.columns c 
-                    ON t.table_name = c.table_name 
-                    AND c.table_schema = t.table_schema
-                WHERE t.table_schema = '{schema_name}'
-                AND t.table_type = 'BASE TABLE'
-                AND t.table_name NOT LIKE '_zendbx_%'
-                AND t.table_name NOT LIKE '_nexora_%'
-                AND t.table_name NOT IN (
-                    'users', 'projects', 'api_keys', 'query_history', 'saved_queries',
-                    'user_tables', 'login_attempts', 'password_reset_tokens', 'oauth_apps',
-                    'oauth_connections', 'subscription_plans', 'user_subscriptions',
-                    'usage_tracking', 'usage_logs', 'backups', 'backup_schedules',
-                    'auth_sessions', 'auth_policies', 'auth_hooks', 'security_settings',
-                    'project_members', 'project_messages', 'project_quotas', 'project_sessions',
-                    'project_users', 'project_auth_logs', 'project_oauth_providers',
-                    'audit_logs', 'rate_limit_logs', 'realtime_test', 'file_uploads',
-                    'backup_history', 'oauth_audit_log', 'oauth_audit_logs', 'oauth_provider_settings',
-                    'oauth_providers', 'oauth_redirect_urls', 'oauth_state_sessions', 'oauth_states',
-                    'project_api_keys', 'quota_overrides', 'storage_buckets', 'storage_objects',
-                    'usage_records', 'user_sessions'
-                )
-                GROUP BY t.table_schema, t.table_name
-                ORDER BY t.table_name
-                """
-            )
         
         print(f"\n🎯 Tables found in schema '{schema_name}': {len(result)}")
         for row in result:
@@ -416,13 +381,22 @@ async def get_table_rows(
         
         # Add search filter
         if search:
-            # Get table columns
-            col_query = f"""
+            # Get table columns - MUST filter by schema to prevent cross-project leakage
+            # Resolve project schema from authenticated project (never trust client input)
+            schema_name = project["database_name"]
+            
+            col_query = """
                 SELECT column_name 
                 FROM information_schema.columns 
-                WHERE table_name = '{table_name}'
+                WHERE table_schema = $1 AND table_name = $2
+                ORDER BY ordinal_position
             """
-            columns = await execute_on_project_db(project["database_name"], col_query)
+            columns = await execute_on_project_db(
+                project["database_name"], 
+                col_query, 
+                schema_name, 
+                table_name
+            )
             
             search_conditions = []
             for col in columns:

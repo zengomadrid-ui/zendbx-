@@ -13,15 +13,29 @@ _column_cache = {}
 
 
 async def check_column_exists(
-    conn: asyncpg.Connection, 
+    conn: asyncpg.Connection,
+    schema_name: str,
     table_name: str, 
     column_name: str
 ) -> bool:
     """
-    Check if a column exists in a table
-    Results are cached to avoid repeated queries
+    Check if a column exists in a table within a specific schema.
+    
+    CRITICAL: This function REQUIRES schema_name to prevent cross-project
+    metadata leakage in multi-tenant environments.
+    
+    Args:
+        conn: Database connection
+        schema_name: PostgreSQL schema name (e.g., 'proj_abc123')
+        table_name: Table name
+        column_name: Column name to check
+        
+    Returns:
+        True if column exists in the specified schema.table, False otherwise
+    
+    Results are cached to avoid repeated queries.
     """
-    cache_key = f"{table_name}.{column_name}"
+    cache_key = f"{schema_name}.{table_name}.{column_name}"
     
     if cache_key in _column_cache:
         return _column_cache[cache_key]
@@ -29,16 +43,18 @@ async def check_column_exists(
     try:
         result = await conn.fetchval("""
             SELECT EXISTS (
-                SELECT FROM information_schema.columns 
-                WHERE table_name = $1 AND column_name = $2
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_schema = $1 
+                  AND table_name = $2 
+                  AND column_name = $3
             );
-        """, table_name, column_name)
+        """, schema_name, table_name, column_name)
         
         _column_cache[cache_key] = bool(result)
         return bool(result)
         
     except Exception as e:
-        logger.error(f"Error checking column existence: {e}")
+        logger.error(f"Error checking column existence for {schema_name}.{table_name}.{column_name}: {e}")
         # Assume column doesn't exist on error
         return False
 
@@ -86,8 +102,9 @@ async def resolve_project_by_slug(
     Returns:
         Project record or None if not found
     """
-    # Check if legacy_slug column exists
-    has_legacy_slug = await check_column_exists(conn, "projects", "legacy_slug")
+    # Check if legacy_slug column exists in 'public' schema (main DB)
+    # The 'projects' table lives in the main database's public schema
+    has_legacy_slug = await check_column_exists(conn, "public", "projects", "legacy_slug")
     
     if has_legacy_slug:
         # Modern schema: try both slug and legacy_slug
