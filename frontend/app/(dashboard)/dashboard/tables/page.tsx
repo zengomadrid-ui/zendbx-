@@ -29,6 +29,7 @@ export default function TablesPage() {
   const [isAddingRow, setIsAddingRow] = useState(false);
   const [page, setPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const rowsPerPage = 50;
 
   useEffect(() => {
@@ -36,10 +37,37 @@ export default function TablesPage() {
   }, []);
 
   useEffect(() => {
-    if (selectedTable) {
+    if (selectedTable && currentProjectId) {
       fetchTableData(selectedTable);
     }
-  }, [selectedTable, page]);
+  }, [selectedTable, page, currentProjectId]);
+
+  // Clear table data when table selection changes
+  useEffect(() => {
+    // Reset to page 1 when table changes
+    if (selectedTable) {
+      setPage(1);
+      setEditingCell(null);
+      setNewRow(null);
+      setIsAddingRow(false);
+    }
+  }, [selectedTable]);
+
+  // Clear table state when project changes
+  useEffect(() => {
+    const projectId = localStorage.getItem('current_project_id');
+    if (projectId !== currentProjectId) {
+      // Project changed - clear all table-specific state
+      setSelectedTable(null);
+      setTableData(null);
+      setPage(1);
+      setTotalRows(0);
+      setEditingCell(null);
+      setNewRow(null);
+      setIsAddingRow(false);
+      setCurrentProjectId(projectId);
+    }
+  }, []); // Run on mount and whenever fetchTables is called
 
   const fetchTables = async () => {
     let projectId = localStorage.getItem('current_project_id');
@@ -51,6 +79,7 @@ export default function TablesPage() {
           projectId = projects[0].id;
           if (projectId) {
             localStorage.setItem('current_project_id', projectId);
+            setCurrentProjectId(projectId);
           }
         }
       } catch (err) {
@@ -61,6 +90,16 @@ export default function TablesPage() {
     if (!projectId) {
       setTables([]);
       return;
+    }
+
+    // Check if project changed while fetching
+    if (currentProjectId && projectId !== currentProjectId) {
+      // Project changed - clear table state
+      setSelectedTable(null);
+      setTableData(null);
+      setPage(1);
+      setTotalRows(0);
+      setCurrentProjectId(projectId);
     }
 
     try {
@@ -78,9 +117,18 @@ export default function TablesPage() {
     const projectId = localStorage.getItem('current_project_id');
     if (!projectId) return;
 
+    // Store request context to prevent stale responses
+    const requestProjectId = projectId;
+    const requestTableName = tableName;
+
     setLoading(true);
     try {
-      // Get schema
+      // First, get the project's database schema name
+      const projectData = await apiClient.get(`/api/projects/${projectId}`);
+      const schemaName = projectData.database_name;
+
+      // CRITICAL FIX: Query schema metadata with table_schema filter
+      // This prevents cross-project metadata leakage
       const schemaSql = `
         SELECT 
           column_name as name,
@@ -88,13 +136,21 @@ export default function TablesPage() {
           is_nullable,
           column_default
         FROM information_schema.columns 
-        WHERE table_name = '${tableName}'
+        WHERE table_schema = '${schemaName}'
+          AND table_name = '${tableName}'
         ORDER BY ordinal_position
       `;
       
       const schemaRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: schemaSql });
       const columns = schemaRes.rows || [];
       
+      // Verify request is still valid (project/table didn't change)
+      const currentProjectId = localStorage.getItem('current_project_id');
+      if (currentProjectId !== requestProjectId || selectedTable !== requestTableName) {
+        console.log('Stale response discarded - project or table changed');
+        return;
+      }
+
       // Get total count
       const countSql = `SELECT COUNT(*) as total FROM "${tableName}"`;
       const countRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: countSql });
@@ -106,6 +162,13 @@ export default function TablesPage() {
       const dataSql = `SELECT * FROM "${tableName}" LIMIT ${rowsPerPage} OFFSET ${offset}`;
       const dataRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: dataSql });
       
+      // Final check before updating state
+      const finalProjectId = localStorage.getItem('current_project_id');
+      if (finalProjectId !== requestProjectId || selectedTable !== requestTableName) {
+        console.log('Stale response discarded at final check');
+        return;
+      }
+
       setTableData({
         columns: columns.map((c: any) => c.name),
         rows: dataRes.rows || [],
