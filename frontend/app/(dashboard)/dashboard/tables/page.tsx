@@ -331,6 +331,37 @@ export default function TablesPage() {
         color: '#FFFFFF'
       }}
     >
+      <style jsx global>{`
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: #FF6B00 #1F1F1F;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 14px;
+          height: 14px;
+          background: #1F1F1F;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #1F1F1F;
+          border-radius: 0;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #FF6B00;
+          border-radius: 7px;
+          border: 3px solid #1F1F1F;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #FF8533;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-corner {
+          background: #1F1F1F;
+        }
+      `}</style>
       {/* Left Sidebar */}
       <div 
         className="w-64 flex flex-col"
@@ -409,7 +440,7 @@ export default function TablesPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col" style={{ minWidth: 0, maxWidth: '100%', overflow: 'hidden', width: '100%' }}>
         {/* Top Header */}
         <div 
           className="px-6 py-4 flex items-center justify-between"
@@ -464,11 +495,22 @@ export default function TablesPage() {
             </button>
           </div>
         </div>
-        {/* Table Content */}
-        <div 
-          className="flex-1 overflow-auto"
-          style={{ background: '#0A0A0A' }}
-        >
+        
+        {/* Table Content Wrapper */}
+        <div className="flex-1" style={{ position: 'relative' }}>
+          <div 
+            className="custom-scrollbar"
+            style={{ 
+              background: '#0A0A0A',
+              overflowX: 'auto',
+              overflowY: 'auto',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0
+            }}
+          >
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <div className="text-[#888888]">Loading...</div>
@@ -481,7 +523,22 @@ export default function TablesPage() {
               </div>
             </div>
           ) : tableData && tableData.columns ? (
-            <table className="w-full">
+            <div style={{ display: 'inline-block' }}>
+              {/* Debug: Log table dimensions */}
+              {(() => {
+                const calculatedWidth = (tableData.columns.length + 1) * 250;
+                console.log('Table Debug:', {
+                  columnCount: tableData.columns.length,
+                  calculatedWidth,
+                  shouldScroll: calculatedWidth > window.innerWidth
+                });
+                return null;
+              })()}
+              <table style={{ 
+                width: `${(tableData.columns.length + 1) * 250}px`,
+                tableLayout: 'fixed',
+                borderCollapse: 'collapse'
+              }}>
               <thead 
                 className="sticky top-0"
                 style={{
@@ -496,7 +553,15 @@ export default function TablesPage() {
                       <th 
                         key={i} 
                         className="px-4 py-3 text-left"
-                        style={{ borderBottom: '1px solid #1F1F1F' }}
+                        style={{ 
+                          borderBottom: '1px solid #1F1F1F',
+                          width: '250px',
+                          minWidth: '250px',
+                          maxWidth: '250px',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}
                       >
                         <div className="flex flex-col">
                           <span className="text-sm font-medium text-white">{col}</span>
@@ -512,7 +577,11 @@ export default function TablesPage() {
                   })}
                   <th 
                     className="px-4 py-3 text-left"
-                    style={{ borderBottom: '1px solid #1F1F1F' }}
+                    style={{ 
+                      borderBottom: '1px solid #1F1F1F',
+                      minWidth: '120px',
+                      whiteSpace: 'nowrap'
+                    }}
                   >
                     <span className="text-sm font-medium text-white">Actions</span>
                   </th>
@@ -529,7 +598,7 @@ export default function TablesPage() {
                     }}
                   >
                     {tableData.columns.map((col: string, colIndex: number) => (
-                      <td key={colIndex} className="px-4 py-2">
+                      <td key={colIndex} className="px-4 py-2" style={{ minWidth: '200px', whiteSpace: 'nowrap' }}>
                         <input
                           type="text"
                           value={newRow[col] || ''}
@@ -577,6 +646,14 @@ export default function TablesPage() {
                         <td 
                           key={colIndex} 
                           className="px-4 py-2 text-sm cursor-pointer"
+                          style={{ 
+                            width: '250px',
+                            minWidth: '250px',
+                            maxWidth: '250px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}
                           onClick={() => !isEditing && startEdit(rowIndex, col, value)}
                         >
                           {isEditing ? (
@@ -645,6 +722,7 @@ export default function TablesPage() {
                 )}
               </tbody>
             </table>
+            </div>
           ) : (
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
@@ -653,6 +731,7 @@ export default function TablesPage() {
               </div>
             </div>
           )}
+        </div>
         </div>
 
         {/* Bottom Pagination */}
