@@ -318,10 +318,15 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Public health check — no authentication required"""
+    # Check if schemas router is registered
+    schemas_routes = [r for r in app.routes if hasattr(r, 'path') and 'schemas' in r.path]
+    
     return {
         "status": "healthy",
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
+        "schemas_routes_count": len(schemas_routes),
+        "schemas_routes": [r.path for r in schemas_routes] if schemas_routes else []
     }
 
 @app.get("/version")
@@ -354,10 +359,11 @@ from app.api import (
     mcp_info,  # MCP Information API
     mcp_server,  # MCP Server Implementation
     project_settings,  # Project Settings API
+    schemas,  # Schema Discovery API (multi-schema table navigation)
 )
 
 # Multi-tenant APIs (new slug-based routing) - These MUST come first to override old endpoints
-logger.info("📍 Registering slug-based auth router from: app.api.public_auth_v2")
+print(f"📍 Registering slug-based auth router from: app.api.public_auth_v2")
 app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New: /p/{slug}/v1/auth/*
 app.include_router(rest_v1.router, tags=["rest-api"])  # New: /p/{slug}/v1/rest/{table}
 app.include_router(storage_v2.router, tags=["storage-v2"])  # New: /p/{slug}/v1/storage/*
@@ -378,6 +384,15 @@ app.include_router(project_auth.router, prefix="/api", tags=["project-auth"])
 # app.include_router(public_auth.router, tags=["public-auth"])  # OLD - Disabled in favor of v2
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(project_keys.router, prefix="/api", tags=["project-keys"])
+
+# Schema Discovery API - CRITICAL: Must be before tables router for route priority
+print(f"� SCHEMAS MODULE: Importing and registering...")
+print(f"   Schemas router object: {schemas.router}")
+print(f"   Schemas router routes: {[r.path for r in schemas.router.routes]}")
+print(f"   Registering at prefix: /api/projects")
+app.include_router(schemas.router, prefix="/api/projects", tags=["schemas"])
+print(f"   ✅ Schemas router registered! Total routes: {len(app.routes)}")
+
 app.include_router(tables.router, prefix="/api/projects", tags=["tables"])
 app.include_router(queries.router, prefix="/api/projects", tags=["queries"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
