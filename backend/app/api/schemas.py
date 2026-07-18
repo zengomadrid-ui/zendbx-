@@ -1,6 +1,8 @@
 """
 Schema Discovery API - Multi-tenant PostgreSQL schema navigation
 Provides schema-based table grouping for the Table Editor
+
+Version: 1.0.0
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.api.auth import get_current_user
