@@ -406,19 +406,48 @@ async def get_schema_table_rows(
         offset = (page - 1) * limit
         
         # Build query with proper schema qualification
-        if schema_name == "auth" and table_name == "users":
-            # CRITICAL: Filter auth.users by project_id
+        if schema_name == "auth":
+            # Auth schema - query directly without project_id filter
+            # Note: If auth tables should be project-scoped in the future,
+            # add project_id column to auth tables first
             query = f"""
-                SELECT * FROM auth.users 
-                WHERE project_id = $1
+                SELECT * FROM "{schema_name}"."{table_name}"
                 ORDER BY created_at DESC
-                LIMIT $2 OFFSET $3
+                LIMIT $1 OFFSET $2
             """
-            rows = await execute_on_main_db(query, project_id, limit, offset)
+            rows = await execute_on_project_db(project_schema, query, limit, offset)
             
             # Get count
-            count_query = "SELECT COUNT(*) as count FROM auth.users WHERE project_id = $1"
-            count_result = await execute_on_main_db(count_query, project_id)
+            count_query = f'SELECT COUNT(*) as count FROM "{schema_name}"."{table_name}"'
+            count_result = await execute_on_project_db(project_schema, count_query)
+            total_count = count_result[0]["count"] if count_result else 0
+            
+        elif schema_name == "realtime":
+            # Realtime schema tables
+            query = f"""
+                SELECT * FROM "{schema_name}"."{table_name}"
+                ORDER BY 1
+                LIMIT $1 OFFSET $2
+            """
+            rows = await execute_on_project_db(project_schema, query, limit, offset)
+            
+            # Get count
+            count_query = f'SELECT COUNT(*) as count FROM "{schema_name}"."{table_name}"'
+            count_result = await execute_on_project_db(project_schema, count_query)
+            total_count = count_result[0]["count"] if count_result else 0
+            
+        elif schema_name == "storage":
+            # Storage schema tables
+            query = f"""
+                SELECT * FROM "{schema_name}"."{table_name}"
+                ORDER BY 1
+                LIMIT $1 OFFSET $2
+            """
+            rows = await execute_on_project_db(project_schema, query, limit, offset)
+            
+            # Get count
+            count_query = f'SELECT COUNT(*) as count FROM "{schema_name}"."{table_name}"'
+            count_result = await execute_on_project_db(project_schema, count_query)
             total_count = count_result[0]["count"] if count_result else 0
             
         else:
@@ -462,14 +491,17 @@ async def get_schema_table_columns(
     project_schema = project["database_name"]
     
     # SECURITY: Validate schema access
-    if schema_name not in [project_schema, "auth"]:
+    allowed_schemas = [project_schema, "auth", "realtime", "storage"]
+    if schema_name not in allowed_schemas:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Access denied to schema: {schema_name}"
         )
     
     try:
-        columns = await execute_on_main_db("""
+        columns = await execute_on_project_db(
+            project_schema,
+            """
             SELECT 
                 column_name as name,
                 data_type as type,
@@ -479,7 +511,10 @@ async def get_schema_table_columns(
             WHERE table_schema = $1
               AND table_name = $2
             ORDER BY ordinal_position
-        """, schema_name, table_name)
+            """, 
+            schema_name, 
+            table_name
+        )
         
         return {"columns": [dict(col) for col in columns]}
         
