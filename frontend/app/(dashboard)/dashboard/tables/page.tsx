@@ -129,11 +129,14 @@ export default function TablesPage() {
 
     try {
       const data = await apiClient.get(`/api/projects/${projectId}/schemas`);
+      console.log('📋 Schema API Response:', data);
+      console.log('📋 Schemas count:', data.schemas?.length || 0);
       setSchemas(data.schemas || []);
       
       // Auto-select first schema (should be 'public'/project schema)
       if (!selectedSchema && data.schemas && data.schemas.length > 0) {
         const firstSchema = data.schemas[0];
+        console.log('📋 Auto-selecting schema:', firstSchema.display_name);
         setSelectedSchema(firstSchema);
         
         // Auto-select first table in that schema
@@ -145,9 +148,12 @@ export default function TablesPage() {
             systemManaged: firstSchema.tables[0].system_managed
           });
         }
+      } else {
+        console.warn('⚠️  No schemas returned from API');
       }
     } catch (err) {
-      console.error('Failed to fetch schemas:', err);
+      console.error('❌ Failed to fetch schemas:', err);
+      setSchemas([]);
     }
   };
 
