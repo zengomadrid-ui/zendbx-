@@ -297,7 +297,7 @@ async def list_schemas(
         # Add auth schema if it has tables
         if auth_table_list:
             schemas.append({
-                "name": project_schema,  # Same real schema
+                "name": "auth",  # Real auth schema name
                 "display_name": "auth",
                 "table_count": len(auth_table_list),
                 "system_managed": True,
@@ -310,7 +310,7 @@ async def list_schemas(
         # Add realtime schema if it has tables
         if realtime_table_list:
             schemas.append({
-                "name": project_schema,  # Same real schema
+                "name": "realtime",  # Real realtime schema name
                 "display_name": "realtime",
                 "table_count": len(realtime_table_list),
                 "system_managed": True,
@@ -323,7 +323,7 @@ async def list_schemas(
         # Add storage schema if it has tables
         if storage_table_list:
             schemas.append({
-                "name": project_schema,  # Same real schema
+                "name": "storage",  # Real storage schema name
                 "display_name": "storage",
                 "table_count": len(storage_table_list),
                 "system_managed": True,
