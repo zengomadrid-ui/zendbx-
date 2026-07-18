@@ -5,9 +5,30 @@ import { apiClient } from '@/lib/api';
 import { useToast } from '@/lib/toast';
 
 interface Table {
-  table_name: string;
+  name: string;
+  table_name?: string; // Legacy support
   row_count: number;
-  column_count: number;
+  column_count?: number;
+  schema: string;
+  system_managed?: boolean;
+  read_only?: boolean;
+}
+
+interface Schema {
+  name: string;
+  display_name: string;
+  table_count: number;
+  system_managed: boolean;
+  read_only: boolean;
+  description: string;
+  tables: Table[];
+}
+
+interface SelectedTable {
+  schema: string;
+  table: string;
+  readOnly?: boolean;
+  systemManaged?: boolean;
 }
 
 interface ColumnSchema {
@@ -19,8 +40,10 @@ interface ColumnSchema {
 
 export default function TablesPage() {
   const { showToast } = useToast();
-  const [tables, setTables] = useState<Table[]>([]);
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [schemas, setSchemas] = useState<Schema[]>([]);
+  const [selectedSchema, setSelectedSchema] = useState<Schema | null>(null);
+  const [selectedTable, setSelectedTable] = useState<SelectedTable | null>(null);
+  const [schemaDropdownOpen, setSchemaDropdownOpen] = useState(false);
   const [tableData, setTableData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [editingCell, setEditingCell] = useState<{row: number, col: string} | null>(null);
@@ -30,10 +53,11 @@ export default function TablesPage() {
   const [page, setPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const rowsPerPage = 50;
 
   useEffect(() => {
-    fetchTables();
+    fetchSchemas();
   }, []);
 
   useEffect(() => {
@@ -58,6 +82,7 @@ export default function TablesPage() {
     const projectId = localStorage.getItem('current_project_id');
     if (projectId !== currentProjectId) {
       // Project changed - clear all table-specific state
+      setSelectedSchema(null);
       setSelectedTable(null);
       setTableData(null);
       setPage(1);
@@ -67,9 +92,9 @@ export default function TablesPage() {
       setIsAddingRow(false);
       setCurrentProjectId(projectId);
     }
-  }, []); // Run on mount and whenever fetchTables is called
+  }, []);
 
-  const fetchTables = async () => {
+  const fetchSchemas = async () => {
     let projectId = localStorage.getItem('current_project_id');
     
     if (!projectId) {
@@ -88,13 +113,13 @@ export default function TablesPage() {
     }
     
     if (!projectId) {
-      setTables([]);
+      setSchemas([]);
       return;
     }
 
     // Check if project changed while fetching
     if (currentProjectId && projectId !== currentProjectId) {
-      // Project changed - clear table state
+      setSelectedSchema(null);
       setSelectedTable(null);
       setTableData(null);
       setPage(1);
@@ -103,72 +128,107 @@ export default function TablesPage() {
     }
 
     try {
-      const data = await apiClient.get(`/api/projects/${projectId}/tables`);
-      setTables(data);
-      if (data.length > 0 && !selectedTable) {
-        setSelectedTable(data[0].table_name);
+      const data = await apiClient.get(`/api/projects/${projectId}/schemas`);
+      setSchemas(data.schemas || []);
+      
+      // Auto-select first schema (should be 'public'/project schema)
+      if (!selectedSchema && data.schemas && data.schemas.length > 0) {
+        const firstSchema = data.schemas[0];
+        setSelectedSchema(firstSchema);
+        
+        // Auto-select first table in that schema
+        if (firstSchema.tables && firstSchema.tables.length > 0) {
+          setSelectedTable({
+            schema: firstSchema.name,
+            table: firstSchema.tables[0].name,
+            readOnly: firstSchema.tables[0].read_only,
+            systemManaged: firstSchema.tables[0].system_managed
+          });
+        }
       }
     } catch (err) {
-      console.error('Failed to fetch tables:', err);
+      console.error('Failed to fetch schemas:', err);
     }
   };
 
-  const fetchTableData = async (tableName: string) => {
+  const handleSchemaChange = (schema: Schema) => {
+    setSelectedSchema(schema);
+    setSchemaDropdownOpen(false);
+    setSearchQuery(''); // Clear search when changing schemas
+    
+    // Clear selected table if it belonged to a different schema
+    if (selectedTable && selectedTable.schema !== schema.name) {
+      setSelectedTable(null);
+      setTableData(null);
+    }
+    
+    // Auto-select first table in new schema
+    if (schema.tables && schema.tables.length > 0) {
+      setSelectedTable({
+        schema: schema.name,
+        table: schema.tables[0].name,
+        readOnly: schema.tables[0].read_only,
+        systemManaged: schema.tables[0].system_managed
+      });
+    }
+  };
+
+  const getFilteredTables = () => {
+    if (!selectedSchema) return [];
+    
+    if (!searchQuery.trim()) {
+      return selectedSchema.tables;
+    }
+
+    const query = searchQuery.toLowerCase();
+    return selectedSchema.tables.filter(table => 
+      table.name.toLowerCase().includes(query)
+    );
+  };
+
+  const fetchTableData = async (selected: SelectedTable) => {
     const projectId = localStorage.getItem('current_project_id');
     if (!projectId) return;
 
     // Store request context to prevent stale responses
     const requestProjectId = projectId;
-    const requestTableName = tableName;
+    const requestSchema = selected.schema;
+    const requestTable = selected.table;
 
     setLoading(true);
     try {
-      // First, get the project's database schema name
-      const projectData = await apiClient.get(`/api/projects/${projectId}`);
-      const schemaName = projectData.database_name;
-
-      // CRITICAL FIX: Query schema metadata with table_schema filter
-      // This prevents cross-project metadata leakage
-      const schemaSql = `
-        SELECT 
-          column_name as name,
-          data_type as type,
-          is_nullable,
-          column_default
-        FROM information_schema.columns 
-        WHERE table_schema = '${schemaName}'
-          AND table_name = '${tableName}'
-        ORDER BY ordinal_position
-      `;
+      // Use schema-aware endpoint
+      const columnsRes = await apiClient.get(
+        `/api/projects/${projectId}/schemas/${selected.schema}/tables/${selected.table}/columns`
+      );
+      const columns = columnsRes.columns || [];
       
-      const schemaRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: schemaSql });
-      const columns = schemaRes.rows || [];
-      
-      // Verify request is still valid (project/table didn't change)
+      // Verify request is still valid
       const currentProjectId = localStorage.getItem('current_project_id');
-      if (currentProjectId !== requestProjectId || selectedTable !== requestTableName) {
+      if (currentProjectId !== requestProjectId || 
+          !selectedTable || 
+          selectedTable.schema !== requestSchema || 
+          selectedTable.table !== requestTable) {
         console.log('Stale response discarded - project or table changed');
         return;
       }
 
-      // Get total count
-      const countSql = `SELECT COUNT(*) as total FROM "${tableName}"`;
-      const countRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: countSql });
-      const total = countRes.rows[0]?.total || 0;
-      setTotalRows(total);
-      
       // Get paginated data
-      const offset = (page - 1) * rowsPerPage;
-      const dataSql = `SELECT * FROM "${tableName}" LIMIT ${rowsPerPage} OFFSET ${offset}`;
-      const dataRes = await apiClient.post(`/api/projects/${projectId}/query`, { sql: dataSql });
+      const dataRes = await apiClient.get(
+        `/api/projects/${projectId}/schemas/${selected.schema}/tables/${selected.table}/rows?page=${page}&limit=${rowsPerPage}`
+      );
       
       // Final check before updating state
       const finalProjectId = localStorage.getItem('current_project_id');
-      if (finalProjectId !== requestProjectId || selectedTable !== requestTableName) {
+      if (finalProjectId !== requestProjectId || 
+          !selectedTable || 
+          selectedTable.schema !== requestSchema || 
+          selectedTable.table !== requestTable) {
         console.log('Stale response discarded at final check');
         return;
       }
 
+      setTotalRows(dataRes.total || 0);
       setTableData({
         columns: columns.map((c: any) => c.name),
         rows: dataRes.rows || [],
@@ -182,6 +242,24 @@ export default function TablesPage() {
       setLoading(false);
     }
   };
+  const toggleSchema = (schemaName: string) => {
+    // No longer needed - removing expandable schema functionality
+  };
+
+  const selectTable = (schema: string, table: string, readOnly?: boolean, systemManaged?: boolean) => {
+    setSelectedTable({
+      schema,
+      table,
+      readOnly,
+      systemManaged
+    });
+  };
+
+  const getFilteredSchemas = () => {
+    // No longer needed - using dropdown instead
+    return schemas;
+  };
+
   const startEdit = (rowIndex: number, colName: string, currentValue: any) => {
     setEditingCell({ row: rowIndex, col: colName });
     setEditValue(currentValue === null ? '' : String(currentValue));
@@ -197,6 +275,12 @@ export default function TablesPage() {
     
     const projectId = localStorage.getItem('current_project_id');
     if (!projectId) return;
+
+    // Block edits on read-only tables
+    if (selectedTable.readOnly) {
+      showToast('This table is read-only', 'error');
+      return;
+    }
 
     const row = tableData.rows[rowIndex];
     const primaryKey = tableData.schema.find((s: any) => s.name === 'id' || s.name.includes('id'));
@@ -219,7 +303,7 @@ export default function TablesPage() {
       formattedValue = `'${editValue.replace(/'/g, "''")}'`;
     }
 
-    const updateSql = `UPDATE "${selectedTable}" SET "${colName}" = ${formattedValue} WHERE "${primaryKey.name}" = '${pkValue}'`;
+    const updateSql = `UPDATE "${selectedTable.schema}"."${selectedTable.table}" SET "${colName}" = ${formattedValue} WHERE "${primaryKey.name}" = '${pkValue}'`;
 
     try {
       await apiClient.post(`/api/projects/${projectId}/query`, { sql: updateSql });
@@ -236,8 +320,16 @@ export default function TablesPage() {
       showToast(err.message || 'Failed to update cell', 'error');
     }
   };
+  
   const deleteRow = async (rowIndex: number) => {
     if (!selectedTable || !tableData) return;
+    
+    // Block deletes on read-only tables
+    if (selectedTable.readOnly) {
+      showToast('This table is read-only', 'error');
+      return;
+    }
+    
     if (!confirm('Are you sure you want to delete this row?')) return;
     
     const projectId = localStorage.getItem('current_project_id');
@@ -252,7 +344,7 @@ export default function TablesPage() {
     }
 
     const pkValue = row[primaryKey.name];
-    const deleteSql = `DELETE FROM "${selectedTable}" WHERE "${primaryKey.name}" = '${pkValue}'`;
+    const deleteSql = `DELETE FROM "${selectedTable.schema}"."${selectedTable.table}" WHERE "${primaryKey.name}" = '${pkValue}'`;
 
     try {
       await apiClient.post(`/api/projects/${projectId}/query`, { sql: deleteSql });
@@ -267,7 +359,13 @@ export default function TablesPage() {
   };
 
   const startAddRow = () => {
-    if (!tableData) return;
+    if (!tableData || !selectedTable) return;
+    
+    // Block adds on read-only tables
+    if (selectedTable.readOnly) {
+      showToast('This table is read-only', 'error');
+      return;
+    }
     
     const emptyRow: any = {};
     tableData.columns.forEach((col: string) => {
@@ -286,8 +384,15 @@ export default function TablesPage() {
   const saveNewRow = async () => {
     if (!selectedTable || !newRow || !tableData) return;
     
+    // Block adds on read-only tables
+    if (selectedTable.readOnly) {
+      showToast('This table is read-only', 'error');
+      return;
+    }
+    
     const projectId = localStorage.getItem('current_project_id');
     if (!projectId) return;
+    
     // Build INSERT statement
     const columns = Object.keys(newRow).filter(key => newRow[key] !== '');
     const values = columns.map(col => {
@@ -303,7 +408,7 @@ export default function TablesPage() {
       }
     });
 
-    const insertSql = `INSERT INTO "${selectedTable}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')}) RETURNING *`;
+    const insertSql = `INSERT INTO "${selectedTable.schema}"."${selectedTable.table}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${values.join(', ')}) RETURNING *`;
 
     try {
       const result = await apiClient.post(`/api/projects/${projectId}/query`, { sql: insertSql });
@@ -377,64 +482,128 @@ export default function TablesPage() {
             borderBottom: '1px solid #1F1F1F'
           }}
         >
-          <h2 className="text-sm font-medium text-[#CCCCCC] mb-3">Tables</h2>
+          <h2 className="text-sm font-medium text-[#CCCCCC] mb-4">TABLE EDITOR</h2>
+          
+          {/* Schema Dropdown */}
+          <div className="mb-4">
+            <label className="text-xs text-[#888888] mb-2 block font-medium">Schema</label>
+            <div className="relative">
+              <button
+                onClick={() => setSchemaDropdownOpen(!schemaDropdownOpen)}
+                className="w-full text-white text-sm px-3 py-2.5 rounded flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-[#FF6B00] transition-all"
+                style={{
+                  background: '#1F1F1F',
+                  border: '1px solid #333333'
+                }}
+              >
+                <span>{selectedSchema?.display_name || 'Select schema...'}</span>
+                <svg 
+                  className={`w-4 h-4 transition-transform ${schemaDropdownOpen ? 'rotate-180' : ''}`}
+                  fill="currentColor" 
+                  viewBox="0 0 20 20"
+                >
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+              
+              {/* Schema Dropdown Menu */}
+              {schemaDropdownOpen && (
+                <div 
+                  className="absolute top-full left-0 right-0 mt-1 rounded shadow-lg z-50"
+                  style={{
+                    background: '#1F1F1F',
+                    border: '1px solid #333333',
+                    maxHeight: '300px',
+                    overflowY: 'auto'
+                  }}
+                >
+                  {schemas.map((schema) => (
+                    <div
+                      key={schema.display_name}
+                      onClick={() => handleSchemaChange(schema)}
+                      className={`flex items-center justify-between px-3 py-2.5 cursor-pointer transition-colors ${
+                        selectedSchema?.name === schema.name 
+                          ? 'bg-[#2A2A2A] text-[#FF6B00]' 
+                          : 'hover:bg-[#2A2A2A] text-white'
+                      }`}
+                    >
+                      <span className="text-sm">{schema.display_name}</span>
+                      <span className="text-xs text-[#888888]">{schema.table_count}</span>
+                    </div>
+                  ))}
+                  {schemas.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-[#666666]">
+                      No schemas available
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Search Tables */}
           <div className="relative">
             <input
               type="text"
-              placeholder="Search or jump to..."
-              className="w-full text-white text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-[#FF6B00]"
+              placeholder="Search tables..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              disabled={!selectedSchema}
+              className="w-full text-white text-sm px-3 py-2 rounded focus:outline-none focus:ring-2 focus:ring-[#FF6B00] disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 background: '#1F1F1F',
                 border: '1px solid #333333'
               }}
             />
-            <div className="absolute right-2 top-2">
-              <span className="text-xs text-[#888888]">⌘K</span>
-            </div>
           </div>
         </div>
 
         {/* Tables List */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-2">
-            {/* Project info */}
-            <div className="mb-4 px-2">
-              <div className="flex items-center gap-2 text-sm text-[#CCCCCC]">
-                <div 
-                  className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: '#FF6B00' }}
-                ></div>
-                <span>Live</span>
-                <span 
-                  className="text-xs px-2 py-0.5 rounded text-white ml-auto"
-                  style={{ backgroundColor: '#FF6B00' }}
-                >
-                  PG
-                </span>
-              </div>
-              <div className="text-xs text-[#888888] mt-1">
-                {selectedTable} • {totalRows} rows • Offline
-              </div>
+            {/* Tables Header */}
+            <div className="flex items-center justify-between px-2 mb-2">
+              <span className="text-xs font-medium text-[#888888]">TABLES</span>
+              <span className="text-xs text-[#666666]">{selectedSchema?.table_count || 0}</span>
             </div>
 
-            {/* Tables */}
-            {tables.map((table) => (
-              <div
-                key={table.table_name}
-                onClick={() => setSelectedTable(table.table_name)}
-                className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
-                  selectedTable === table.table_name ? 'text-[#FF6B00]' : 'text-[#888888] hover:text-[#CCCCCC]'
-                }`}
-                style={{ 
-                  background: selectedTable === table.table_name ? 'rgba(255, 107, 0, 0.1)' : 'transparent'
-                }}
-              >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
-                </svg>
-                <span className="text-sm">{table.table_name}</span>
+            {/* Tables List */}
+            {selectedSchema ? (
+              <>
+                {getFilteredTables().map((table) => (
+                  <div
+                    key={`${table.schema}.${table.name}`}
+                    onClick={() => selectTable(table.schema, table.name, table.read_only, table.system_managed)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-colors ${
+                      selectedTable?.schema === selectedSchema.name && selectedTable?.table === table.name
+                        ? 'text-[#FF6B00] bg-[rgba(255,107,0,0.1)]' 
+                        : 'text-[#888888] hover:text-[#CCCCCC] hover:bg-[#1A1A1A]'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
+                    </svg>
+                    <span className="text-sm flex-1">{table.name}</span>
+                    {table.read_only && (
+                      <svg className="w-3 h-3 text-[#666666]" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </div>
+                ))}
+                {getFilteredTables().length === 0 && (
+                  <div className="px-2 py-8 text-center">
+                    <div className="text-sm text-[#666666]">
+                      {searchQuery ? 'No tables match your search' : 'No tables in this schema'}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="px-2 py-8 text-center">
+                <div className="text-sm text-[#666666]">Select a schema to view tables</div>
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
@@ -453,11 +622,16 @@ export default function TablesPage() {
             <h1 className="text-lg font-medium text-white">Tables</h1>
             <div className="flex items-center gap-2">
               <div className="text-sm text-[#888888]">
-                {selectedTable || 'Select a table'}
+                {selectedTable ? `${selectedTable.schema}.${selectedTable.table}` : 'Select a table'}
               </div>
               {tableData && (
                 <div className="text-sm text-[#888888]">
-                  {totalRows} rows • Offline
+                  {totalRows} rows
+                  {selectedTable?.readOnly && (
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded bg-[#333333] text-[#888888]">
+                      Read-only
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -465,8 +639,9 @@ export default function TablesPage() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => fetchTableData(selectedTable || '')}
-              className="px-3 py-1.5 text-white text-sm rounded hover:opacity-80 transition-opacity"
+              onClick={() => fetchTableData(selectedTable!)}
+              disabled={!selectedTable}
+              className="px-3 py-1.5 text-white text-sm rounded hover:opacity-80 transition-opacity disabled:opacity-50"
               style={{
                 background: '#1F1F1F',
                 border: '1px solid #333333'
@@ -474,22 +649,14 @@ export default function TablesPage() {
             >
               Refresh
             </button>
-            <button 
-              className="px-3 py-1.5 text-white text-sm rounded hover:opacity-80 transition-opacity"
-              style={{
-                background: '#1F1F1F',
-                border: '1px solid #333333'
-              }}
-            >
-              Delete Table
-            </button>
             <button
               onClick={startAddRow}
-              disabled={isAddingRow}
+              disabled={isAddingRow || !selectedTable || selectedTable.readOnly}
               className="px-3 py-1.5 text-white text-sm rounded transition-opacity disabled:opacity-50"
               style={{
                 background: '#FF6B00'
               }}
+              title={selectedTable?.readOnly ? 'This table is read-only' : 'Add a new row'}
             >
               + Add Row
             </button>

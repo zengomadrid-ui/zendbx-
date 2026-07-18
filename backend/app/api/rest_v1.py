@@ -11,6 +11,10 @@ TYPE CONVERSION:
 - Automatic PostgreSQL type mapping via PostgreSQLTypeMapper
 - Converts Python values (dict/list) to correct PostgreSQL types
 - Supports JSONB, arrays, UUID, dates, and all PostgreSQL types
+
+AUTH TABLE PROTECTION:
+- ZendBX Auth system tables are protected from direct CRUD
+- Use auth endpoints instead: POST /p/{slug}/auth/signup, etc.
 """
 from fastapi import APIRouter, Request, HTTPException, Query, Depends
 from typing import Optional, Dict, Any, List
@@ -23,10 +27,53 @@ from ..services.project_resolver import get_project_resolver
 from ..core.db_router import get_main_db_pool
 from ..middleware.rls_context import set_rls_context
 from ..services.postgres_type_mapper import get_type_mapper
+from ..core.auth_registry import (
+    is_protected_auth_table,
+    is_readonly_auth_table,
+    resolve_virtual_schema,
+    get_protection_message,
+    filter_sensitive_fields
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["REST API"])
+
+
+def check_auth_table_protection(
+    schema_name: str,
+    table_name: str,
+    operation: str,
+    project_schema: str
+) -> None:
+    """
+    Check if operation on table is allowed
+    
+    Raises HTTPException if table is protected
+    
+    Args:
+        schema_name: Schema name (may be virtual like "public")
+        table_name: Table name
+        operation: Operation type (SELECT, INSERT, UPDATE, DELETE)
+        project_schema: Physical project schema name (e.g., proj_abc123)
+    """
+    # Resolve virtual schema to physical
+    resolved_schema = resolve_virtual_schema(schema_name, project_schema)
+    
+    # Check if this is a protected auth table
+    if is_protected_auth_table(resolved_schema, table_name):
+        raise HTTPException(
+            status_code=403,
+            detail=get_protection_message(resolved_schema, table_name)
+        )
+    
+    # Check if this is a read-only auth table and operation is write
+    if operation in {'INSERT', 'UPDATE', 'DELETE'}:
+        if is_readonly_auth_table(resolved_schema, table_name):
+            raise HTTPException(
+                status_code=403,
+                detail=get_protection_message(resolved_schema, table_name)
+            )
 
 
 @router.post(Routes.REST_CREATE)
@@ -59,7 +106,7 @@ async def create_record(
     logger.info(f"POST /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}, Schema: {schema}")
     
     try:
-        # Parse schema.table notation (e.g. "zenhire.resumes" → schema=zenhire, table=resumes)
+        # Parse schema.table notation (e.g. "auth.users" → schema=auth, table=users)
         if '.' in table_name:
             schema_part, bare_table = table_name.split('.', 1)
             qualified_table = f'"{schema_part}"."{bare_table}"'
@@ -68,10 +115,16 @@ async def create_record(
             schema_part = schema
             qualified_table = f'"{schema}"."{bare_table}"' if schema else f'"{bare_table}"'
 
+        # 🔒 SECURITY: Check auth table protection
+        if not schema_part and schema:
+            schema_part = schema
+        if schema_part:
+            check_auth_table_protection(schema_part, bare_table, 'INSERT', schema)
+
         # Initialize type mapper
         type_mapper = get_type_mapper(pool)
         
-        # 🔧 FIX: Use schema_part (from table name) or enforcer schema, never fallback to 'public'
+        # Use schema_part (from table name) or enforcer schema
         if not schema_part:
             if not schema:
                 raise HTTPException(
@@ -87,7 +140,7 @@ async def create_record(
             schema=schema_part
         )
         
-        # Prepare insert query — never create tables here
+        # Prepare insert query
         columns = list(data.keys())
         placeholders = [f"${i+1}" for i in range(len(converted_values))]
 
@@ -107,7 +160,9 @@ async def create_record(
             )
         
         logger.info(f"Record created in {table_name}: {dict(result).get('id')}")
-        return dict(result)
+        
+        # Filter sensitive fields from response
+        return filter_sensitive_fields(dict(result), schema_part)
         
     except HTTPException:
         raise
@@ -145,9 +200,22 @@ async def get_records(
     pool = request.state.project_db
     table_name = table
     
+    # Get schema
+    schema = enforcer.schema or getattr(request.state, 'project_schema', None)
+    
     logger.info(f"GET /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
     try:
+        # Parse schema.table notation
+        if '.' in table_name:
+            schema_part, bare_table = table_name.split('.', 1)
+        else:
+            bare_table = table_name
+            schema_part = schema
+        
+        # 🔒 SECURITY: Check auth table protection
+        if schema_part:
+            check_auth_table_protection(schema_part, bare_table, 'SELECT', schema)
         # Parse schema.table notation
         if '.' in table_name:
             schema_part, bare_table = table_name.split('.', 1)
