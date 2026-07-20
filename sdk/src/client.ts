@@ -5,7 +5,7 @@
 
 import { RouteBuilder, createRouteBuilder } from './routes';
 import { HttpClient } from './http';
-import { QueryBuilder } from './query-builder-v2';
+import { TableBuilder } from './query-builder';
 import type { ZendbxResponse } from './types';
 
 export interface ClientConfig {
@@ -273,97 +273,16 @@ export class ZendbxClient {
 
   /**
    * REST API (Database Operations) with Query Builder
+   * 
+   * Returns TableBuilder which provides:
+   * - .select() - SELECT query with chainable filters
+   * - .insert() - INSERT operation
+   * - .update() - UPDATE operation with chainable filters
+   * - .delete() - DELETE operation with chainable filters
+   * - .upsert() - UPSERT operation
    */
-  from<T = any>(tableName: string) {
-    const url = this.routes.rest.table(tableName);
-    const http = this.http; // Capture for closures
-    
-    // Create query builder instance
-    const builder = new QueryBuilder<T>(this.http, url);
-    
-    // Add insert method (doesn't use filters)
-    (builder as any).insert = async (data: T | T[]): Promise<ZendbxResponse<T>> => {
-      return http.post<T>(url, data);
-    };
-    
-    // Add update method - returns a builder with filters
-    (builder as any).update = (data: Partial<T>) => {
-      const updateBuilder = {
-        _filters: [] as Array<{ column: string; operator: string; value: any }>,
-        _data: data,
-        
-        eq(column: string, value: any) {
-          this._filters.push({ column, operator: 'eq', value });
-          return this;
-        },
-        
-        neq(column: string, value: any) {
-          this._filters.push({ column, operator: 'neq', value });
-          return this;
-        },
-        
-        then(onfulfilled?: any, onrejected?: any) {
-          return this._execute().then(onfulfilled, onrejected);
-        },
-        
-        catch(onrejected: any) {
-          return this._execute().catch(onrejected);
-        },
-        
-        async _execute(): Promise<ZendbxResponse<T>> {
-          // Build query string from filters
-          const params = new URLSearchParams();
-          for (const filter of this._filters) {
-            params.append(filter.column, `${filter.operator}.${filter.value}`);
-          }
-          
-          const queryUrl = params.toString() ? `${url}?${params.toString()}` : url;
-          return http.patch<T>(queryUrl, this._data);
-        }
-      };
-      
-      return updateBuilder;
-    };
-    
-    // Add delete method - returns a builder with filters
-    (builder as any).delete = () => {
-      const deleteBuilder = {
-        _filters: [] as Array<{ column: string; operator: string; value: any }>,
-        
-        eq(column: string, value: any) {
-          this._filters.push({ column, operator: 'eq', value });
-          return this;
-        },
-        
-        neq(column: string, value: any) {
-          this._filters.push({ column, operator: 'neq', value });
-          return this;
-        },
-        
-        then(onfulfilled?: any, onrejected?: any) {
-          return this._execute().then(onfulfilled, onrejected);
-        },
-        
-        catch(onrejected: any) {
-          return this._execute().catch(onrejected);
-        },
-        
-        async _execute(): Promise<ZendbxResponse<void>> {
-          // Build query string from filters
-          const params = new URLSearchParams();
-          for (const filter of this._filters) {
-            params.append(filter.column, `${filter.operator}.${filter.value}`);
-          }
-          
-          const queryUrl = params.toString() ? `${url}?${params.toString()}` : url;
-          return http.delete(queryUrl);
-        }
-      };
-      
-      return deleteBuilder;
-    };
-    
-    return builder;
+  from<T extends Record<string, unknown> = Record<string, any>>(tableName: string): TableBuilder<T> {
+    return new TableBuilder<T>(this.http, tableName, this.config.projectSlug);
   }
 
   /**

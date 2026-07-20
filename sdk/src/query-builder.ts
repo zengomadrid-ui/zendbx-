@@ -49,7 +49,7 @@ export class SelectBuilder<Row extends Record<string, unknown> = Record<string, 
   ) {}
 
   protected get _basePath(): string {
-    return `/p/${this.projectId}/rest/v1/${this.table}`;
+    return `/p/${this.projectId}/v1/rest/${this.table}`;
   }
 
   // ─── Column selection ───────────────────────────────────────────────────────
@@ -282,7 +282,7 @@ export class SingleBuilder<Row extends Record<string, unknown> = Record<string, 
   ) {}
 
   protected get _basePath(): string {
-    return `/p/${this.projectId}/rest/v1/${this.table}`;
+    return `/p/${this.projectId}/v1/rest/${this.table}`;
   }
 
   then<TResult1 = ZendbxQueryResponse<Row>, TResult2 = never>(
@@ -342,7 +342,7 @@ export class MaybeSingleBuilder<Row extends Record<string, unknown> = Record<str
   ) {}
 
   protected get _basePath(): string {
-    return `/p/${this.projectId}/rest/v1/${this.table}`;
+    return `/p/${this.projectId}/v1/rest/${this.table}`;
   }
 
   then<TResult1 = ZendbxQueryResponse<Row | null>, TResult2 = never>(
@@ -654,7 +654,7 @@ export class TableBuilder<Row extends Record<string, unknown> = Record<string, u
   ) {}
 
   private get _basePath(): string {
-    return `/p/${this.projectId}/rest/v1/${this.table}`;
+    return `/p/${this.projectId}/v1/rest/${this.table}`;
   }
 
   // ─── SELECT ──────────────────────────────────────────────────────────────────
