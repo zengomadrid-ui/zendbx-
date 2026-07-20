@@ -205,24 +205,38 @@ async def get_records(
     
     logger.info(f"GET /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}")
     
+    # Debug logging for schema resolution
+    logger.info(f"🔍 SCHEMA RESOLUTION DEBUG:")
+    logger.info(f"   enforcer.schema: {enforcer.schema}")
+    logger.info(f"   request.state.project_schema: {getattr(request.state, 'project_schema', 'NOT SET')}")
+    logger.info(f"   table parameter: {table_name}")
+    
     try:
-        # Parse schema.table notation
-        if '.' in table_name:
-            schema_part, bare_table = table_name.split('.', 1)
-        else:
-            bare_table = table_name
-            schema_part = schema
-        
-        # 🔒 SECURITY: Check auth table protection
-        if schema_part:
-            check_auth_table_protection(schema_part, bare_table, 'SELECT', schema)
-        # Parse schema.table notation
+        # Parse schema.table notation ONCE
         if '.' in table_name:
             schema_part, bare_table = table_name.split('.', 1)
             qualified_table = f'"{schema_part}"."{bare_table}"'
+            logger.info(f"✅ Qualified table name detected: schema={schema_part}, table={bare_table}")
         else:
-            schema = enforcer.schema or getattr(request.state, 'project_schema', None)
-            qualified_table = f'"{schema}"."{table_name}"' if schema else f'"{table_name}"'
+            bare_table = table_name
+            schema_part = schema  # Use enforcer schema
+            
+            if not schema_part:
+                logger.error(f"❌ CRITICAL: Project schema is NULL/None")
+                logger.error(f"   enforcer.schema: {enforcer.schema}")
+                logger.error(f"   request.state has project_schema: {hasattr(request.state, 'project_schema')}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Project schema could not be resolved. Check project context middleware."
+                )
+            
+            qualified_table = f'"{schema_part}"."{bare_table}"'
+            logger.info(f"✅ Unqualified table resolved: schema={schema_part}, table={bare_table}")
+
+        logger.info(f"   Final qualified_table: {qualified_table}")
+        
+        # 🔒 SECURITY: Check auth table protection
+        check_auth_table_protection(schema_part, bare_table, 'SELECT', schema)
 
         # Build WHERE conditions from ALL query params (Supabase-style)
         where_parts = []
