@@ -322,8 +322,15 @@ async def emergency_provision_all_projects(x_admin_secret: str = Header(None, al
                 except Exception as e:
                     error_msg = str(e)
                     
-                    if 'already exists' in error_msg.lower():
+                    if 'already exists' in error_msg.lower() or 'SECURITY FAILURE' in error_msg:
                         try:
+                            # Role exists - need to fix security
+                            if 'SECURITY FAILURE' in error_msg:
+                                # Revoke public schema access
+                                await admin_conn.execute(f"REVOKE ALL ON SCHEMA public FROM {role_name}")
+                                await admin_conn.execute(f"REVOKE ALL ON SCHEMA auth FROM {role_name}")
+                                project_result["security_fixed"] = True
+                            
                             creds = await credential_store.get_credentials(project_id)
                             if creds:
                                 project_result["status"] = "existed"
