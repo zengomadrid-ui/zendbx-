@@ -438,37 +438,70 @@ async def get_schema_table_rows(
             
             # Check if this is auth.users table
             if table_name == "users":
-                # Return safe, project-scoped view of auth users
+                # Return safe, read-only view of auth users
                 # NEVER expose password_hash, tokens, or secrets
-                query = f"""
-                    SELECT 
-                        id, 
-                        email, 
-                        username, 
-                        provider, 
-                        email_verified, 
-                        is_active, 
-                        avatar_url, 
-                        metadata, 
-                        last_login_at, 
-                        created_at, 
-                        updated_at
-                    FROM "{schema_name}"."{table_name}"
-                    WHERE project_id = $1
-                    ORDER BY created_at DESC
-                    LIMIT $2 OFFSET $3
-                """
-                # Use actual project UUID, not the slug
-                rows = await execute_on_project_db(project["id"], project_schema, query, project["id"], limit, offset)
                 
-                # Get count with project_id filter
-                count_query = f"""
-                    SELECT COUNT(*) as count 
-                    FROM "{schema_name}"."{table_name}"
-                    WHERE project_id = $1
+                # Check if project_id column exists (for project-scoped filtering)
+                has_project_id = await execute_on_project_db(
+                    project["id"], 
+                    project_schema,
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'auth' 
+                        AND table_name = 'users' 
+                        AND column_name = 'project_id'
+                    )
+                    """
+                )
+                has_project_id_col = has_project_id[0]['exists'] if has_project_id else False
+                
+                # Safe columns to expose (never expose password_hash, tokens)
+                safe_columns = """
+                    id, 
+                    email, 
+                    username, 
+                    provider, 
+                    email_verified, 
+                    is_active, 
+                    avatar_url, 
+                    metadata, 
+                    last_login_at, 
+                    created_at, 
+                    updated_at
                 """
-                count_result = await execute_on_project_db(project["id"], project_schema, count_query, project["id"])
-                total_count = count_result[0]["count"] if count_result else 0
+                
+                if has_project_id_col:
+                    # Filter by project_id for multi-tenant isolation
+                    query = f"""
+                        SELECT {safe_columns}
+                        FROM "{schema_name}"."{table_name}"
+                        WHERE project_id = $1
+                        ORDER BY created_at DESC
+                        LIMIT $2 OFFSET $3
+                    """
+                    rows = await execute_on_project_db(project["id"], project_schema, query, project["id"], limit, offset)
+                    
+                    count_query = f"""
+                        SELECT COUNT(*) as count 
+                        FROM "{schema_name}"."{table_name}"
+                        WHERE project_id = $1
+                    """
+                    count_result = await execute_on_project_db(project["id"], project_schema, count_query, project["id"])
+                    total_count = count_result[0]["count"] if count_result else 0
+                else:
+                    # No project_id column - show all users (read-only)
+                    query = f"""
+                        SELECT {safe_columns}
+                        FROM "{schema_name}"."{table_name}"
+                        ORDER BY created_at DESC
+                        LIMIT $1 OFFSET $2
+                    """
+                    rows = await execute_on_project_db(project["id"], project_schema, query, limit, offset)
+                    
+                    count_query = f'SELECT COUNT(*) as count FROM "{schema_name}"."{table_name}"'
+                    count_result = await execute_on_project_db(project["id"], project_schema, count_query)
+                    total_count = count_result[0]["count"] if count_result else 0
             else:
                 # Other auth tables - block access for security
                 raise HTTPException(
