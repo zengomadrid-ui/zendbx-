@@ -12,7 +12,7 @@ import asyncpg
 
 router = APIRouter()
 
-@router.post("/emergency/apply-migration-003")
+@router.post("/emergency/apply-migration-003", include_in_schema=False)
 async def apply_migration_003(
     x_admin_secret: str = Header(None, alias="X-Admin-Secret")
 ):

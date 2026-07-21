@@ -370,8 +370,8 @@ app.include_router(storage_v2.router, tags=["storage-v2"])  # New: /p/{slug}/v1/
 
 # EMERGENCY: Migration 003 endpoint (TEMPORARY - remove after migration applied)
 from app.api import apply_migration_003
-app.include_router(apply_migration_003.router, prefix="/api", tags=["emergency"])
-print(f"⚠️  Emergency migration endpoint registered: POST /api/emergency/apply-migration-003")
+app.include_router(apply_migration_003.router, tags=["emergency"])
+print(f"⚠️  Emergency migration endpoint registered: POST /emergency/apply-migration-003")
 
 # OAuth URL Generator System (public endpoints - no prefix)
 app.include_router(oauth_login.router)  # Public OAuth login URLs
