@@ -46,6 +46,7 @@ SKIP_PREFIXES = [
     "/health",
     "/v1/auth/",
     "/mcp",
+    "/emergency",  # Emergency migration endpoint
 ]
 
 SKIP_EXACT = {"/", "/health", "/version", "/docs", "/openapi.json", "/redoc", "/test-logs", "/debug-test"}

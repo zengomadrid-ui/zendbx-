@@ -128,6 +128,107 @@ print(f"🔐 Session middleware enabled for OAuth")
 from app.middleware.seo_security import SEOSecurityMiddleware
 app.add_middleware(SEOSecurityMiddleware, environment=settings.ENVIRONMENT)
 
+# EMERGENCY MIGRATION ENDPOINT - MUST BE BEFORE MIDDLEWARE
+# This endpoint bypasses all middleware (project context, RLS, etc.)
+@app.post("/emergency/apply-migration-003", include_in_schema=False)
+async def emergency_apply_migration_003(x_admin_secret: str = Header(None, alias="X-Admin-Secret")):
+    """Emergency endpoint to create project_db_credentials table"""
+    from fastapi import HTTPException, status
+    import asyncpg
+    
+    # Verify admin access
+    if not x_admin_secret or x_admin_secret != settings.SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    results = {"status": "starting", "steps": [], "errors": []}
+    
+    try:
+        conn = await asyncpg.connect(settings.DATABASE_URL)
+        try:
+            # Check if exists
+            exists_before = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_schema = 'public' AND table_name = 'project_db_credentials'
+                )
+            """)
+            results["table_exists_before"] = exists_before
+            
+            if exists_before:
+                results["status"] = "already_applied"
+                results["message"] = "Table already exists"
+                return results
+            
+            # Create table
+            results["steps"].append("Creating table...")
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS project_db_credentials (
+                    project_id UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+                    role_name VARCHAR(255) NOT NULL UNIQUE,
+                    encrypted_password TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            results["steps"].append("✅ Table created")
+            
+            # Create index
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_project_db_credentials_role_name 
+                ON project_db_credentials(role_name)
+            """)
+            results["steps"].append("✅ Index created")
+            
+            # Set permissions
+            await conn.execute("REVOKE ALL ON project_db_credentials FROM PUBLIC")
+            results["steps"].append("✅ Revoked PUBLIC access")
+            
+            # Create trigger
+            await conn.execute("""
+                CREATE OR REPLACE FUNCTION update_project_db_credentials_updated_at()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    NEW.updated_at = NOW();
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql
+            """)
+            await conn.execute("""
+                DROP TRIGGER IF EXISTS trigger_update_project_db_credentials_updated_at 
+                ON project_db_credentials
+            """)
+            await conn.execute("""
+                CREATE TRIGGER trigger_update_project_db_credentials_updated_at
+                BEFORE UPDATE ON project_db_credentials
+                FOR EACH ROW
+                EXECUTE FUNCTION update_project_db_credentials_updated_at()
+            """)
+            results["steps"].append("✅ Trigger created")
+            
+            # Verify
+            exists_after = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_schema = 'public' AND table_name = 'project_db_credentials'
+                )
+            """)
+            results["table_exists_after"] = exists_after
+            project_count = await conn.fetchval("SELECT COUNT(*) FROM projects")
+            results["project_count"] = project_count
+            results["status"] = "success"
+            results["message"] = f"Migration applied successfully. {project_count} projects exist."
+            
+        finally:
+            await conn.close()
+    except Exception as e:
+        results["status"] = "error"
+        results["message"] = str(e)
+        raise HTTPException(status_code=500, detail=results)
+    
+    return results
+
+print("⚠️  Emergency migration endpoint registered BEFORE middleware: POST /emergency/apply-migration-003")
+
 # Add Project Context Middleware for multi-tenant support
 from app.middleware.project_context import ProjectContextMiddleware
 app.add_middleware(ProjectContextMiddleware)
@@ -367,11 +468,6 @@ print(f"📍 Registering slug-based auth router from: app.api.public_auth_v2")
 app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New: /p/{slug}/v1/auth/*
 app.include_router(rest_v1.router, tags=["rest-api"])  # New: /p/{slug}/v1/rest/{table}
 app.include_router(storage_v2.router, tags=["storage-v2"])  # New: /p/{slug}/v1/storage/*
-
-# EMERGENCY: Migration 003 endpoint (TEMPORARY - remove after migration applied)
-from app.api import apply_migration_003
-app.include_router(apply_migration_003.router, tags=["emergency"])
-print(f"⚠️  Emergency migration endpoint registered: POST /emergency/apply-migration-003")
 
 # OAuth URL Generator System (public endpoints - no prefix)
 app.include_router(oauth_login.router)  # Public OAuth login URLs
