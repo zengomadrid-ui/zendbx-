@@ -12,6 +12,9 @@ from uuid import UUID
 import secrets
 import hashlib
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
