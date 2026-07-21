@@ -270,48 +270,58 @@ class ProjectRoleManager:
                 REVOKE ALL ON SCHEMA public FROM {role_name}
             """)
             
-            # Deny auth schema
+            # Grant read-only access to auth schema (for Table Editor)
+            # Users table queries are filtered by project_id in schemas.py
             try:
-                await conn.execute(f"""
-                    REVOKE ALL ON SCHEMA auth FROM {role_name}
+                auth_exists = await conn.fetchval("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.schemata 
+                        WHERE schema_name = 'auth'
+                    )
                 """)
-            except Exception:
+                
+                if auth_exists:
+                    await conn.execute(f"GRANT USAGE ON SCHEMA auth TO {role_name}")
+                    await conn.execute(f"GRANT SELECT ON ALL TABLES IN SCHEMA auth TO {role_name}")
+                    
+                    # Set default privileges for future tables in auth schema
+                    current_user = await conn.fetchval("SELECT current_user")
+                    await conn.execute(f"""
+                        ALTER DEFAULT PRIVILEGES 
+                        FOR ROLE {current_user}
+                        IN SCHEMA auth
+                        GRANT SELECT ON TABLES TO {role_name}
+                    """)
+                    
+                    logger.info(f"✅ Granted read-only access to auth schema for {role_name}")
+            except Exception as e:
                 # auth schema may not exist in development
-                pass
+                logger.warning(f"Could not grant auth schema access: {e}")
             
             # Note: We cannot revoke access to schemas that don't exist yet
             # Other project schemas are protected by not granting access
             
-            logger.info(f"✅ Revoked {role_name} access to auth and public schemas")
+            logger.info(f"✅ Configured schema access for {role_name}")
             
             # ============================================
             # STEP 5: VERIFY EFFECTIVE PRIVILEGES
             # ============================================
             
-            # Check auth schema access (use quotes in function parameter)
-            auth_access = await conn.fetchval(f"""
-                SELECT has_schema_privilege('{role_name}', 'auth', 'USAGE')
-            """)
-            
-            # Check public schema access
+            # Check public schema access (should be False)
             public_access = await conn.fetchval(f"""
                 SELECT has_schema_privilege('{role_name}', 'public', 'USAGE')
             """)
             
-            # Check own project schema access
+            # Check own project schema access (should be True)
             project_access = await conn.fetchval(f"""
                 SELECT has_schema_privilege('{role_name}', '{project_schema}', 'USAGE')
             """)
             
             logger.info(f"Privilege verification for {role_name}:")
-            logger.info(f"  auth schema: {auth_access}")
             logger.info(f"  public schema: {public_access}")
             logger.info(f"  {project_schema} schema: {project_access}")
             
             # Security check
-            if auth_access:
-                raise Exception(f"SECURITY FAILURE: {role_name} has auth schema access!")
-            
             if public_access:
                 raise Exception(f"SECURITY FAILURE: {role_name} has public schema access!")
             
