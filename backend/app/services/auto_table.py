@@ -78,55 +78,26 @@ async def create_users_table(conn: asyncpg.Connection):
         CREATE INDEX IF NOT EXISTS idx_auth_users_is_active ON auth.users (is_active);
         CREATE INDEX IF NOT EXISTS idx_auth_users_created_at ON auth.users (created_at DESC);
     """)
-    logger.info("Created auth.users table with indexes (Phase 1)")
-
-    # Install auth.users compatibility view
-    await _install_auth_users_view(conn)
     
-    # Also create a view in public schema for backward compatibility
-    await _create_public_users_view(conn)
-
-
-async def _install_auth_users_view(conn: asyncpg.Connection):
-    """
-    Install auth.users Supabase-compatible view.
-    Called after users table is created so the view can reference it.
-    Safe to call multiple times (uses CREATE OR REPLACE).
-    """
-    try:
-        # Ensure auth schema exists first
-        await conn.execute("CREATE SCHEMA IF NOT EXISTS auth")
-        # The auth.users table is the real table now, no view needed
-        logger.info("auth.users table is primary - no view needed")
-    except Exception as e:
-        # Non-fatal — view will be created on next migration run
-        logger.warning(f"Note: auth.users is the primary table: {e}")
-
-
-async def _create_public_users_view(conn: asyncpg.Connection):
-    """
-    Create a backward-compatible view in public schema that maps to auth.users.
-    This ensures existing code that queries 'users' or 'public.users' still works.
-    """
-    try:
-        await conn.execute("""
-            CREATE OR REPLACE VIEW public.users AS
-            SELECT
-                id,
-                email,
-                username AS name,
-                provider,
-                avatar_url,
-                is_active,
-                metadata,
-                created_at,
-                updated_at,
-                last_login_at
-            FROM auth.users;
-        """)
-        logger.info("Created public.users backward-compatibility view -> auth.users")
-    except Exception as e:
-        logger.warning(f"Could not create public.users view: {e}")
+    # Create public.users view for application queries
+    await conn.execute("""
+        CREATE OR REPLACE VIEW public.users AS
+        SELECT
+            id,
+            email,
+            username,
+            provider,
+            avatar_url,
+            is_active,
+            email_verified,
+            metadata,
+            created_at,
+            updated_at,
+            last_login_at
+        FROM auth.users;
+    """)
+    
+    logger.info("Created auth.users table + public.users view")
 
 
 async def create_generic_table(
@@ -204,6 +175,7 @@ def infer_column_type(value: Any) -> str:
 
 async def auto_sync_user(
     pool: asyncpg.Pool,
+    project_id: str,
     user_id: str,
     email: str,
     name: Optional[str] = None,
@@ -213,11 +185,12 @@ async def auto_sync_user(
     password_hash: str = ""
 ):
     """
-    Automatically sync user to auth.users table (Phase 1)
+    Automatically sync user to auth.users table (project-scoped)
     Creates table if doesn't exist, uses UPSERT to avoid duplicates
     
     Args:
         pool: Database connection pool
+        project_id: Project UUID (for project-scoped authentication)
         user_id: User UUID
         email: User email
         name: User name (mapped to username field)
@@ -229,12 +202,13 @@ async def auto_sync_user(
     # Ensure auth.users table exists
     await ensure_table_exists(pool, "users")
     
-    # UPSERT user into auth.users
+    # UPSERT user into auth.users WITH project_id (project-scoped)
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO auth.users (id, email, username, password_hash, provider, avatar_url, metadata, last_login_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            INSERT INTO auth.users (id, project_id, email, username, password_hash, provider, avatar_url, metadata, last_login_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
             ON CONFLICT (id) DO UPDATE SET
+                project_id = EXCLUDED.project_id,
                 email = EXCLUDED.email,
                 username = EXCLUDED.username,
                 provider = EXCLUDED.provider,
@@ -242,6 +216,6 @@ async def auto_sync_user(
                 metadata = EXCLUDED.metadata,
                 last_login_at = NOW(),
                 updated_at = NOW()
-        """, user_id, email, name, password_hash, provider, avatar_url, metadata or {})
+        """, user_id, project_id, email, name, password_hash, provider, avatar_url, metadata or {})
     
-    logger.info(f"User {email} synced to auth.users table")
+    logger.info(f"User {email} synced to auth.users table for project {project_id}")

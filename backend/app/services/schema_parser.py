@@ -44,22 +44,32 @@ class SchemaParser:
     async def get_tables(db: asyncpg.Pool, schema_name: str = None, include_system: bool = False) -> List[Dict]:
         """
         Get all user-created tables with their columns from the project's schema.
-        BY DEFAULT: Only shows tables in 'public' schema.
+        REQUIRES: schema_name parameter must be explicitly provided.
         Excludes system schemas (auth, information_schema, pg_catalog) and
         all internal platform tables regardless of which schema they live in.
         
         Args:
             db: Database connection pool
-            schema_name: Specific schema to query (default: 'public')
+            schema_name: Specific schema to query (REQUIRED - must be project schema like 'proj_xxx')
             include_system: If True, include system tables in results (default: False)
         """
         try:
-            # DEFAULT: If no schema specified, use 'public' schema only
+            # 🔧 FIX: Schema name is REQUIRED - never default to 'public'
             if not schema_name:
-                schema_name = 'public'
+                raise ValueError(
+                    "schema_name parameter is required for get_tables(). "
+                    "Project schema must be explicitly provided (e.g., 'proj_60f192dc')."
+                )
             
-            # Always filter to the specified schema (default: public)
-            schema_filter = f"AND t.table_schema = '{schema_name}'"
+            logger.info(f"\n{'='*80}")
+            logger.info(f"🔍 DEBUG: SchemaParser.get_tables() START")
+            logger.info(f"{'='*80}")
+            logger.info(f"📥 INPUT: schema_name = '{schema_name}'")
+            logger.info(f"📥 INPUT: include_system = {include_system}")
+            logger.info(f"📥 INPUT: schema_name.startswith('proj_') = {schema_name.startswith('proj_')}")
+            
+            # Always filter to the specified schema - use parameterized query
+            schema_filter = "AND t.table_schema = $1"
             
             # For 'public' schema: exclude system/platform tables
             # For 'auth' schema: always exclude (unless explicitly requested)
@@ -69,26 +79,36 @@ class SchemaParser:
                 if not include_system:
                     excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
                     exclude_filter = f"AND t.table_name NOT IN ({excluded_tables})"
+                    logger.info(f"🔍 DEBUG: Schema is 'public' → Applying SYSTEM_TABLES filter")
+                    logger.info(f"🔍 DEBUG: exclude_filter = '{exclude_filter[:100]}...'")
                 else:
                     exclude_filter = ""
+                    logger.info(f"🔍 DEBUG: Schema is 'public' + include_system=True → No filter")
             elif schema_name == 'auth':
                 # Auth schema: hide by default (internal authentication tables)
                 if not include_system:
                     exclude_filter = "AND 1=0"  # Hide all auth tables by default
+                    logger.info(f"🔍 DEBUG: Schema is 'auth' → Hiding all tables (AND 1=0)")
                 else:
                     exclude_filter = ""
+                    logger.info(f"🔍 DEBUG: Schema is 'auth' + include_system=True → No filter")
             elif schema_name.startswith('proj_'):
                 # Project-specific schemas: show all user tables
                 exclude_filter = ""
+                logger.info(f"✅ DEBUG: Schema starts with 'proj_' → NO SYSTEM_TABLES filter applied!")
+                logger.info(f"✅ DEBUG: exclude_filter = '' (empty - ALL tables should be visible)")
             else:
                 # Other schemas: apply system table filter
                 if not include_system:
                     excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
                     exclude_filter = f"AND t.table_name NOT IN ({excluded_tables})"
+                    logger.info(f"🔍 DEBUG: Schema is '{schema_name}' (not proj_*) → Applying SYSTEM_TABLES filter")
+                    logger.info(f"🔍 DEBUG: exclude_filter = '{exclude_filter[:100]}...'")
                 else:
                     exclude_filter = ""
+                    logger.info(f"🔍 DEBUG: Schema is '{schema_name}' + include_system=True → No filter")
 
-            # Query only the project's schema
+            # Query only the project's schema - use parameterized query
             query = f"""
             SELECT 
                 t.table_schema,
@@ -125,9 +145,40 @@ class SchemaParser:
             ORDER BY t.table_schema, t.table_name
             """
             
-            logger.info(f"Executing get_tables query for schema: {schema_name}")
-            result = await DBManager.fetch_all(db, query)
-            logger.info(f"Found {len(result) if result else 0} tables")
+            logger.info(f"✅ Executing get_tables query for schema: {schema_name}")
+            logger.info(f"📊 Full SQL Query:\n{query}")
+            logger.info(f"📊 Query Parameters: ['{schema_name}']")
+            
+            result = await DBManager.fetch_all(db, query, [schema_name])  # Pass schema as parameter
+            
+            logger.info(f"\n{'='*80}")
+            logger.info(f"📊 RAW PostgreSQL RESULT (before any processing):")
+            logger.info(f"{'='*80}")
+            logger.info(f"✅ Total tables returned from PostgreSQL: {len(result) if result else 0}")
+            
+            if result:
+                logger.info(f"\n📋 ALL TABLES from PostgreSQL:")
+                for idx, table in enumerate(result, 1):
+                    logger.info(f"   {idx}. {table['table_schema']}.{table['table_name']}")
+                    if table['table_name'] == 'users':
+                        logger.info(f"      🎯 FOUND 'users' table in raw PostgreSQL result!")
+                        logger.info(f"      🎯 Full record: {dict(table)}")
+                
+                # Check specifically for 'users' table
+                users_table = [t for t in result if t['table_name'] == 'users']
+                if users_table:
+                    logger.info(f"\n✅✅✅ 'users' table EXISTS in raw PostgreSQL result!")
+                    logger.info(f"✅✅✅ Record: {dict(users_table[0])}")
+                else:
+                    logger.info(f"\n❌❌❌ 'users' table NOT FOUND in raw PostgreSQL result!")
+                    logger.info(f"❌❌❌ This means it was filtered by the SQL query itself")
+            else:
+                logger.info(f"❌ No tables returned from PostgreSQL")
+            
+            logger.info(f"\n{'='*80}")
+            logger.info(f"🔍 DEBUG: SchemaParser.get_tables() END - Returning {len(result) if result else 0} tables")
+            logger.info(f"{'='*80}\n")
+            
             return result if result else []
         except Exception as e:
             import traceback
@@ -138,41 +189,93 @@ class SchemaParser:
     
     @staticmethod
     async def get_relationships(db: asyncpg.Pool, schema_name: str = None) -> List[Dict]:
-        """Get foreign key relationships between user-created tables across ALL user schemas"""
+        """
+        Get foreign key relationships between tables.
+        
+        Args:
+            db: Database connection pool
+            schema_name: Specific schema to query (optional - if None, queries all non-system schemas)
+        """
+        if schema_name:
+            logger.info(f"🔍 SchemaParser.get_relationships() for schema: '{schema_name}'")
+        else:
+            logger.info(f"🔍 SchemaParser.get_relationships() for all user schemas")
+        
         excluded_tables = ', '.join(f"'{t}'" for t in SchemaParser.SYSTEM_TABLES)
 
-        # Query ALL user schemas for relationships
-        query = f"""
-        SELECT
-            tc.table_schema || '.' || tc.table_name as from_table,
-            kcu.column_name as from_column,
-            ccu.table_schema || '.' || ccu.table_name as to_table,
-            ccu.column_name as to_column,
-            tc.constraint_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu
-            ON tc.constraint_name = kcu.constraint_name
-        JOIN information_schema.constraint_column_usage ccu
-            ON ccu.constraint_name = tc.constraint_name
-        WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND tc.table_schema NOT IN ('auth', 'information_schema', 'pg_catalog', 'pg_toast')
-        AND tc.table_name NOT IN ({excluded_tables})
-        AND tc.table_name NOT LIKE '_zendbx_%'
-        AND tc.table_name NOT LIKE '_nexora_%'
-        ORDER BY tc.table_schema, tc.table_name
-        """
-        result = await DBManager.fetch_all(db, query)
+        # If schema_name provided, filter to that schema only
+        if schema_name:
+            schema_filter = "AND tc.table_schema = $1"
+            query = f"""
+            SELECT
+                tc.table_schema || '.' || tc.table_name as from_table,
+                kcu.column_name as from_column,
+                ccu.table_schema || '.' || ccu.table_name as to_table,
+                ccu.column_name as to_column,
+                tc.constraint_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+                ON tc.constraint_name = kcu.constraint_name
+            JOIN information_schema.constraint_column_usage ccu
+                ON ccu.constraint_name = tc.constraint_name
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+            {schema_filter}
+            AND tc.table_name NOT IN ({excluded_tables})
+            AND tc.table_name NOT LIKE '_zendbx_%'
+            AND tc.table_name NOT LIKE '_nexora_%'
+            ORDER BY tc.table_schema, tc.table_name
+            """
+            result = await DBManager.fetch_all(db, query, [schema_name])
+        else:
+            # Query ALL user schemas for relationships (original behavior)
+            query = f"""
+            SELECT
+                tc.table_schema || '.' || tc.table_name as from_table,
+                kcu.column_name as from_column,
+                ccu.table_schema || '.' || ccu.table_name as to_table,
+                ccu.column_name as to_column,
+                tc.constraint_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+                ON tc.constraint_name = kcu.constraint_name
+            JOIN information_schema.constraint_column_usage ccu
+                ON ccu.constraint_name = tc.constraint_name
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+            AND tc.table_schema NOT IN ('auth', 'information_schema', 'pg_catalog', 'pg_toast')
+            AND tc.table_name NOT IN ({excluded_tables})
+            AND tc.table_name NOT LIKE '_zendbx_%'
+            AND tc.table_name NOT LIKE '_nexora_%'
+            ORDER BY tc.table_schema, tc.table_name
+            """
+            result = await DBManager.fetch_all(db, query)
+        
+        logger.info(f"✅ Found {len(result) if result else 0} relationships")
         return result if result else []
     
     @staticmethod
-    async def get_table_details(db: asyncpg.Pool, table_name: str) -> Dict:
-        """Get detailed information about a specific table (supports schema.table format)"""
+    async def get_table_details(db: asyncpg.Pool, table_name: str, schema_name: str = None) -> Dict:
+        """
+        Get detailed information about a specific table.
+        
+        Args:
+            db: Database connection pool
+            table_name: Table name (can be qualified as 'schema.table' or bare 'table')
+            schema_name: Schema name (required if table_name is not qualified)
+        """
         # Parse schema and table name
         if '.' in table_name:
-            schema_name, table_only = table_name.split('.', 1)
+            parsed_schema, table_only = table_name.split('.', 1)
         else:
-            schema_name = 'public'
+            # If not qualified, schema_name parameter is REQUIRED
+            if not schema_name:
+                raise ValueError(
+                    "schema_name parameter is required when table_name is not qualified. "
+                    f"Provide either 'schema.table' or separate schema_name parameter."
+                )
+            parsed_schema = schema_name
             table_only = table_name
+        
+        logger.info(f"🔍 SchemaParser.get_table_details() for table: {parsed_schema}.{table_only}")
         
         columns_query = """
         SELECT 
@@ -199,12 +302,12 @@ class SchemaParser:
         AND tc.table_schema = $2
         """
         
-        columns = await DBManager.fetch_all(db, columns_query, [table_only, schema_name])
-        constraints = await DBManager.fetch_all(db, constraints_query, [table_only, schema_name])
+        columns = await DBManager.fetch_all(db, columns_query, [table_only, parsed_schema])
+        constraints = await DBManager.fetch_all(db, constraints_query, [table_only, parsed_schema])
         
         return {
             "table_name": table_name,
-            "schema": schema_name,
+            "schema": parsed_schema,
             "columns": columns,
             "constraints": constraints
         }

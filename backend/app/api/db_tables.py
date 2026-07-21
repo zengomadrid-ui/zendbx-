@@ -7,10 +7,12 @@ from pydantic import BaseModel
 from typing import List, Optional
 from uuid import UUID
 import time
+import logging
 from app.services.db_manager import TableManager
 from app.services.schema_parser import SchemaParser
 from app.api.auth import get_current_user
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/db/tables", tags=["Database Tables"])
 
 
@@ -38,6 +40,8 @@ class AddColumnRequest(BaseModel):
 async def get_project_db_from_header(x_project_id: str = Header(...)):
     """Get project database pool and schema name from header"""
     try:
+        logger.info(f"🔍 db_tables.py: Received X-Project-Id header: {x_project_id}")
+        
         from app.core.db_router import get_main_db_pool
         main_pool = await get_main_db_pool()
         async with main_pool.acquire() as conn:
@@ -46,14 +50,17 @@ async def get_project_db_from_header(x_project_id: str = Header(...)):
                 UUID(x_project_id)
             )
             if not result:
+                logger.error(f"❌ db_tables.py: Project not found for ID: {x_project_id}")
                 raise HTTPException(status_code=404, detail="Project not found")
 
             db_name = result["database_name"]
+            logger.info(f"✅ db_tables.py: Resolved project schema: '{db_name}' for project {x_project_id}")
             # Return the SAME shared pool — search_path is set per-connection in queries
             return {"pool": main_pool, "schema": db_name}
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"❌ db_tables.py: Error resolving project DB: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -64,9 +71,57 @@ async def list_tables(
 ):
     """List all tables in the project schema"""
     try:
-        tables = await SchemaParser.get_tables(db_info["pool"], db_info["schema"])
-        return {"tables": tables}
+        schema = db_info["schema"]
+        logger.info(f"\n{'='*80}")
+        logger.info(f"📋 db_tables.py: list_tables() API ENDPOINT CALLED")
+        logger.info(f"{'='*80}")
+        logger.info(f"📋 db_tables.py: schema = '{schema}'")
+        logger.info(f"📋 db_tables.py: Calling SchemaParser.get_tables(pool, '{schema}')")
+        
+        tables = await SchemaParser.get_tables(db_info["pool"], schema)
+        
+        logger.info(f"\n{'='*80}")
+        logger.info(f"📋 db_tables.py: RESPONSE FROM SchemaParser")
+        logger.info(f"{'='*80}")
+        logger.info(f"✅ db_tables.py: SchemaParser returned {len(tables)} tables")
+        
+        if tables:
+            logger.info(f"\n📋 ALL TABLES returned by SchemaParser:")
+            for idx, table in enumerate(tables, 1):
+                logger.info(f"   {idx}. {table.get('table_schema', 'N/A')}.{table.get('table_name', 'N/A')}")
+                if table.get('table_name') == 'users':
+                    logger.info(f"      🎯 'users' table present in SchemaParser response!")
+            
+            # Check for 'users' table
+            users_table = [t for t in tables if t.get('table_name') == 'users']
+            if users_table:
+                logger.info(f"\n✅✅✅ 'users' table PRESENT in SchemaParser response!")
+            else:
+                logger.info(f"\n❌❌❌ 'users' table MISSING from SchemaParser response!")
+        
+        # Prepare final response
+        response_data = {"tables": tables}
+        
+        logger.info(f"\n{'='*80}")
+        logger.info(f"📤 db_tables.py: FINAL JSON RESPONSE TO FRONTEND")
+        logger.info(f"{'='*80}")
+        logger.info(f"📤 Response contains {len(tables)} tables")
+        
+        # Check final response for 'users' table
+        users_in_response = [t for t in tables if t.get('table_name') == 'users']
+        if users_in_response:
+            logger.info(f"✅✅✅ 'users' table IS IN final JSON response to frontend!")
+            logger.info(f"✅✅✅ Sample: {users_in_response[0]}")
+        else:
+            logger.info(f"❌❌❌ 'users' table NOT IN final JSON response to frontend!")
+        
+        logger.info(f"{'='*80}\n")
+        
+        return response_data
     except Exception as e:
+        logger.error(f"❌ db_tables.py: Error listing tables: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

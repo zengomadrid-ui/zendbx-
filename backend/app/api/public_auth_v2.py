@@ -147,14 +147,15 @@ async def signup(project_slug: str, request_data: SignUpRequest):
 
         pool = await get_main_db_pool()
         async with pool.acquire() as conn:
-            # Use project schema
+            # Set search_path (auth schema is included for global auth.users table)
             await conn.execute(f'SET search_path TO "{schema}", public, auth')
             await set_rls_context(conn, user_id=None, role='service_role')
 
-            # Check if email already exists (case-insensitive)
+            # Check if email already exists in THIS PROJECT (project-scoped uniqueness)
+            # Email uniqueness is enforced PER PROJECT via (project_id, LOWER(email)) constraint
             existing = await conn.fetchrow(
-                "SELECT id FROM auth.users WHERE LOWER(email) = LOWER($1)", 
-                request_data.email
+                "SELECT id FROM auth.users WHERE project_id = $1 AND LOWER(email) = LOWER($2)", 
+                project_id, request_data.email
             )
             if existing:
                 raise HTTPException(
@@ -165,15 +166,15 @@ async def signup(project_slug: str, request_data: SignUpRequest):
             # Hash password using bcrypt
             hashed = hash_password(request_data.password)
             
-            # Insert user into auth.users
+            # Insert user into auth.users table WITH project_id (project-scoped)
             user = await conn.fetchrow("""
                 INSERT INTO auth.users (
-                    email, username, password_hash, provider, 
+                    project_id, email, username, password_hash, provider, 
                     email_verified, created_at, last_login_at
                 )
-                VALUES ($1, $2, $3, 'email', FALSE, NOW(), NOW())
+                VALUES ($1, $2, $3, $4, 'email', FALSE, NOW(), NOW())
                 RETURNING id, email, username, provider, email_verified, created_at
-            """, request_data.email, request_data.name, hashed)
+            """, project_id, request_data.email, request_data.name, hashed)
 
             logger.info(f"✅ Signup: {user['email']} in schema '{schema}'")
 
@@ -242,7 +243,7 @@ async def signup(project_slug: str, request_data: SignUpRequest):
 async def login(project_slug: str, request_data: SignInRequest):
     """
     Public login endpoint - No API key required.
-    Verifies credentials against auth.users table (Phase 1).
+    Verifies credentials against auth.users table filtered by project_id.
     Uses project_slug (public identifier).
     """
     try:
@@ -252,16 +253,17 @@ async def login(project_slug: str, request_data: SignInRequest):
 
         pool = await get_main_db_pool()
         async with pool.acquire() as conn:
+            # Set search_path (auth schema is included for global auth.users table)
             await conn.execute(f'SET search_path TO "{schema}", public, auth')
             await set_rls_context(conn, user_id=None, role='service_role')
 
-            # Query auth.users with case-insensitive email lookup
+            # Query auth.users filtered by PROJECT_ID (project-scoped authentication)
             user = await conn.fetchrow("""
                 SELECT id, email, username, password_hash, provider, 
                        email_verified, is_active, metadata, created_at
                 FROM auth.users
-                WHERE LOWER(email) = LOWER($1)
-            """, request_data.email)
+                WHERE project_id = $1 AND LOWER(email) = LOWER($2)
+            """, project_id, request_data.email)
 
             if not user:
                 raise HTTPException(
@@ -283,12 +285,12 @@ async def login(project_slug: str, request_data: SignInRequest):
                     detail="Invalid email or password"
                 )
 
-            # Update last_login_at
+            # Update last_login_at for THIS PROJECT'S user
             await conn.execute("""
                 UPDATE auth.users 
                 SET last_login_at = NOW(), updated_at = NOW()
-                WHERE id = $1
-            """, user['id'])
+                WHERE id = $1 AND project_id = $2
+            """, user['id'], project_id)
 
             logger.info(f"✅ Login: {user['email']} in schema '{schema}' (auth.users)")
 
@@ -329,21 +331,33 @@ async def login(project_slug: str, request_data: SignInRequest):
 async def get_user(project_slug: str, authorization: str = Header(None)):
     """
     Get current user - Requires JWT token.
-    Returns user info from auth.users (NEVER returns password_hash).
+    Returns user info from auth.users filtered by project_id (NEVER returns password_hash).
     Uses project_slug (public identifier).
+    SECURITY: Validates that JWT project_id matches requested project.
     """
     if not authorization or not authorization.startswith('Bearer '):
         raise HTTPException(status_code=401, detail="Missing authorization header")
 
     token = authorization.removeprefix('Bearer ').strip()
     project = await get_project_by_slug(project_slug)
+    project_id = project['id']
     schema = project['database_name']
 
     try:
         payload = jwt.decode(token, project['jwt_secret'], algorithms=["HS256"])
         user_id = payload.get("sub")
+        token_project_id = payload.get("project_id")
+        
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # SECURITY: Verify JWT project_id matches requested project
+        if token_project_id != str(project_id):
+            raise HTTPException(
+                status_code=403, 
+                detail="Token is not valid for this project"
+            )
+            
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -351,16 +365,19 @@ async def get_user(project_slug: str, authorization: str = Header(None)):
 
     pool = await get_main_db_pool()
     async with pool.acquire() as conn:
+        # Set search_path (auth schema is included for global auth.users table)
         await conn.execute(f'SET search_path TO "{schema}", public, auth')
         await set_rls_context(conn, user_id=str(user_id), role='authenticated')
 
-        # Query auth.users - IMPORTANT: Do NOT select password_hash
+        # Query auth.users filtered by PROJECT_ID and user_id
+        # IMPORTANT: Do NOT select password_hash
+        # SECURITY: Double-check project_id to prevent cross-project access
         user = await conn.fetchrow("""
             SELECT id, email, username, provider, email_verified, 
                    is_active, avatar_url, metadata, created_at, last_login_at
             FROM auth.users
-            WHERE id = $1
-        """, user_id)
+            WHERE id = $1 AND project_id = $2
+        """, user_id, project_id)
 
         if not user:
             raise HTTPException(

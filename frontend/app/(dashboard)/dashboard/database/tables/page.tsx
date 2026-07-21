@@ -48,20 +48,65 @@ export default function TablesPage() {
     try {
       const projectId = localStorage.getItem("current_project_id");
       
+      console.log("\n" + "=".repeat(80));
+      console.log("🔍 FRONTEND: fetchTables() START");
+      console.log("=".repeat(80));
+      console.log("📋 Project ID:", projectId);
+      console.log("📋 API URL:", `/api/projects/${projectId}/db/tables`);
+      
       const response = await apiFetch(`/api/projects/${projectId}/db/tables`, {
         headers: {
           "x-project-id": projectId || ""
         }
       });
       
+      console.log("📥 Response status:", response.status, response.ok ? "OK" : "ERROR");
+      
       if (response.ok) {
         const data = await response.json();
+        
+        console.log("\n" + "=".repeat(80));
+        console.log("📥 FRONTEND: RAW JSON RESPONSE FROM BACKEND");
+        console.log("=".repeat(80));
+        console.log("📥 data.tables length:", data.tables?.length || 0);
+        console.log("📥 Full response:", JSON.stringify(data, null, 2));
+        
+        // Check for 'users' table in raw response
+        const usersInRaw = data.tables?.find((t: any) => t.table_name === 'users');
+        if (usersInRaw) {
+          console.log("\n✅✅✅ 'users' table FOUND in raw backend response!");
+          console.log("✅✅✅ users table data:", JSON.stringify(usersInRaw, null, 2));
+        } else {
+          console.log("\n❌❌❌ 'users' table NOT FOUND in raw backend response!");
+          console.log("❌❌❌ Available tables:", data.tables?.map((t: any) => t.table_name).join(', '));
+        }
+        
         // Parse columns if they come as JSON string
         const parsedTables = (data.tables || []).map((table: any) => ({
           ...table,
           columns: typeof table.columns === 'string' ? JSON.parse(table.columns) : table.columns
         }));
+        
+        console.log("\n" + "=".repeat(80));
+        console.log("📋 FRONTEND: AFTER PARSING");
+        console.log("=".repeat(80));
+        console.log("📋 parsedTables length:", parsedTables.length);
+        console.log("📋 All table names:", parsedTables.map((t: any) => t.table_name).join(', '));
+        
+        // Check for 'users' after parsing
+        const usersAfterParse = parsedTables.find((t: any) => t.table_name === 'users');
+        if (usersAfterParse) {
+          console.log("\n✅✅✅ 'users' table STILL PRESENT after parsing!");
+        } else {
+          console.log("\n❌❌❌ 'users' table MISSING after parsing!");
+        }
+        
         setTables(parsedTables);
+        
+        console.log("\n" + "=".repeat(80));
+        console.log("📋 FRONTEND: AFTER setState (tables)");
+        console.log("=".repeat(80));
+        console.log("📋 React state will be updated with", parsedTables.length, "tables");
         
         // Fetch RLS status for each table
         await fetchRLSStatus(parsedTables);
@@ -69,9 +114,11 @@ export default function TablesPage() {
         if (parsedTables.length > 0 && !selectedTable) {
           setSelectedTable(parsedTables[0]);
         }
+        
+        console.log("=".repeat(80) + "\n");
       }
     } catch (error) {
-      console.error("Failed to fetch tables:", error);
+      console.error("❌ FRONTEND: Failed to fetch tables:", error);
     } finally {
       setLoading(false);
     }

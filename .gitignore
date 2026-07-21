@@ -107,3 +107,27 @@ backend/test_*.py
 sdk/*.tgz
 sdk/dist/
 *.egg-info/
+
+# Phase test artifacts and temporary reports
+PHASE_*.md
+PHASE_*.json
+ISOLATION_TEST_RESULTS.json
+SECURITY_TEST_RESULTS.md
+*_TEST_RESULTS.json
+*_RESULTS.json
+
+# Credential backups (contain encrypted credentials)
+backend/backups/*.json
+backend/backups/*.sql.gz
+
+# Temporary debug/inspection scripts (specific files only)
+backend/inspect_project.py
+backend/add_email_columns.py
+backend/run_migration.py
+backend/*.txt
+backend/*.ps1
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+.pytest_cache/

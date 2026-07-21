@@ -2,11 +2,246 @@ import asyncpg
 import asyncio
 from typing import Dict, Optional
 from app.core.config import settings
+import logging
+from uuid import UUID
+
+logger = logging.getLogger(__name__)
 
 # Connection pools for each database
 connection_pools: Dict[str, asyncpg.Pool] = {}
 
+# ============================================
+# PHASE 4: ISOLATED CONNECTION POOLS
+# ============================================
+
+# Platform pool (trusted - has access to auth tables)
+platform_pool: Optional[asyncpg.Pool] = None
+
+# Provisioner pool (elevated - has CREATEROLE privilege)
+provisioner_pool: Optional[asyncpg.Pool] = None
+
+# Project pools (restricted - per-project isolation)
+# Key: project_id (str), Value: asyncpg.Pool
+project_pools: Dict[str, asyncpg.Pool] = {}
+
+# Project pool configuration
+MAX_PROJECT_POOLS = 50  # Maximum number of cached project pools
+PROJECT_POOL_SIZE = 5   # Max connections per project pool
+
+async def get_platform_db_pool() -> asyncpg.Pool:
+    """
+    Get trusted platform pool - HAS ACCESS TO AUTH TABLES
+    
+    Use for:
+    - Authentication operations (signup, login, password reset)
+    - Platform operations (projects, users)
+    - Trusted internal operations
+    
+    Security:
+    - Can access public schema (platform tables)
+    - Can access auth schema (authentication tables)
+    - Should NEVER be used for project-facing SQL execution
+    """
+    global platform_pool
+    
+    if platform_pool is None:
+        max_retries = 3
+        retry_delay = 2
+        
+        # Use PLATFORM_DATABASE_URL if available, fall back to DATABASE_URL
+        platform_url = getattr(settings, 'PLATFORM_DATABASE_URL', settings.DATABASE_URL)
+        
+        logger.info("🔌 Creating platform database pool...")
+        
+        for attempt in range(max_retries):
+            try:
+                # Determine SSL context
+                ssl_context = None
+                if any(indicator in platform_url.lower() for indicator in ['render.com', 'amazonaws.com']):
+                    import ssl
+                    ssl_context = ssl.create_default_context()
+                    logger.info("🔒 SSL enabled for platform connection")
+                
+                # Create platform pool
+                platform_pool = await asyncpg.create_pool(
+                    platform_url,
+                    min_size=2,
+                    max_size=10,
+                    max_queries=50000,
+                    max_inactive_connection_lifetime=300,
+                    timeout=30,
+                    command_timeout=60,
+                    ssl=ssl_context,
+                    server_settings={
+                        'application_name': 'zendbx_platform',
+                        'search_path': 'public,auth',
+                        'jit': 'off',
+                        'statement_timeout': '60000'
+                    }
+                )
+                
+                # Test the pool
+                async with platform_pool.acquire() as conn:
+                    result = await conn.fetchval('SELECT 1')
+                    if result == 1:
+                        logger.info(f"✅ Platform pool connected (attempt {attempt + 1})")
+                    else:
+                        raise Exception("Platform pool test query failed")
+                
+                break
+                
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"⚠️  Platform pool attempt {attempt + 1} failed: {e}")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    logger.error(f"❌ Platform pool failed after {max_retries} attempts: {e}")
+                    raise Exception(f"Platform database connection failed: {e}")
+    
+    return platform_pool
+
+
+async def get_provisioner_db_pool() -> asyncpg.Pool:
+    """
+    Get provisioner pool - HAS CREATEROLE PRIVILEGE
+    
+    Use for:
+    - Creating project-specific PostgreSQL roles
+    - Creating project schemas
+    - Granting/revoking permissions
+    - Project provisioning and deletion
+    
+    Security:
+    - Has CREATEROLE privilege (elevated)
+    - Should be used ONLY for provisioning operations
+    - Never use for runtime project operations
+    """
+    global provisioner_pool
+    
+    if provisioner_pool is None:
+        # Use PROVISIONER_DATABASE_URL if available, fall back to PLATFORM_DATABASE_URL
+        provisioner_url = getattr(settings, 'PROVISIONER_DATABASE_URL', 
+                                 getattr(settings, 'PLATFORM_DATABASE_URL', settings.DATABASE_URL))
+        
+        logger.info("🔌 Creating provisioner database pool...")
+        
+        # Determine SSL context
+        ssl_context = None
+        if any(indicator in provisioner_url.lower() for indicator in ['render.com', 'amazonaws.com']):
+            import ssl
+            ssl_context = ssl.create_default_context()
+        
+        provisioner_pool = await asyncpg.create_pool(
+            provisioner_url,
+            min_size=1,
+            max_size=5,  # Limited connections for provisioner
+            timeout=30,
+            command_timeout=120,  # Longer timeout for DDL operations
+            ssl=ssl_context,
+            server_settings={
+                'application_name': 'zendbx_provisioner',
+                'search_path': 'public',
+                'statement_timeout': '120000'
+            }
+        )
+        
+        logger.info("✅ Provisioner pool created")
+    
+    return provisioner_pool
+
+
+async def get_project_db_pool_isolated(project_id: str, connection_url: str, project_schema: str) -> asyncpg.Pool:
+    """
+    Get project-specific isolated pool - RESTRICTED ACCESS
+    
+    Uses project-specific PostgreSQL role with access ONLY to project schema
+    
+    Args:
+        project_id: Project UUID as string
+        connection_url: Full connection URL with project-specific credentials
+        project_schema: Project schema name (e.g., "proj_550e8400")
+    
+    Security:
+    - Can access ONLY the specified project schema
+    - CANNOT access auth schema
+    - CANNOT access public platform schema
+    - CANNOT access other project schemas
+    - PostgreSQL enforces isolation even if application code has bugs
+    
+    Returns:
+        asyncpg.Pool configured for project-specific access
+    """
+    global project_pools
+    
+    if project_id not in project_pools:
+        # Check if we need to evict old pools (LRU-style)
+        if len(project_pools) >= MAX_PROJECT_POOLS:
+            # Evict the oldest pool (simple FIFO for now)
+            # In production, implement proper LRU with access timestamps
+            oldest_project_id = next(iter(project_pools))
+            oldest_pool = project_pools.pop(oldest_project_id)
+            await oldest_pool.close()
+            logger.info(f"🗑️  Evicted old project pool: {oldest_project_id}")
+        
+        logger.info(f"🔌 Creating isolated project pool: {project_id}")
+        
+        # Determine SSL context
+        ssl_context = None
+        if any(indicator in connection_url.lower() for indicator in ['render.com', 'amazonaws.com']):
+            import ssl
+            ssl_context = ssl.create_default_context()
+        
+        # Create project-specific pool
+        project_pools[project_id] = await asyncpg.create_pool(
+            connection_url,
+            min_size=1,
+            max_size=PROJECT_POOL_SIZE,
+            max_queries=10000,
+            max_inactive_connection_lifetime=600,  # 10 minutes
+            timeout=30,
+            command_timeout=60,
+            ssl=ssl_context,
+            server_settings={
+                'application_name': f'zendbx_project_{project_id[:8]}',
+                'search_path': f'"{project_schema}"',  # ONLY project schema
+                'jit': 'off',
+                'statement_timeout': '60000'
+            }
+        )
+        
+        logger.info(f"✅ Project pool created: {project_id}")
+    
+    return project_pools[project_id]
+
+
+async def close_project_pool(project_id: str):
+    """
+    Close and remove a project's connection pool
+    
+    Use when:
+    - Project is deleted
+    - Pool needs to be recreated
+    - Application shutdown
+    
+    Args:
+        project_id: Project UUID as string
+    """
+    global project_pools
+    
+    if project_id in project_pools:
+        pool = project_pools.pop(project_id)
+        await pool.close()
+        logger.info(f"✅ Closed project pool: {project_id}")
+
+
 async def get_main_db_pool() -> asyncpg.Pool:
+    """
+    DEPRECATED: Use get_platform_db_pool() instead
+    
+    Kept for backward compatibility during migration
+    """
+    return await get_platform_db_pool()
     """
     Get connection pool for main database
     Supports both local development and cloud PostgreSQL (Render, AWS RDS, etc.)
@@ -114,9 +349,25 @@ async def execute_on_main_db(query: str, *args):
     async with pool.acquire() as conn:
         return await conn.fetch(query, *args)
 
-async def execute_on_project_db(database_name: str, query: str, *args, rls_user_id: str = None, rls_role: str = None):
+async def execute_on_project_db(project_id: UUID, database_name: str, query: str, *args, rls_user_id: str = None, rls_role: str = None):
     """
-    Execute query on project database - properly handles PostgreSQL functions and dollar-quoted strings
+    Execute query on project database using ISOLATED PROJECT ROLE
+    
+    PHASE 5.0 MIGRATION: Now uses project-specific restricted PostgreSQL roles
+    
+    Args:
+        project_id: Project UUID (for credential lookup)
+        database_name: Project schema name (for search_path)
+        query: SQL query to execute
+        *args: Query parameters
+        rls_user_id: RLS user ID context
+        rls_role: RLS role context
+    
+    Security:
+    - Uses project-specific isolated pool (zendbx_p_<uuid> role)
+    - PostgreSQL enforces isolation (not just search_path)
+    - Fail-closed: Missing credentials = query fails
+    - No privileged fallback
     
     CRITICAL: Does NOT split queries incorrectly
     - Preserves $$ ... $$ blocks
@@ -124,13 +375,56 @@ async def execute_on_project_db(database_name: str, query: str, *args, rls_user_
     - Only splits on semicolons OUTSIDE of quoted strings and function bodies
     """
     from app.middleware.rls_context import set_rls_context as _set_rls_ctx
+    from app.core.db_roles import ProjectCredentialStore
+    from cryptography.fernet import Fernet
 
     async def _inject_rls(conn):
         """Inject RLS session variables if context provided."""
         if rls_user_id is not None or rls_role is not None:
             await _set_rls_ctx(conn, user_id=rls_user_id, role=rls_role or 'anon')
 
-    pool = await get_project_db_pool(database_name)
+    # PHASE 5.0: Get isolated project pool
+    # FAIL-CLOSED: No fallback to privileged pools
+    # Get encrypted credentials from database
+    admin_conn = None
+    try:
+        admin_conn = await asyncpg.connect(settings.DATABASE_URL)
+        cred_row = await admin_conn.fetchrow(
+            'SELECT role_name, encrypted_password FROM public.project_db_credentials WHERE project_id = $1',
+            project_id
+        )
+    finally:
+        if admin_conn:
+            await admin_conn.close()
+    
+    if not cred_row:
+        # FAIL-CLOSED: No credentials = fail immediately (no privileged fallback)
+        raise Exception(f"Project credentials not found for {project_id}. Project may not be provisioned.")
+    
+    # Decrypt credentials
+    encryption_key = settings.PROJECT_CREDENTIAL_ENCRYPTION_KEY.encode()
+    f = Fernet(encryption_key)
+    
+    try:
+        decrypted_password = f.decrypt(cred_row['encrypted_password'].encode()).decode()
+    except Exception as decrypt_error:
+        # FAIL-CLOSED: Decryption failure = fail immediately (no privileged fallback)
+        raise Exception(f"Failed to decrypt project credentials for {project_id}: {decrypt_error}")
+    
+    # Build connection URL
+    connection_url = f"postgresql://{cred_row['role_name']}:{decrypted_password}@localhost:5432/nexora_main"
+    
+    try:
+        # Get isolated project pool
+        pool = await get_project_db_pool_isolated(
+            str(project_id),
+            connection_url,
+            database_name
+        )
+        logger.info(f"✅ Using isolated pool for project {project_id} (role: {cred_row['role_name']})")
+    except Exception as pool_error:
+        # FAIL-CLOSED: Pool creation failure = fail immediately (no privileged fallback)
+        raise Exception(f"Failed to create isolated project pool for {project_id}: {pool_error}")
 
     # If there are parameters, this must be a single parameterized statement
     if args:
@@ -441,7 +735,28 @@ async def drop_project_database(database_name: str) -> bool:
         return False
 
 async def close_all_pools():
-    """Close all connection pools"""
+    """Close all connection pools (platform, provisioner, and all project pools)"""
+    global platform_pool, provisioner_pool, project_pools
+    
+    # Close legacy pools
     for pool in connection_pools.values():
         await pool.close()
     connection_pools.clear()
+    
+    # Close platform pool
+    if platform_pool:
+        await platform_pool.close()
+        platform_pool = None
+        logger.info("✅ Closed platform pool")
+    
+    # Close provisioner pool
+    if provisioner_pool:
+        await provisioner_pool.close()
+        provisioner_pool = None
+        logger.info("✅ Closed provisioner pool")
+    
+    # Close all project pools
+    for project_id, pool in project_pools.items():
+        await pool.close()
+        logger.info(f"✅ Closed project pool: {project_id}")
+    project_pools.clear()

@@ -27,7 +27,7 @@ END;
 -- ============================================
 CREATE SCHEMA IF NOT EXISTS auth;
 
--- Create auth.users table (Phase 1 Foundation)
+-- Create auth.users table (Phase 1 Foundation - PROJECT ISOLATED)
 CREATE TABLE IF NOT EXISTS auth.users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email TEXT NOT NULL,
@@ -41,9 +41,70 @@ CREATE TABLE IF NOT EXISTS auth.users (
     last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
+    -- CRITICAL: Email uniqueness is PROJECT-SPECIFIC (same email can exist in different projects)
     CONSTRAINT auth_users_email_unique UNIQUE (email),
     CONSTRAINT auth_users_username_unique UNIQUE (username)
 );
+
+COMMENT ON TABLE auth.users IS 'Project-specific user authentication - isolated per project';
+COMMENT ON COLUMN auth.users.email IS 'Email is unique WITHIN this project only (not globally)';
+
+-- Create auth.sessions table for session management
+CREATE TABLE IF NOT EXISTS auth.sessions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    device_info JSONB DEFAULT '{}'::jsonb,
+    ip_address INET,
+    user_agent TEXT,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_accessed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE auth.sessions IS 'Project-specific user sessions';
+
+-- Create auth.refresh_tokens table for token rotation
+CREATE TABLE IF NOT EXISTS auth.refresh_tokens (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    parent_token_id UUID REFERENCES auth.refresh_tokens(id) ON DELETE CASCADE,
+    revoked BOOLEAN DEFAULT FALSE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE auth.refresh_tokens IS 'Project-specific refresh tokens for token rotation';
+
+-- Create auth.identities table for OAuth providers
+CREATE TABLE IF NOT EXISTS auth.identities (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    provider_user_id TEXT NOT NULL,
+    provider_email TEXT,
+    provider_metadata JSONB DEFAULT '{}'::jsonb,
+    last_sign_in_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT auth_identities_user_provider_unique UNIQUE (user_id, provider),
+    CONSTRAINT auth_identities_provider_unique UNIQUE (provider, provider_user_id)
+);
+
+COMMENT ON TABLE auth.identities IS 'Project-specific OAuth/external identities linked to users';
+
+-- Create auth.password_reset_tokens table
+CREATE TABLE IF NOT EXISTS auth.password_reset_tokens (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    used BOOLEAN DEFAULT FALSE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+COMMENT ON TABLE auth.password_reset_tokens IS 'Project-specific password reset tokens';
 
 -- Indexes for auth.users
 CREATE INDEX IF NOT EXISTS idx_auth_users_email_lower ON auth.users (LOWER(email));
@@ -52,6 +113,26 @@ CREATE INDEX IF NOT EXISTS idx_auth_users_provider ON auth.users (provider);
 CREATE INDEX IF NOT EXISTS idx_auth_users_is_active ON auth.users (is_active);
 CREATE INDEX IF NOT EXISTS idx_auth_users_created_at ON auth.users (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_auth_users_provider_email ON auth.users (provider, LOWER(email));
+
+-- Indexes for auth.sessions
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth.sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth.sessions (expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash ON auth.sessions (token_hash);
+
+-- Indexes for auth.refresh_tokens
+CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_user_id ON auth.refresh_tokens (user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_token_hash ON auth.refresh_tokens (token_hash);
+CREATE INDEX IF NOT EXISTS idx_auth_refresh_tokens_expires_at ON auth.refresh_tokens (expires_at);
+
+-- Indexes for auth.identities
+CREATE INDEX IF NOT EXISTS idx_auth_identities_user_id ON auth.identities (user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_identities_provider ON auth.identities (provider);
+CREATE INDEX IF NOT EXISTS idx_auth_identities_provider_user_id ON auth.identities (provider, provider_user_id);
+
+-- Indexes for auth.password_reset_tokens
+CREATE INDEX IF NOT EXISTS idx_auth_password_reset_tokens_user_id ON auth.password_reset_tokens (user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_password_reset_tokens_token_hash ON auth.password_reset_tokens (token_hash);
+CREATE INDEX IF NOT EXISTS idx_auth_password_reset_tokens_expires_at ON auth.password_reset_tokens (expires_at);
 
 -- Trigger to auto-update updated_at
 CREATE OR REPLACE FUNCTION auth.update_users_updated_at()
@@ -283,11 +364,27 @@ END;
 COMMENT ON FUNCTION auth.is_rls_enabled(TEXT) IS 'Check if RLS is enabled on a table';
 
 -- ============================================
--- auth.users COMPATIBILITY VIEW
--- Backed by the users table once it is created.
--- Deferred: created after users table exists (see auto_table.py / migration).
--- The view is installed by add_supabase_compat.sql after users table creation.
+-- public.users VIEW (Application-Facing User Model)
+-- Maps to auth.users without exposing password_hash
+-- Developers can query: SELECT * FROM users;
 -- ============================================
+CREATE OR REPLACE VIEW public.users AS
+SELECT
+    id,
+    email,
+    username,
+    provider,
+    avatar_url,
+    is_active,
+    email_verified,
+    metadata,
+    created_at,
+    updated_at,
+    last_login_at
+FROM auth.users;
+
+COMMENT ON VIEW public.users IS 
+'Application-facing user model. Backed by auth.users without exposing credentials.';
 
 -- ============================================
 -- METADATA TABLE (Track tables in this database)

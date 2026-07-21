@@ -112,12 +112,22 @@ class CORSMiddleware:
         try:
             # Import here to avoid circular dependency
             from app.core.database import execute_on_main_db
+            import uuid
             
-            # Query project settings
-            result = await execute_on_main_db(
-                "SELECT allowed_origins FROM projects WHERE id = $1 OR slug = $1",
-                project_id
-            )
+            # Try to parse as UUID first, otherwise treat as slug
+            try:
+                # If it's a valid UUID, use UUID type in query
+                project_uuid = uuid.UUID(project_id)
+                result = await execute_on_main_db(
+                    "SELECT allowed_origins FROM projects WHERE id = $1",
+                    project_uuid
+                )
+            except (ValueError, AttributeError):
+                # Not a UUID, treat as slug (string comparison)
+                result = await execute_on_main_db(
+                    "SELECT allowed_origins FROM projects WHERE slug = $1",
+                    project_id
+                )
             
             if result and result[0].get("allowed_origins"):
                 origins = set(result[0]["allowed_origins"])

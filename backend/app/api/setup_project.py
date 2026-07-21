@@ -167,6 +167,26 @@ async def setup_project(
             
             results["steps"].append("✅ auth.users table created (Phase 1)")
             
+            # Create public.users view for application queries
+            await project_conn.execute("""
+                CREATE OR REPLACE VIEW public.users AS
+                SELECT
+                    id,
+                    email,
+                    username,
+                    provider,
+                    avatar_url,
+                    is_active,
+                    email_verified,
+                    metadata,
+                    created_at,
+                    updated_at,
+                    last_login_at
+                FROM auth.users;
+            """)
+            
+            results["steps"].append("✅ public.users view created (Phase 2)")
+            
             await project_conn.close()
             
         except Exception as e:

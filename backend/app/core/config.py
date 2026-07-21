@@ -16,6 +16,29 @@ class Settings(BaseSettings):
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 10
     
+    # ============================================
+    # PHASE 4: ISOLATED DATABASE CONNECTIONS
+    # ============================================
+    
+    # Platform database connection (trusted - has auth access)
+    # Uses zendbx_platform role
+    PLATFORM_DATABASE_URL: str = ""
+    
+    # Provisioner database connection (elevated - has CREATEROLE)
+    # Uses zendbx_provisioner role
+    PROVISIONER_DATABASE_URL: str = ""
+    
+    # Project credential encryption key
+    # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    PROJECT_CREDENTIAL_ENCRYPTION_KEY: str = ""
+    
+    # Fail-closed behavior for project database operations
+    # If True: Fall back to DATABASE_URL if project credentials not found (INSECURE)
+    # If False: Fail immediately if project credentials not found (SECURE)
+    ALLOW_INSECURE_PROJECT_DB_FALLBACK: bool = False
+    
+    # ============================================
+    
     # Security
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"

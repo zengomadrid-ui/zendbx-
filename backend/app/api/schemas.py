@@ -407,20 +407,47 @@ async def get_schema_table_rows(
         
         # Build query with proper schema qualification
         if schema_name == "auth":
-            # Auth schema - query directly without project_id filter
-            # Note: If auth tables should be project-scoped in the future,
-            # add project_id column to auth tables first
-            query = f"""
-                SELECT * FROM "{schema_name}"."{table_name}"
-                ORDER BY created_at DESC
-                LIMIT $1 OFFSET $2
-            """
-            rows = await execute_on_project_db(project_schema, query, limit, offset)
+            # 🔒 SECURITY FIX: Auth schema - MUST filter by project_id for tenant isolation
+            # 🔒 SECURITY FIX: Exclude password_hash and other sensitive fields
             
-            # Get count
-            count_query = f'SELECT COUNT(*) as count FROM "{schema_name}"."{table_name}"'
-            count_result = await execute_on_project_db(project_schema, count_query)
-            total_count = count_result[0]["count"] if count_result else 0
+            # Check if this is auth.users table
+            if table_name == "users":
+                # Return safe, project-scoped view of auth users
+                # NEVER expose password_hash, tokens, or secrets
+                query = f"""
+                    SELECT 
+                        id, 
+                        email, 
+                        username, 
+                        provider, 
+                        email_verified, 
+                        is_active, 
+                        avatar_url, 
+                        metadata, 
+                        last_login_at, 
+                        created_at, 
+                        updated_at
+                    FROM "{schema_name}"."{table_name}"
+                    WHERE project_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT $2 OFFSET $3
+                """
+                rows = await execute_on_project_db(project_schema, query, project_id, limit, offset)
+                
+                # Get count with project_id filter
+                count_query = f"""
+                    SELECT COUNT(*) as count 
+                    FROM "{schema_name}"."{table_name}"
+                    WHERE project_id = $1
+                """
+                count_result = await execute_on_project_db(project_schema, count_query, project_id)
+                total_count = count_result[0]["count"] if count_result else 0
+            else:
+                # Other auth tables - block access for security
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Direct access to auth.{table_name} is not allowed. Use the Auth API endpoints instead."
+                )
             
         elif schema_name == "realtime":
             # Realtime schema tables

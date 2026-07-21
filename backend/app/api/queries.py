@@ -137,6 +137,37 @@ def validate_sql_query(sql: str) -> tuple[bool, str]:
     
     sql_upper = cleaned_sql.upper()
     
+    # 🔒 SECURITY: Block direct access to auth schema tables
+    # Auth tables contain sensitive multi-tenant data and MUST be accessed via Auth API only
+    auth_table_patterns = [
+        'FROM AUTH.USERS',
+        'FROM "AUTH"."USERS"',
+        'JOIN AUTH.USERS',
+        'JOIN "AUTH"."USERS"',
+        'INTO AUTH.USERS',
+        'INTO "AUTH"."USERS"',
+        'UPDATE AUTH.USERS',
+        'UPDATE "AUTH"."USERS"',
+        'DELETE FROM AUTH.USERS',
+        'DELETE FROM "AUTH"."USERS"',
+        'FROM AUTH.SESSIONS',
+        'FROM "AUTH"."SESSIONS"',
+        'FROM AUTH.REFRESH_TOKENS',
+        'FROM "AUTH"."REFRESH_TOKENS"',
+        'FROM AUTH.IDENTITIES',
+        'FROM "AUTH"."IDENTITIES"',
+        'FROM AUTH.PASSWORD_RESET_TOKENS',
+        'FROM "AUTH"."PASSWORD_RESET_TOKENS"'
+    ]
+    
+    for pattern in auth_table_patterns:
+        if pattern in sql_upper:
+            return False, (
+                "Direct SQL access to auth schema tables is not allowed for security reasons. "
+                "Auth tables contain sensitive multi-tenant authentication data. "
+                "Use the Auth API endpoints instead: POST /p/{slug}/v1/auth/signup, etc."
+            )
+    
     # Block dangerous operations
     dangerous_keywords = [
         'DROP DATABASE',
@@ -191,8 +222,9 @@ async def execute_query(
     is_ddl_operation = any(op in sql_upper for op in ddl_operations)
     
     try:
-        # Execute query
+        # Execute query using ISOLATED PROJECT POOL (Phase 5.0)
         result = await execute_on_project_db(
+            project_id,  # PHASE 5.0: Pass project_id for credential lookup
             project["database_name"],
             current_sql
         )
@@ -316,6 +348,7 @@ async def execute_query(
                         try:
                             auto_fix_start = time.time()
                             result = await execute_on_project_db(
+                                project_id,  # PHASE 5.0
                                 project["database_name"],
                                 fixed_sql
                             )
