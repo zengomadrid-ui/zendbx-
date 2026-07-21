@@ -416,8 +416,17 @@ async def execute_on_project_db(project_id: UUID, database_name: str, query: str
         # FAIL-CLOSED: Decryption failure = fail immediately (no privileged fallback)
         raise Exception(f"Failed to decrypt project credentials for {project_id}: {decrypt_error}")
     
-    # Build connection URL
-    connection_url = f"postgresql://{cred_row['role_name']}:{decrypted_password}@localhost:5432/nexora_main"
+    # Build connection URL - parse DATABASE_URL to get correct host/port/database
+    import re
+    db_url_match = re.match(r'postgresql://[^@]+@([^/]+)/(.+?)(\?.*)?$', settings.DATABASE_URL)
+    if db_url_match:
+        host_port = db_url_match.group(1)
+        db_name = db_url_match.group(2)
+        query_params = db_url_match.group(3) or ""
+        connection_url = f"postgresql://{cred_row['role_name']}:{decrypted_password}@{host_port}/{db_name}{query_params}"
+    else:
+        # Fallback for development
+        connection_url = f"postgresql://{cred_row['role_name']}:{decrypted_password}@localhost:5432/nexora_main"
     
     try:
         # Get isolated project pool
