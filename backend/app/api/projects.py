@@ -315,6 +315,38 @@ async def create_project(
         project["anon_key"] = anon_key
         project["service_role_key"] = service_key
         
+        # ============================================
+        # PHASE 5.0: PROVISION PROJECT ROLE
+        # ============================================
+        try:
+            from app.core.db_roles import ProjectRoleManager, credential_store
+            from app.core.database import get_provisioner_db_pool
+            
+            logger.info(f"🔐 Provisioning isolated role for project: {project_id}")
+            
+            provisioner_pool = await get_provisioner_db_pool()
+            
+            # Create project-specific role
+            role_name, password = await ProjectRoleManager.create_project_role(
+                project_id, 
+                db_name, 
+                provisioner_pool
+            )
+            
+            # Store encrypted credentials
+            await credential_store.store_credentials(
+                project_id,
+                role_name,
+                password
+            )
+            
+            logger.info(f"✅ Project role provisioned: {role_name}")
+            
+        except Exception as provision_error:
+            logger.error(f"❌ Failed to provision project role: {provision_error}")
+            # Don't fail project creation - can provision later via emergency endpoint
+            logger.warning(f"⚠️  Project created but role not provisioned. Use emergency provisioning if needed.")
+        
         return ProjectResponse(**project)
         
     except Exception as e:

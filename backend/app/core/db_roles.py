@@ -175,7 +175,7 @@ class ProjectRoleManager:
             # ============================================
             # STEP 1: CREATE ROLE
             # ============================================
-            # Security: NOINHERIT prevents privilege escalation
+            # Security: NOINHERIT prevents privilege escalation from PUBLIC grants
             # NOCREATEROLE, NOCREATEDB: No elevated privileges
             # Note: Role names should NOT be quoted in CREATE ROLE (PostgreSQL convention)
             
@@ -192,6 +192,19 @@ class ProjectRoleManager:
             """)
             
             logger.info(f"✅ Created role: {role_name}")
+            
+            # CRITICAL: Immediately revoke inherited privileges from PUBLIC
+            # This must happen RIGHT AFTER role creation, before any grants
+            await conn.execute(f"""
+                REVOKE ALL ON SCHEMA public FROM {role_name}
+            """)
+            
+            # Also revoke any default privileges from PUBLIC
+            await conn.execute(f"""
+                REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {role_name}
+            """)
+            
+            logger.info(f"✅ Revoked PUBLIC schema inheritance for {role_name}")
             
             # ============================================
             # STEP 2: GRANT PROJECT SCHEMA ACCESS
@@ -264,11 +277,8 @@ class ProjectRoleManager:
             # STEP 4: EXPLICITLY DENY OTHER SCHEMAS
             # ============================================
             
-            # CRITICAL: Revoke public schema BEFORE verification
-            # PostgreSQL grants PUBLIC (all users) access to public schema by default
-            await conn.execute(f"""
-                REVOKE ALL ON SCHEMA public FROM {role_name}
-            """)
+            # Public schema access was already revoked in STEP 1
+            # Now grant auth schema access (read-only for Table Editor)
             
             # Grant read-only access to auth schema (for Table Editor)
             # Users table queries are filtered by project_id in schemas.py
