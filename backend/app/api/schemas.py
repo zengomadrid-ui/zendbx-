@@ -9,6 +9,7 @@ from app.api.auth import get_current_user
 from app.core.database import execute_on_main_db, execute_on_project_db
 from typing import List, Dict, Any
 from uuid import UUID
+import uuid as _uuid
 
 router = APIRouter()
 
@@ -16,18 +17,31 @@ router = APIRouter()
 # HELPER: Verify Project Ownership
 # ============================================
 
-async def verify_project_access(project_id: UUID, user_id: UUID) -> dict:
-    """Verify user has access to project"""
-    result = await execute_on_main_db(
-        "SELECT id, name, slug, database_name, user_id FROM projects WHERE id = $1 AND user_id = $2",
-        project_id,
-        user_id
-    )
+async def verify_project_access(project_identifier: str, user_id: UUID) -> dict:
+    """
+    Verify user has access to project
+    Accepts either UUID or slug for project identification
+    """
+    # Try to parse as UUID first
+    try:
+        project_uuid = _uuid.UUID(project_identifier)
+        result = await execute_on_main_db(
+            "SELECT id, name, slug, database_name, user_id FROM projects WHERE id = $1 AND user_id = $2",
+            project_uuid,
+            user_id
+        )
+    except ValueError:
+        # Not a UUID, treat as slug
+        result = await execute_on_main_db(
+            "SELECT id, name, slug, database_name, user_id FROM projects WHERE slug = $1 AND user_id = $2",
+            project_identifier,
+            user_id
+        )
     
     if not result:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+            detail="Project not found or access denied"
         )
     
     return dict(result[0])
@@ -38,11 +52,13 @@ async def verify_project_access(project_id: UUID, user_id: UUID) -> dict:
 
 @router.get("/{project_id}/schemas")
 async def list_schemas(
-    project_id: UUID,
+    project_id: str,  # Accept both UUID and slug
     current_user: dict = Depends(get_current_user)
 ):
     """
     Discover visible PostgreSQL schemas for the current project
+    
+    project_id: Can be either UUID or slug (e.g., "proj_710e6748")
     
     Security boundaries:
     - Only shows current project's schema
@@ -367,7 +383,7 @@ async def list_schemas(
 
 @router.get("/{project_id}/schemas/{schema_name}/tables/{table_name}/rows")
 async def get_schema_table_rows(
-    project_id: UUID,
+    project_id: str,  # Accept both UUID and slug
     schema_name: str,
     table_name: str,
     page: int = 1,
@@ -376,6 +392,8 @@ async def get_schema_table_rows(
 ):
     """
     Get table rows with schema qualification
+    
+    project_id: Can be either UUID or slug (e.g., "proj_710e6748")
     
     SECURITY:
     - Validates schema belongs to current project
@@ -432,7 +450,8 @@ async def get_schema_table_rows(
                     ORDER BY created_at DESC
                     LIMIT $2 OFFSET $3
                 """
-                rows = await execute_on_project_db(project_schema, query, project_id, limit, offset)
+                # Use actual project UUID, not the slug
+                rows = await execute_on_project_db(project_schema, query, project["id"], limit, offset)
                 
                 # Get count with project_id filter
                 count_query = f"""
@@ -440,7 +459,7 @@ async def get_schema_table_rows(
                     FROM "{schema_name}"."{table_name}"
                     WHERE project_id = $1
                 """
-                count_result = await execute_on_project_db(project_schema, count_query, project_id)
+                count_result = await execute_on_project_db(project_schema, count_query, project["id"])
                 total_count = count_result[0]["count"] if count_result else 0
             else:
                 # Other auth tables - block access for security
@@ -507,12 +526,16 @@ async def get_schema_table_rows(
 
 @router.get("/{project_id}/schemas/{schema_name}/tables/{table_name}/columns")
 async def get_schema_table_columns(
-    project_id: UUID,
+    project_id: str,  # Accept both UUID and slug
     schema_name: str,
     table_name: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get table column information with schema qualification"""
+    """
+    Get table column information with schema qualification
+    
+    project_id: Can be either UUID or slug (e.g., "proj_710e6748")
+    """
     
     project = await verify_project_access(project_id, current_user["id"])
     project_schema = project["database_name"]
