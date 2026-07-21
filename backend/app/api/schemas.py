@@ -104,7 +104,8 @@ async def list_schemas(
         ALL_SYSTEM_TABLES = AUTH_TABLES | REALTIME_TABLES | STORAGE_TABLES
         
         project_tables = await execute_on_project_db(
-            project_schema,
+            project["id"],  # UUID
+            project_schema,  # database name
             """
             SELECT 
                 t.table_name,
@@ -132,6 +133,7 @@ async def list_schemas(
             
             try:
                 count_result = await execute_on_project_db(
+                    project["id"],
                     project_schema,
                     f'SELECT COUNT(*) as count FROM "{project_schema}"."{table_name}"'
                 )
@@ -158,6 +160,7 @@ async def list_schemas(
         
         try:
             auth_schema_tables = await execute_on_project_db(
+                project["id"],
                 project_schema,
                 """
                 SELECT 
@@ -178,6 +181,7 @@ async def list_schemas(
                     
                     try:
                         count_result = await execute_on_project_db(
+                            project["id"],
                             project_schema,
                             f'SELECT COUNT(*) as count FROM "auth"."{table_name}"'
                         )
@@ -207,6 +211,7 @@ async def list_schemas(
         
         try:
             realtime_schema_tables = await execute_on_project_db(
+                project["id"],
                 project_schema,
                 """
                 SELECT 
@@ -227,6 +232,7 @@ async def list_schemas(
                     
                     try:
                         count_result = await execute_on_project_db(
+                            project["id"],
                             project_schema,
                             f'SELECT COUNT(*) as count FROM "realtime"."{table_name}"'
                         )
@@ -256,6 +262,7 @@ async def list_schemas(
         
         try:
             storage_schema_tables = await execute_on_project_db(
+                project["id"],
                 project_schema,
                 """
                 SELECT 
@@ -276,6 +283,7 @@ async def list_schemas(
                     
                     try:
                         count_result = await execute_on_project_db(
+                            project["id"],
                             project_schema,
                             f'SELECT COUNT(*) as count FROM "storage"."{table_name}"'
                         )
@@ -451,7 +459,7 @@ async def get_schema_table_rows(
                     LIMIT $2 OFFSET $3
                 """
                 # Use actual project UUID, not the slug
-                rows = await execute_on_project_db(project_schema, query, project["id"], limit, offset)
+                rows = await execute_on_project_db(project["id"], project_schema, query, project["id"], limit, offset)
                 
                 # Get count with project_id filter
                 count_query = f"""
@@ -459,7 +467,7 @@ async def get_schema_table_rows(
                     FROM "{schema_name}"."{table_name}"
                     WHERE project_id = $1
                 """
-                count_result = await execute_on_project_db(project_schema, count_query, project["id"])
+                count_result = await execute_on_project_db(project["id"], project_schema, count_query, project["id"])
                 total_count = count_result[0]["count"] if count_result else 0
             else:
                 # Other auth tables - block access for security
@@ -475,11 +483,11 @@ async def get_schema_table_rows(
                 ORDER BY 1
                 LIMIT $1 OFFSET $2
             """
-            rows = await execute_on_project_db(project_schema, query, limit, offset)
+            rows = await execute_on_project_db(project["id"], project_schema, query, limit, offset)
             
             # Get count
             count_query = f'SELECT COUNT(*) as count FROM "{schema_name}"."{table_name}"'
-            count_result = await execute_on_project_db(project_schema, count_query)
+            count_result = await execute_on_project_db(project["id"], project_schema, count_query)
             total_count = count_result[0]["count"] if count_result else 0
             
         elif schema_name == "storage":
@@ -489,11 +497,11 @@ async def get_schema_table_rows(
                 ORDER BY 1
                 LIMIT $1 OFFSET $2
             """
-            rows = await execute_on_project_db(project_schema, query, limit, offset)
+            rows = await execute_on_project_db(project["id"], project_schema, query, limit, offset)
             
             # Get count
             count_query = f'SELECT COUNT(*) as count FROM "{schema_name}"."{table_name}"'
-            count_result = await execute_on_project_db(project_schema, count_query)
+            count_result = await execute_on_project_db(project["id"], project_schema, count_query)
             total_count = count_result[0]["count"] if count_result else 0
             
         else:
@@ -503,11 +511,11 @@ async def get_schema_table_rows(
                 ORDER BY 1
                 LIMIT $1 OFFSET $2
             """
-            rows = await execute_on_project_db(project_schema, query, limit, offset)
+            rows = await execute_on_project_db(project["id"], project_schema, query, limit, offset)
             
             # Get count
             count_query = f'SELECT COUNT(*) as count FROM "{schema_name}"."{table_name}"'
-            count_result = await execute_on_project_db(project_schema, count_query)
+            count_result = await execute_on_project_db(project["id"], project_schema, count_query)
             total_count = count_result[0]["count"] if count_result else 0
         
         return {
@@ -550,6 +558,7 @@ async def get_schema_table_columns(
     
     try:
         columns = await execute_on_project_db(
+            project["id"],
             project_schema,
             """
             SELECT 
