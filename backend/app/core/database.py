@@ -49,7 +49,8 @@ async def get_platform_db_pool() -> asyncpg.Pool:
         retry_delay = 2
         
         # Use PLATFORM_DATABASE_URL if available, fall back to DATABASE_URL
-        platform_url = getattr(settings, 'PLATFORM_DATABASE_URL', settings.DATABASE_URL)
+        # Use 'or' operator to handle empty string (getattr fallback doesn't work for empty strings)
+        platform_url = settings.PLATFORM_DATABASE_URL or settings.DATABASE_URL
         
         logger.info("🔌 Creating platform database pool...")
         
@@ -120,9 +121,13 @@ async def get_provisioner_db_pool() -> asyncpg.Pool:
     global provisioner_pool
     
     if provisioner_pool is None:
-        # Use PROVISIONER_DATABASE_URL if available, fall back to PLATFORM_DATABASE_URL
-        provisioner_url = getattr(settings, 'PROVISIONER_DATABASE_URL', 
-                                 getattr(settings, 'PLATFORM_DATABASE_URL', settings.DATABASE_URL))
+        # Use PROVISIONER_DATABASE_URL if available, fall back to PLATFORM_DATABASE_URL, then DATABASE_URL
+        # Use 'or' operator to handle empty strings properly
+        provisioner_url = (
+            settings.PROVISIONER_DATABASE_URL 
+            or settings.PLATFORM_DATABASE_URL 
+            or settings.DATABASE_URL
+        )
         
         logger.info("🔌 Creating provisioner database pool...")
         
