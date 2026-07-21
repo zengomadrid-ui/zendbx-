@@ -227,6 +227,160 @@ async def emergency_apply_migration_003(x_admin_secret: str = Header(None, alias
     
     return results
 
+@app.get("/emergency/check-encryption-key", include_in_schema=False)
+async def check_encryption_key(x_admin_secret: str = Header(None, alias="X-Admin-Secret")):
+    """Check if PROJECT_CREDENTIAL_ENCRYPTION_KEY is valid"""
+    from fastapi import HTTPException, status
+    from cryptography.fernet import Fernet
+    
+    if not x_admin_secret or x_admin_secret != settings.SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    result = {
+        "key_exists": bool(settings.PROJECT_CREDENTIAL_ENCRYPTION_KEY),
+        "key_length": len(settings.PROJECT_CREDENTIAL_ENCRYPTION_KEY) if settings.PROJECT_CREDENTIAL_ENCRYPTION_KEY else 0,
+        "key_format_valid": False,
+        "error": None
+    }
+    
+    if settings.PROJECT_CREDENTIAL_ENCRYPTION_KEY:
+        try:
+            # Try to create a Fernet instance
+            f = Fernet(settings.PROJECT_CREDENTIAL_ENCRYPTION_KEY.encode())
+            # Try a test encryption/decryption
+            test_data = b"test"
+            encrypted = f.encrypt(test_data)
+            decrypted = f.decrypt(encrypted)
+            result["key_format_valid"] = (decrypted == test_data)
+        except Exception as e:
+            result["error"] = str(e)
+    else:
+        result["error"] = "PROJECT_CREDENTIAL_ENCRYPTION_KEY is not set"
+    
+    return result
+
+@app.post("/emergency/clear-and-reprovision", include_in_schema=False)
+async def clear_and_reprovision(x_admin_secret: str = Header(None, alias="X-Admin-Secret")):
+    """Clear all credentials and re-provision from scratch"""
+    from fastapi import HTTPException, status
+    from app.core.db_roles import ProjectRoleManager, ProjectCredentialStore
+    import asyncpg
+    
+    if not x_admin_secret or x_admin_secret != settings.SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    results = {
+        "status": "starting",
+        "cleared": 0,
+        "provisioned": 0,
+        "failed": 0,
+        "projects": []
+    }
+    
+    try:
+        admin_conn = await asyncpg.connect(settings.DATABASE_URL)
+        
+        try:
+            # Step 1: Delete ALL existing credentials
+            deleted = await admin_conn.execute("DELETE FROM project_db_credentials")
+            results["cleared"] = int(deleted.split()[-1]) if deleted else 0
+            
+            # Step 2: Get all projects
+            projects = await admin_conn.fetch("""
+                SELECT p.id, p.name, p.database_name
+                FROM projects p
+                WHERE p.database_name LIKE 'proj_%'
+                ORDER BY p.created_at
+            """)
+            
+            results["project_count"] = len(projects)
+            
+            if not projects:
+                results["status"] = "no_projects"
+                return results
+            
+            # Step 3: Provision each project
+            class SimplePoolWrapper:
+                def __init__(self, conn):
+                    self._conn = conn
+                def acquire(self):
+                    return self
+                async def __aenter__(self):
+                    return self._conn
+                async def __aexit__(self, *args):
+                    pass
+            
+            provisioner_pool = SimplePoolWrapper(admin_conn)
+            credential_store = ProjectCredentialStore()
+            
+            for proj in projects:
+                project_id = proj['id']
+                schema_name = proj['database_name']
+                project_name = proj['name']
+                
+                project_result = {
+                    "project_id": str(project_id),
+                    "name": project_name
+                }
+                
+                role_name = ProjectRoleManager.generate_project_role_name(project_id)
+                
+                try:
+                    # Check if role exists
+                    role_exists = await admin_conn.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = $1)",
+                        role_name
+                    )
+                    
+                    if role_exists:
+                        # Revoke public access
+                        await admin_conn.execute(f"REVOKE ALL ON SCHEMA public FROM {role_name}")
+                        await admin_conn.execute(f"REVOKE ALL ON SCHEMA auth FROM {role_name}")
+                        
+                        # Reset password
+                        new_password = ProjectRoleManager.generate_secure_password()
+                        await admin_conn.execute(f"""
+                            ALTER ROLE {role_name} 
+                            PASSWORD '{new_password.replace("'", "''")}'
+                        """)
+                    else:
+                        # Create new role
+                        role_name, new_password = await ProjectRoleManager.create_project_role(
+                            project_id, schema_name, provisioner_pool
+                        )
+                    
+                    # Store credentials with current encryption key
+                    await credential_store.store_credentials(
+                        project_id, role_name, new_password
+                    )
+                    
+                    project_result["status"] = "provisioned"
+                    results["provisioned"] += 1
+                    
+                except Exception as e:
+                    project_result["status"] = "failed"
+                    project_result["error"] = str(e)
+                    results["failed"] += 1
+                
+                results["projects"].append(project_result)
+            
+        finally:
+            await admin_conn.close()
+        
+        if results["failed"] > 0:
+            results["status"] = "partial_success"
+        else:
+            results["status"] = "success"
+        
+        results["message"] = f"Cleared {results['cleared']}, provisioned {results['provisioned']}, failed {results['failed']}"
+        
+    except Exception as e:
+        results["status"] = "error"
+        results["message"] = str(e)
+        raise HTTPException(status_code=500, detail=results)
+    
+    return results
+
 @app.post("/emergency/provision-all-projects", include_in_schema=False)
 async def emergency_provision_all_projects(x_admin_secret: str = Header(None, alias="X-Admin-Secret")):
     """Emergency endpoint to provision credentials for all projects"""
