@@ -13,6 +13,8 @@ interface Column {
 
 interface Table {
   table_name: string;
+  full_table_name?: string;
+  schema_name?: string;
   columns: Column[];
   rls_enabled?: boolean;
   policy_count?: number;
@@ -128,16 +130,18 @@ export default function TablesPage() {
     try {
       const projectId = localStorage.getItem("current_project_id");
       
-      // Query to check RLS status
+      // Query to check RLS status - use current_schema() to get project schema
       const sql = `
         SELECT 
+          t.schemaname || '.' || t.tablename as full_tablename,
           t.tablename,
+          t.schemaname,
           t.rowsecurity as rls_enabled,
           COUNT(p.policyname) as policy_count
         FROM pg_tables t
         LEFT JOIN pg_policies p ON p.tablename = t.tablename AND p.schemaname = t.schemaname
-        WHERE t.schemaname = 'public'
-        GROUP BY t.tablename, t.rowsecurity
+        WHERE t.schemaname = current_schema()
+        GROUP BY t.schemaname, t.tablename, t.rowsecurity
         ORDER BY t.tablename;
       `;
       
@@ -159,6 +163,8 @@ export default function TablesPage() {
           const rlsInfo = rlsData.find((r: any) => r.tablename === table.table_name);
           return {
             ...table,
+            full_table_name: rlsInfo?.full_tablename || `${rlsInfo?.schemaname || 'public'}.${table.table_name}`,
+            schema_name: rlsInfo?.schemaname || 'public',
             rls_enabled: rlsInfo?.rls_enabled || false,
             policy_count: rlsInfo?.policy_count || 0
           };
@@ -168,6 +174,45 @@ export default function TablesPage() {
       }
     } catch (error) {
       console.error("Failed to fetch RLS status:", error);
+    }
+  };
+
+  const toggleRLS = async (table: Table) => {
+    if (!table.full_table_name) return;
+    
+    try {
+      const projectId = localStorage.getItem("current_project_id");
+      const action = table.rls_enabled ? 'DISABLE' : 'ENABLE';
+      const sql = `ALTER TABLE ${table.full_table_name} ${action} ROW LEVEL SECURITY;`;
+      
+      console.log(`${action} RLS:`, { table: table.table_name, sql });
+      
+      const response = await apiFetch(`/api/projects/${projectId}/query`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-project-id": projectId || ""
+        },
+        body: JSON.stringify({ sql })
+      });
+      
+      if (response.ok) {
+        // Refresh both table list and RLS status
+        await fetchTables();
+      } else {
+        const errorText = await response.text();
+        let errorMessage = 'Unknown error';
+        try {
+          const error = JSON.parse(errorText);
+          errorMessage = error.detail || errorMessage;
+        } catch {
+          errorMessage = errorText;
+        }
+        alert(`Failed to ${action.toLowerCase()} RLS:\n\n${errorMessage}`);
+      }
+    } catch (error) {
+      console.error("Failed to toggle RLS:", error);
+      alert(`Error toggling RLS: ${error}`);
     }
   };
 
@@ -313,31 +358,51 @@ export default function TablesPage() {
             {/* Header */}
             <div className="bg-[#181818] border-b border-[#2a2a2a] px-6 py-4">
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
+                  <h1 className="text-xl font-semibold text-[#ededed] mb-3">{selectedTable.table_name}</h1>
                   <div className="flex items-center gap-3">
-                    <h1 className="text-xl font-semibold text-[#ededed]">{selectedTable.table_name}</h1>
-                    {selectedTable.rls_enabled ? (
-                      <span className="inline-flex items-center px-2.5 py-1 bg-green-600/10 text-green-500 rounded-full text-xs font-medium">
-                        <svg className="w-3.5 h-3.5 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                        </svg>
+                    {/* RLS Toggle Button */}
+                    <button
+                      onClick={() => toggleRLS(selectedTable)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all ${
+                        selectedTable.rls_enabled
+                          ? 'bg-blue-600/10 border-blue-600/30 text-blue-400 hover:bg-blue-600/20'
+                          : 'bg-[#2a2a2a] border-[#3a3a3a] text-[#a1a1a1] hover:bg-[#3a3a3a]'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-sm font-medium">
                         RLS Enabled
+                        {selectedTable.rls_enabled && selectedTable.policy_count !== undefined && (
+                          <span className="ml-1">({selectedTable.policy_count})</span>
+                        )}
                       </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2.5 py-1 bg-yellow-600/10 text-yellow-500 rounded-full text-xs font-medium">
-                        <svg className="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                        </svg>
-                        RLS Disabled
-                      </span>
-                    )}
+                      <div className={`w-10 h-5 rounded-full transition-colors ${
+                        selectedTable.rls_enabled ? 'bg-blue-600' : 'bg-[#3a3a3a]'
+                      }`}>
+                        <div className={`w-4 h-4 bg-white rounded-full transform transition-transform m-0.5 ${
+                          selectedTable.rls_enabled ? 'translate-x-5' : 'translate-x-0'
+                        }`} />
+                      </div>
+                    </button>
+
+                    {/* Manage RLS Button */}
+                    <a
+                      href="/dashboard/database/rls"
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#3a3a3a] bg-[#2a2a2a] text-[#ededed] hover:bg-[#3a3a3a] transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                      </svg>
+                      <span className="text-sm font-medium">Manage RLS</span>
+                    </a>
+
+                    <div className="text-sm text-[#6b6b6b]">
+                      {Array.isArray(selectedTable.columns) ? selectedTable.columns.length : 0} columns
+                    </div>
                   </div>
-                  <p className="text-sm text-[#6b6b6b] mt-1">
-                    {Array.isArray(selectedTable.columns) ? selectedTable.columns.length : 0} columns
-                    {selectedTable.rls_enabled && selectedTable.policy_count !== undefined && (
-                      <span className="text-green-500"> • {selectedTable.policy_count} RLS policies</span>
-                    )}
-                  </p>
                 </div>
                 <div className="flex gap-2">
                   <button className="px-3 py-1.5 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#ededed] text-sm rounded transition-colors">

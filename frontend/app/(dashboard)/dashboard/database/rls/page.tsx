@@ -5,6 +5,8 @@ import { useState, useEffect } from "react";
 
 interface RLSTable {
   tablename: string;
+  full_tablename: string;
+  schemaname: string;
   rls_enabled: boolean;
   policy_count: number;
   policies: RLSPolicy[];
@@ -23,6 +25,7 @@ export default function RLSPage() {
   const [tables, setTables] = useState<RLSTable[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTable, setSelectedTable] = useState<RLSTable | null>(null);
+  const [showPoliciesModal, setShowPoliciesModal] = useState(false);
   const [rlsStats, setRlsStats] = useState({
     total_tables: 0,
     rls_enabled: 0,
@@ -37,10 +40,12 @@ export default function RLSPage() {
     try {
       const projectId = localStorage.getItem("current_project_id");
       
-      // Query to get RLS status and policies
+      // Query to get RLS status and policies - using current_schema() to get project schema
       const sql = `
         SELECT 
+          t.schemaname || '.' || t.tablename as full_tablename,
           t.tablename,
+          t.schemaname,
           t.rowsecurity as rls_enabled,
           COALESCE(
             json_agg(
@@ -57,8 +62,8 @@ export default function RLSPage() {
           ) as policies
         FROM pg_tables t
         LEFT JOIN pg_policies p ON p.tablename = t.tablename AND p.schemaname = t.schemaname
-        WHERE t.schemaname = 'public'
-        GROUP BY t.tablename, t.rowsecurity
+        WHERE t.schemaname = current_schema()
+        GROUP BY t.schemaname, t.tablename, t.rowsecurity
         ORDER BY t.tablename;
       `;
       
@@ -72,6 +77,8 @@ export default function RLSPage() {
         const result = await response.json();
         const tablesData = result.rows.map((row: any) => ({
           tablename: row.tablename,
+          full_tablename: row.full_tablename,
+          schemaname: row.schemaname,
           rls_enabled: row.rls_enabled,
           policies: typeof row.policies === 'string' ? JSON.parse(row.policies) : row.policies,
           policy_count: (typeof row.policies === 'string' ? JSON.parse(row.policies) : row.policies).length
@@ -98,31 +105,90 @@ export default function RLSPage() {
     }
   };
 
-  const enableRLS = async (tableName: string) => {
+  const enableRLS = async (fullTableName: string, displayName: string) => {
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const sql = `ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;`;
+      const sql = `
+        ALTER TABLE ${fullTableName} ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE ${fullTableName} FORCE ROW LEVEL SECURITY;
+      `;
+      
+      console.log('Enabling RLS:', { fullTableName, displayName, sql, projectId });
+      
       const response = await apiFetch(`/api/projects/${projectId}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-project-id": projectId || "" },
         body: JSON.stringify({ sql })
       });
-      if (response.ok) { fetchRLSStatus(); }
-    } catch (error) { console.error("Failed to enable RLS:", error); }
+      
+      console.log('Enable RLS response:', { 
+        ok: response.ok, 
+        status: response.status,
+        statusText: response.statusText
+      });
+      
+      if (response.ok) { 
+        const result = await response.json();
+        console.log('Enable RLS result:', result);
+        fetchRLSStatus(); 
+      } else {
+        const errorText = await response.text();
+        console.error('Enable RLS error response:', errorText);
+        let errorMessage = 'Unknown error';
+        try {
+          const error = JSON.parse(errorText);
+          errorMessage = error.detail || errorMessage;
+        } catch {
+          errorMessage = errorText;
+        }
+        alert(`Failed to enable RLS on "${displayName}":\n\n${errorMessage}`);
+      }
+    } catch (error) { 
+      console.error("Failed to enable RLS:", error);
+      alert(`Error enabling RLS on "${displayName}":\n\n${error}`);
+    }
   };
 
-  const disableRLS = async (tableName: string) => {
-    if (!confirm(`Disable RLS on table "${tableName}"? This will remove security restrictions.`)) return;
+  const disableRLS = async (fullTableName: string, displayName: string) => {
+    if (!confirm(`Disable RLS on table "${displayName}"? This will remove security restrictions.`)) return;
     try {
       const projectId = localStorage.getItem("current_project_id");
-      const sql = `ALTER TABLE ${tableName} DISABLE ROW LEVEL SECURITY;`;
+      const sql = `ALTER TABLE ${fullTableName} DISABLE ROW LEVEL SECURITY;`;
+      
+      console.log('Disabling RLS:', { fullTableName, displayName, sql, projectId });
+      
       const response = await apiFetch(`/api/projects/${projectId}/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-project-id": projectId || "" },
         body: JSON.stringify({ sql })
       });
-      if (response.ok) { fetchRLSStatus(); }
-    } catch (error) { console.error("Failed to disable RLS:", error); }
+      
+      console.log('Disable RLS response:', { 
+        ok: response.ok, 
+        status: response.status,
+        statusText: response.statusText
+      });
+      
+      if (response.ok) { 
+        const result = await response.json();
+        console.log('Disable RLS result:', result);
+        fetchRLSStatus(); 
+      } else {
+        const errorText = await response.text();
+        console.error('Disable RLS error response:', errorText);
+        let errorMessage = 'Unknown error';
+        try {
+          const error = JSON.parse(errorText);
+          errorMessage = error.detail || errorMessage;
+        } catch {
+          errorMessage = errorText;
+        }
+        alert(`Failed to disable RLS on "${displayName}":\n\n${errorMessage}`);
+      }
+    } catch (error) { 
+      console.error("Failed to disable RLS:", error);
+      alert(`Error disabling RLS on "${displayName}":\n\n${error}`);
+    }
   };
 
   if (loading) {
@@ -266,21 +332,24 @@ export default function RLSPage() {
                     <div className="flex items-center gap-2">
                       {table.rls_enabled ? (
                         <button
-                          onClick={() => disableRLS(table.tablename)}
+                          onClick={() => disableRLS(table.full_tablename, table.tablename)}
                           className="px-3 py-1 bg-yellow-600/10 hover:bg-yellow-600/20 text-yellow-500 text-xs rounded transition-colors"
                         >
                           Disable RLS
                         </button>
                       ) : (
                         <button
-                          onClick={() => enableRLS(table.tablename)}
+                          onClick={() => enableRLS(table.full_tablename, table.tablename)}
                           className="px-3 py-1 bg-green-600/10 hover:bg-green-600/20 text-green-500 text-xs rounded transition-colors"
                         >
                           Enable RLS
                         </button>
                       )}
                       <button
-                        onClick={() => setSelectedTable(table)}
+                        onClick={() => {
+                          setSelectedTable(table);
+                          setShowPoliciesModal(true);
+                        }}
                         className="px-3 py-1 bg-[#2a2a2a] hover:bg-[#3a3a3a] text-[#ededed] text-xs rounded transition-colors"
                       >
                         View Policies
@@ -300,46 +369,80 @@ export default function RLSPage() {
           </table>
         </div>
 
-        {/* Selected Table Policies */}
-        {selectedTable && selectedTable.policies.length > 0 && (
-          <div className="mt-6 bg-[#181818] border border-[#2a2a2a] rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-[#ededed] mb-4">
-              Policies for {selectedTable.tablename}
-            </h3>
-            <div className="space-y-3">
-              {selectedTable.policies.map((policy, index) => (
-                <div key={index} className="bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <h4 className="text-sm font-medium text-[#ededed]">{policy.policyname}</h4>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="px-2 py-0.5 bg-blue-600/10 text-blue-500 rounded text-xs font-medium">
-                          {policy.cmd}
-                        </span>
-                        <span className="px-2 py-0.5 bg-purple-600/10 text-purple-500 rounded text-xs font-medium">
-                          {policy.permissive}
-                        </span>
+        {/* Policies Modal */}
+        {showPoliciesModal && selectedTable && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-[#181818] border border-[#2a2a2a] rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="px-6 py-4 border-b border-[#2a2a2a] flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-[#ededed]">
+                  Policies for {selectedTable.tablename}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowPoliciesModal(false);
+                    setSelectedTable(null);
+                  }}
+                  className="text-[#6b6b6b] hover:text-[#ededed] transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6">
+                {selectedTable.policies.length > 0 ? (
+                  <div className="space-y-3">
+                    {selectedTable.policies.map((policy, index) => (
+                      <div key={index} className="bg-[#1c1c1c] border border-[#2a2a2a] rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <h4 className="text-sm font-medium text-[#ededed]">{policy.policyname}</h4>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="px-2 py-0.5 bg-blue-600/10 text-blue-500 rounded text-xs font-medium">
+                                {policy.cmd}
+                              </span>
+                              <span className="px-2 py-0.5 bg-purple-600/10 text-purple-500 rounded text-xs font-medium">
+                                {policy.permissive}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        {policy.qual && (
+                          <div className="mt-2">
+                            <p className="text-xs text-[#6b6b6b] mb-1">USING:</p>
+                            <code className="block text-xs text-[#a1a1a1] bg-[#0d0d0d] p-2 rounded font-mono">
+                              {policy.qual}
+                            </code>
+                          </div>
+                        )}
+                        {policy.with_check && (
+                          <div className="mt-2">
+                            <p className="text-xs text-[#6b6b6b] mb-1">WITH CHECK:</p>
+                            <code className="block text-xs text-[#a1a1a1] bg-[#0d0d0d] p-2 rounded font-mono">
+                              {policy.with_check}
+                            </code>
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    ))}
                   </div>
-                  {policy.qual && (
-                    <div className="mt-2">
-                      <p className="text-xs text-[#6b6b6b] mb-1">USING:</p>
-                      <code className="block text-xs text-[#a1a1a1] bg-[#0d0d0d] p-2 rounded font-mono">
-                        {policy.qual}
-                      </code>
-                    </div>
-                  )}
-                  {policy.with_check && (
-                    <div className="mt-2">
-                      <p className="text-xs text-[#6b6b6b] mb-1">WITH CHECK:</p>
-                      <code className="block text-xs text-[#a1a1a1] bg-[#0d0d0d] p-2 rounded font-mono">
-                        {policy.with_check}
-                      </code>
-                    </div>
-                  )}
-                </div>
-              ))}
+                ) : (
+                  <div className="text-center py-12">
+                    <svg className="w-16 h-16 mx-auto text-[#3a3a3a] mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    <h3 className="text-lg font-medium text-[#ededed] mb-2">No Policies Defined</h3>
+                    <p className="text-sm text-[#6b6b6b] mb-4">
+                      This table has RLS {selectedTable.rls_enabled ? 'enabled' : 'disabled'} but no policies are configured.
+                    </p>
+                    {selectedTable.rls_enabled && (
+                      <p className="text-sm text-[#a1a1a1]">
+                        Add policies to control row-level access to this table.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

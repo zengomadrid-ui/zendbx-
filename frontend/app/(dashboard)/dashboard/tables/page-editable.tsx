@@ -30,6 +30,8 @@ export default function TablesPageEditable() {
   const [isAddingRow, setIsAddingRow] = useState(false);
   const [page, setPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
+  const [rlsEnabled, setRlsEnabled] = useState(false);
+  const [rlsPolicyCount, setRlsPolicyCount] = useState(0);
   const rowsPerPage = 50;
 
   useEffect(() => {
@@ -112,12 +114,64 @@ export default function TablesPageEditable() {
         rows: dataRes.rows || [],
         schema: columns
       });
+
+      // Fetch RLS status for the selected table
+      await fetchRLSStatus(tableName);
     } catch (err) {
       console.error('Failed to fetch table data:', err);
       setTableData(null);
       showToast('Failed to load table data', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchRLSStatus = async (tableName: string) => {
+    const projectId = localStorage.getItem('current_project_id');
+    if (!projectId) return;
+
+    try {
+      const sql = `
+        SELECT 
+          t.rowsecurity as rls_enabled,
+          COUNT(p.policyname) as policy_count
+        FROM pg_tables t
+        LEFT JOIN pg_policies p ON p.tablename = t.tablename AND p.schemaname = t.schemaname
+        WHERE t.tablename = '${tableName}' AND t.schemaname = current_schema()
+        GROUP BY t.rowsecurity
+      `;
+      
+      const response = await apiClient.post(`/api/projects/${projectId}/query`, { sql });
+      if (response.rows && response.rows.length > 0) {
+        setRlsEnabled(response.rows[0].rls_enabled || false);
+        setRlsPolicyCount(response.rows[0].policy_count || 0);
+      } else {
+        setRlsEnabled(false);
+        setRlsPolicyCount(0);
+      }
+    } catch (err) {
+      console.error('Failed to fetch RLS status:', err);
+    }
+  };
+
+  const toggleRLS = async () => {
+    if (!selectedTable) return;
+    
+    const projectId = localStorage.getItem('current_project_id');
+    if (!projectId) return;
+
+    try {
+      const action = rlsEnabled ? 'DISABLE' : 'ENABLE';
+      const sql = `ALTER TABLE "${selectedTable}" ${action} ROW LEVEL SECURITY;`;
+      
+      await apiClient.post(`/api/projects/${projectId}/query`, { sql });
+      
+      // Refresh RLS status
+      await fetchRLSStatus(selectedTable);
+      
+      showToast(`RLS ${action.toLowerCase()}d successfully`, 'success');
+    } catch (err: any) {
+      showToast(err.message || `Failed to ${rlsEnabled ? 'disable' : 'enable'} RLS`, 'error');
     }
   };
 
@@ -298,18 +352,54 @@ export default function TablesPageEditable() {
               </span>
             )}
           </div>
-          {/* Status badges */}
+          {/* Status badges and RLS controls */}
           <div className="flex items-center gap-2">
-            <span 
-              className="px-2 py-0.5 text-xs rounded-md flex items-center gap-1"
+            {/* RLS Toggle Button */}
+            <button
+              onClick={toggleRLS}
+              disabled={!selectedTable}
+              className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-2 disabled:opacity-50"
               style={{
-                background: 'rgba(251, 191, 36, 0.1)',
-                color: '#FBB024',
-                border: '1px solid rgba(251, 191, 36, 0.3)'
+                background: rlsEnabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(107, 107, 107, 0.1)',
+                border: rlsEnabled ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(107, 107, 107, 0.3)',
+                color: rlsEnabled ? '#3B82F6' : '#6B6B6B'
               }}
             >
-              ⚠ RLS Disabled
-            </span>
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+              </svg>
+              <span>RLS Enabled ({rlsPolicyCount})</span>
+              <div 
+                className="w-8 h-4 rounded-full relative"
+                style={{ background: rlsEnabled ? '#3B82F6' : '#333333' }}
+              >
+                <div 
+                  className="w-3 h-3 bg-white rounded-full absolute top-0.5"
+                  style={{ 
+                    transition: 'all 0.2s',
+                    left: rlsEnabled ? '14px' : '2px'
+                  }}
+                />
+              </div>
+            </button>
+
+            {/* Manage RLS Button */}
+            <button
+              onClick={() => window.location.href = '/dashboard/database/rls'}
+              className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-1.5"
+              style={{
+                background: '#1F1F1F',
+                border: '1px solid #333333',
+                color: '#CCCCCC'
+              }}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+              Manage RLS
+            </button>
+
+            {/* Realtime Status */}
             <span 
               className="px-2 py-0.5 text-xs rounded-md flex items-center gap-1"
               style={{
@@ -318,7 +408,10 @@ export default function TablesPageEditable() {
                 border: '1px solid rgba(34, 197, 94, 0.3)'
               }}
             >
-              ✓ Realtime On
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+              Realtime On
             </span>
           </div>
         </div>
@@ -326,42 +419,31 @@ export default function TablesPageEditable() {
         {/* Action buttons */}
         <div className="flex items-center gap-2">
           <button
-            className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-1"
+            onClick={() => selectedTable && fetchTableData(selectedTable)}
+            className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-1.5"
             style={{
               background: '#1F1F1F',
               border: '1px solid #333333'
             }}
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.707A1 1 0 013 7V4z" />
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Filter
-          </button>
-          <button
-            className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-1"
-            style={{
-              background: '#1F1F1F',
-              border: '1px solid #333333'
-            }}
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-            </svg>
-            Sort
+            Refresh
           </button>
           <button
             onClick={startAddRow}
             disabled={isAddingRow}
-            className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-1 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-1.5 disabled:opacity-50"
             style={{
               background: '#FF6B00',
               color: '#FFFFFF'
             }}
           >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Insert Row
+            Add Row
           </button>
         </div>
       </div>

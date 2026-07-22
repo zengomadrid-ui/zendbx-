@@ -54,6 +54,8 @@ export default function TablesPage() {
   const [totalRows, setTotalRows] = useState(0);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [rlsEnabled, setRlsEnabled] = useState(false);
+  const [rlsPolicyCount, setRlsPolicyCount] = useState(0);
   const rowsPerPage = 50;
 
   useEffect(() => {
@@ -240,6 +242,9 @@ export default function TablesPage() {
         rows: dataRes.rows || [],
         schema: columns
       });
+
+      // Fetch RLS status for the selected table
+      await fetchRLSStatus(selected);
     } catch (err) {
       console.error('Failed to fetch table data:', err);
       setTableData(null);
@@ -248,6 +253,63 @@ export default function TablesPage() {
       setLoading(false);
     }
   };
+
+  const fetchRLSStatus = async (selected: SelectedTable) => {
+    const projectId = localStorage.getItem('current_project_id');
+    if (!projectId) return;
+
+    try {
+      const sql = `
+        SELECT 
+          t.rowsecurity as rls_enabled,
+          COUNT(p.policyname) as policy_count
+        FROM pg_tables t
+        LEFT JOIN pg_policies p ON p.tablename = t.tablename AND p.schemaname = t.schemaname
+        WHERE t.tablename = '${selected.table}' AND t.schemaname = '${selected.schema}'
+        GROUP BY t.rowsecurity
+      `;
+      
+      const response = await apiClient.post(`/api/projects/${projectId}/query`, { sql });
+      if (response.rows && response.rows.length > 0) {
+        setRlsEnabled(response.rows[0].rls_enabled || false);
+        setRlsPolicyCount(response.rows[0].policy_count || 0);
+      } else {
+        setRlsEnabled(false);
+        setRlsPolicyCount(0);
+      }
+    } catch (err) {
+      console.error('Failed to fetch RLS status:', err);
+      setRlsEnabled(false);
+      setRlsPolicyCount(0);
+    }
+  };
+
+  const toggleRLS = async () => {
+    if (!selectedTable) return;
+    
+    const projectId = localStorage.getItem('current_project_id');
+    if (!projectId) return;
+
+    try {
+      const action = rlsEnabled ? 'DISABLE' : 'ENABLE';
+      const sql = rlsEnabled 
+        ? `ALTER TABLE "${selectedTable.schema}"."${selectedTable.table}" DISABLE ROW LEVEL SECURITY;`
+        : `
+          ALTER TABLE "${selectedTable.schema}"."${selectedTable.table}" ENABLE ROW LEVEL SECURITY;
+          ALTER TABLE "${selectedTable.schema}"."${selectedTable.table}" FORCE ROW LEVEL SECURITY;
+        `;
+      
+      await apiClient.post(`/api/projects/${projectId}/query`, { sql });
+      
+      // Refresh RLS status
+      await fetchRLSStatus(selectedTable);
+      
+      showToast(`RLS ${action.toLowerCase()}d successfully`, 'success');
+    } catch (err: any) {
+      showToast(err.message || `Failed to ${rlsEnabled ? 'disable' : 'enable'} RLS`, 'error');
+    }
+  };
+
   const toggleSchema = (schemaName: string) => {
     // No longer needed - removing expandable schema functionality
   };
@@ -641,6 +703,56 @@ export default function TablesPage() {
                 </div>
               )}
             </div>
+            
+            {/* RLS Controls */}
+            {selectedTable && !selectedTable.systemManaged && (
+              <div className="flex items-center gap-2 ml-2">
+                {/* RLS Toggle Button */}
+                <button
+                  onClick={toggleRLS}
+                  disabled={!selectedTable || selectedTable.readOnly}
+                  className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-2 disabled:opacity-50"
+                  style={{
+                    background: rlsEnabled ? 'rgba(59, 130, 246, 0.1)' : 'rgba(107, 107, 107, 0.1)',
+                    border: rlsEnabled ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(107, 107, 107, 0.3)',
+                    color: rlsEnabled ? '#3B82F6' : '#6B6B6B'
+                  }}
+                >
+                  <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                  </svg>
+                  <span>RLS Enabled ({rlsPolicyCount})</span>
+                  <div 
+                    className="w-8 h-4 rounded-full relative"
+                    style={{ background: rlsEnabled ? '#3B82F6' : '#333333' }}
+                  >
+                    <div 
+                      className="w-3 h-3 bg-white rounded-full absolute top-0.5"
+                      style={{ 
+                        transition: 'all 0.2s',
+                        left: rlsEnabled ? '14px' : '2px'
+                      }}
+                    />
+                  </div>
+                </button>
+
+                {/* Manage RLS Button */}
+                <button
+                  onClick={() => window.location.href = '/dashboard/database/rls'}
+                  className="px-3 py-1.5 text-xs rounded-md hover:opacity-80 transition-opacity flex items-center gap-1.5"
+                  style={{
+                    background: '#1F1F1F',
+                    border: '1px solid #333333',
+                    color: '#CCCCCC'
+                  }}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                  </svg>
+                  Manage RLS
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

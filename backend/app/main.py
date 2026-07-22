@@ -660,10 +660,118 @@ async def admin_fix_all_privileges(x_admin_secret: str = Header(None, alias="X-A
     
     return results
 
+@app.post("/admin/fix-rls-bypass", include_in_schema=False)
+async def admin_fix_rls_bypass(x_admin_secret: str = Header(None, alias="X-Admin-Secret")):
+    """
+    Admin endpoint to remove BYPASSRLS from all project roles
+    This ensures RLS policies are actually enforced
+    Registered BEFORE middleware to avoid project context requirement
+    """
+    from fastapi import HTTPException
+    from app.core.database import get_main_db_pool
+    
+    # Verify admin access
+    if not x_admin_secret or x_admin_secret != settings.SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    results = {
+        "status": "starting",
+        "projects": [],
+        "fixed": 0,
+        "already_ok": 0,
+        "failed": 0
+    }
+    
+    try:
+        pool = await get_main_db_pool()
+        
+        async with pool.acquire() as conn:
+            # Get all projects with credentials
+            projects = await conn.fetch("""
+                SELECT 
+                    p.id,
+                    p.name,
+                    p.slug,
+                    pdc.role_name
+                FROM projects p
+                JOIN project_db_credentials pdc ON pdc.project_id = p.id
+                WHERE pdc.role_name IS NOT NULL
+                ORDER BY p.name
+            """)
+            
+            results["total_projects"] = len(projects)
+            
+            for proj in projects:
+                role_name = proj['role_name']
+                project_name = proj['name']
+                
+                project_result = {
+                    "name": project_name,
+                    "role": role_name,
+                    "status": "pending"
+                }
+                
+                try:
+                    # Check if role has BYPASSRLS
+                    has_bypass = await conn.fetchval(f"""
+                        SELECT rolbypassrls 
+                        FROM pg_roles 
+                        WHERE rolname = '{role_name}'
+                    """)
+                    
+                    if not has_bypass:
+                        project_result["status"] = "already_ok"
+                        project_result["message"] = "Already has NOBYPASSRLS"
+                        results["already_ok"] += 1
+                        results["projects"].append(project_result)
+                        continue
+                    
+                    # Remove BYPASSRLS privilege
+                    await conn.execute(f"ALTER ROLE {role_name} NOBYPASSRLS")
+                    
+                    # Verify
+                    has_bypass_after = await conn.fetchval(f"""
+                        SELECT rolbypassrls 
+                        FROM pg_roles 
+                        WHERE rolname = '{role_name}'
+                    """)
+                    
+                    if not has_bypass_after:
+                        project_result["status"] = "fixed"
+                        project_result["message"] = "BYPASSRLS removed successfully"
+                        results["fixed"] += 1
+                    else:
+                        project_result["status"] = "verification_failed"
+                        project_result["message"] = "Command executed but BYPASSRLS still present"
+                        results["failed"] += 1
+                    
+                except Exception as e:
+                    project_result["status"] = "error"
+                    project_result["error"] = str(e)
+                    results["failed"] += 1
+                
+                results["projects"].append(project_result)
+            
+            # Set final status
+            if results["failed"] > 0:
+                results["status"] = "partial_success"
+            else:
+                results["status"] = "success"
+            
+            results["message"] = f"Fixed {results['fixed']} roles, {results['already_ok']} already correct, {results['failed']} failed"
+        
+    except Exception as e:
+        results["status"] = "error"
+        results["message"] = str(e)
+        raise HTTPException(status_code=500, detail=results)
+    
+    return results
+
 print("⚠️  Emergency migration endpoint registered BEFORE middleware: POST /emergency/apply-migration-003")
 print("⚠️  Emergency provisioning endpoint registered BEFORE middleware: POST /emergency/provision-all-projects")
 print("⚠️  Admin privilege fix endpoint registered BEFORE middleware: POST /admin/fix-all-privileges")
-print("   Endpoint should be accessible without project context")
+print("⚠️  Admin RLS bypass fix endpoint registered BEFORE middleware: POST /admin/fix-rls-bypass")
+print("   Endpoints should be accessible without project context")
 
 # Add Project Context Middleware for multi-tenant support
 from app.middleware.project_context import ProjectContextMiddleware
