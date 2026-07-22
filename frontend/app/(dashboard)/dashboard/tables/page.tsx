@@ -205,11 +205,29 @@ export default function TablesPage() {
 
     setLoading(true);
     try {
-      // Use schema-aware endpoint
-      const columnsRes = await apiClient.get(
-        `/api/projects/${projectId}/schemas/${selected.schema}/tables/${selected.table}/columns`
-      );
-      const columns = columnsRes.columns || [];
+      // 🚀 PERFORMANCE: Fetch all data in parallel instead of sequentially
+      const [columnsRes, dataRes, rlsRes] = await Promise.all([
+        // 1. Fetch columns
+        apiClient.get(
+          `/api/projects/${projectId}/schemas/${selected.schema}/tables/${selected.table}/columns`
+        ),
+        // 2. Fetch paginated rows
+        apiClient.get(
+          `/api/projects/${projectId}/schemas/${selected.schema}/tables/${selected.table}/rows?page=${page}&limit=${rowsPerPage}`
+        ),
+        // 3. Fetch RLS status
+        apiClient.post(`/api/projects/${projectId}/query`, { 
+          sql: `
+            SELECT 
+              t.rowsecurity as rls_enabled,
+              COUNT(p.policyname) as policy_count
+            FROM pg_tables t
+            LEFT JOIN pg_policies p ON p.tablename = t.tablename AND p.schemaname = t.schemaname
+            WHERE t.tablename = '${selected.table}' AND t.schemaname = '${selected.schema}'
+            GROUP BY t.rowsecurity
+          `
+        }).catch(() => ({ rows: [] })) // Don't fail if RLS query fails
+      ]);
       
       // Verify request is still valid
       const currentProjectId = localStorage.getItem('current_project_id');
@@ -221,21 +239,8 @@ export default function TablesPage() {
         return;
       }
 
-      // Get paginated data
-      const dataRes = await apiClient.get(
-        `/api/projects/${projectId}/schemas/${selected.schema}/tables/${selected.table}/rows?page=${page}&limit=${rowsPerPage}`
-      );
+      const columns = columnsRes.columns || [];
       
-      // Final check before updating state
-      const finalProjectId = localStorage.getItem('current_project_id');
-      if (finalProjectId !== requestProjectId || 
-          !selectedTable || 
-          selectedTable.schema !== requestSchema || 
-          selectedTable.table !== requestTable) {
-        console.log('Stale response discarded at final check');
-        return;
-      }
-
       setTotalRows(dataRes.total || 0);
       setTableData({
         columns: columns.map((c: any) => c.name),
@@ -243,8 +248,14 @@ export default function TablesPage() {
         schema: columns
       });
 
-      // Fetch RLS status for the selected table
-      await fetchRLSStatus(selected);
+      // Set RLS status from parallel fetch
+      if (rlsRes.rows && rlsRes.rows.length > 0) {
+        setRlsEnabled(rlsRes.rows[0].rls_enabled || false);
+        setRlsPolicyCount(rlsRes.rows[0].policy_count || 0);
+      } else {
+        setRlsEnabled(false);
+        setRlsPolicyCount(0);
+      }
     } catch (err) {
       console.error('Failed to fetch table data:', err);
       setTableData(null);
