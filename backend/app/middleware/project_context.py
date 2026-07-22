@@ -28,6 +28,7 @@ SKIP_PREFIXES = [
     "/api/projects",
     "/api/storage",
     "/api/admin",
+    "/admin",  # Admin endpoints without /api prefix
     "/api/ai/",
     "/api/oauth",
     "/oauth",
