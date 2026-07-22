@@ -84,9 +84,23 @@ async def get_project_schema(project_id: UUID) -> dict:
 # ============================================
 
 async def verify_project_access(project_id: UUID, user_id: UUID) -> dict:
-    """Verify user has access to project"""
+    """
+    Verify user has access to project AND project has credentials provisioned
+    
+    This prevents the "permission denied" error by checking credentials exist
+    before attempting to execute queries
+    """
     result = await execute_on_main_db(
-        "SELECT * FROM projects WHERE id = $1 AND user_id = $2",
+        """
+        SELECT 
+            p.*,
+            EXISTS(
+                SELECT 1 FROM project_db_credentials pdc 
+                WHERE pdc.project_id = p.id
+            ) as has_credentials
+        FROM projects p
+        WHERE p.id = $1 AND p.user_id = $2
+        """,
         project_id,
         user_id
     )
@@ -97,7 +111,20 @@ async def verify_project_access(project_id: UUID, user_id: UUID) -> dict:
             detail="Project not found"
         )
     
-    return dict(result[0])
+    project = dict(result[0])
+    
+    # CRITICAL CHECK: Verify credentials exist
+    if not project.get('has_credentials'):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Project credentials not provisioned. "
+                "This project was created before Phase 5.0 security update or provisioning failed. "
+                "Please contact support or run the provisioning script to enable SQL Editor access."
+            )
+        )
+    
+    return project
 
 # ============================================
 # HELPER: Validate SQL Query

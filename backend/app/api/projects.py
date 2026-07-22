@@ -319,15 +319,16 @@ async def create_project(
         project["service_role_key"] = service_key
         
         # ============================================
-        # PHASE 5.0: PROVISION PROJECT ROLE
+        # PHASE 5.0: PROVISION PROJECT ROLE (REQUIRED)
         # ============================================
         try:
-            from app.core.db_roles import ProjectRoleManager, credential_store
+            from app.core.db_roles import ProjectRoleManager, ProjectCredentialStore
             from app.core.database import get_provisioner_db_pool
             
             logger.info(f"🔐 Provisioning isolated role for project: {project_id}")
             
             provisioner_pool = await get_provisioner_db_pool()
+            credential_store = ProjectCredentialStore()
             
             # Create project-specific role
             role_name, password = await ProjectRoleManager.create_project_role(
@@ -346,9 +347,25 @@ async def create_project(
             logger.info(f"✅ Project role provisioned: {role_name}")
             
         except Exception as provision_error:
-            logger.error(f"❌ Failed to provision project role: {provision_error}")
-            # Don't fail project creation - can provision later via emergency endpoint
-            logger.warning(f"⚠️  Project created but role not provisioned. Use emergency provisioning if needed.")
+            logger.error(f"❌ CRITICAL: Failed to provision project role: {provision_error}")
+            logger.error(f"   Project ID: {project_id}")
+            logger.error(f"   Schema: {db_name}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # FAIL PROJECT CREATION - SQL Editor won't work without credentials
+            # Clean up: Delete project record and drop schema
+            try:
+                await execute_on_main_db("DELETE FROM projects WHERE id = $1", project_id)
+                await drop_project_database(db_name)
+                logger.info(f"🗑️  Cleaned up failed project: {project_id}")
+            except Exception as cleanup_error:
+                logger.error(f"❌ Cleanup failed: {cleanup_error}")
+            
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to provision project credentials. Project creation aborted. Error: {str(provision_error)}"
+            )
         
         return ProjectResponse(**project)
         

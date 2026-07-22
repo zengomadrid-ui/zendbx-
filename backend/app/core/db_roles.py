@@ -213,29 +213,28 @@ class ProjectRoleManager:
             quoted_schema = cls.quote_postgres_identifier(project_schema)
             # Note: Role names should NOT be quoted in GRANT statements (PostgreSQL convention)
             
-            # Grant schema usage
+            # Grant schema usage AND create (required for SQL Editor DDL operations)
             await conn.execute(f"""
-                GRANT USAGE ON SCHEMA {quoted_schema} TO {role_name}
+                GRANT USAGE, CREATE ON SCHEMA {quoted_schema} TO {role_name}
             """)
             
-            # Grant table permissions (SELECT, INSERT, UPDATE, DELETE)
-            # Note: We allow DELETE but not TRUNCATE for safety
+            # Grant ALL permissions on tables (including DDL operations)
             await conn.execute(f"""
-                GRANT SELECT, INSERT, UPDATE, DELETE 
+                GRANT ALL PRIVILEGES
                 ON ALL TABLES IN SCHEMA {quoted_schema} 
                 TO {role_name}
             """)
             
-            # Grant sequence permissions
+            # Grant ALL permissions on sequences
             await conn.execute(f"""
-                GRANT USAGE, SELECT 
+                GRANT ALL PRIVILEGES
                 ON ALL SEQUENCES IN SCHEMA {quoted_schema} 
                 TO {role_name}
             """)
             
-            # Grant function execution
+            # Grant ALL permissions on functions
             await conn.execute(f"""
-                GRANT EXECUTE 
+                GRANT ALL PRIVILEGES
                 ON ALL FUNCTIONS IN SCHEMA {quoted_schema} 
                 TO {role_name}
             """)
@@ -254,21 +253,21 @@ class ProjectRoleManager:
                 ALTER DEFAULT PRIVILEGES 
                 FOR ROLE {current_user}
                 IN SCHEMA {quoted_schema}
-                GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {role_name}
+                GRANT ALL PRIVILEGES ON TABLES TO {role_name}
             """)
             
             await conn.execute(f"""
                 ALTER DEFAULT PRIVILEGES 
                 FOR ROLE {current_user}
                 IN SCHEMA {quoted_schema}
-                GRANT USAGE, SELECT ON SEQUENCES TO {role_name}
+                GRANT ALL PRIVILEGES ON SEQUENCES TO {role_name}
             """)
             
             await conn.execute(f"""
                 ALTER DEFAULT PRIVILEGES 
                 FOR ROLE {current_user}
                 IN SCHEMA {quoted_schema}
-                GRANT EXECUTE ON FUNCTIONS TO {role_name}
+                GRANT ALL PRIVILEGES ON FUNCTIONS TO {role_name}
             """)
             
             logger.info(f"✅ Set default privileges for {role_name}")
