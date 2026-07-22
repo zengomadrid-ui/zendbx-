@@ -372,6 +372,11 @@ export default function ProjectsPage() {
                         <span className="ml-2 text-xs text-orange-500 opacity-0 group-hover:opacity-100 transition-opacity">Click to open →</span>
                       </h3>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                        {project.slug && (
+                          <span className="text-xs text-[#6b6b6b]">
+                            Slug: <span className="text-orange-400 font-mono">/{project.slug}</span>
+                          </span>
+                        )}
                         <span className="text-xs text-[#6b6b6b]">
                           ID: <span className="text-[#a1a1a1] font-mono">{project.id}</span>
                           <button

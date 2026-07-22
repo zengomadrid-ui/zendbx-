@@ -173,6 +173,13 @@ export default function SelectProjectPage() {
                 {project.name}
               </h3>
 
+              {/* Project slug */}
+              {project.slug && (
+                <p className="text-xs text-[#888] mb-2 font-mono">
+                  /{project.slug}
+                </p>
+              )}
+
               {/* Project description */}
               {project.description && (
                 <p className="text-[#6b6b6b] text-sm mb-4 line-clamp-2">
