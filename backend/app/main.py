@@ -563,11 +563,11 @@ async def admin_fix_all_privileges(x_admin_secret: str = Header(None, alias="X-A
                     p.id,
                     p.name,
                     p.slug,
-                    COALESCE(p.schema_name, p.database_name) as schema,
+                    p.database_name as schema,
                     pdc.role_name
                 FROM projects p
                 JOIN project_db_credentials pdc ON pdc.project_id = p.id
-                WHERE COALESCE(p.schema_name, p.database_name) LIKE 'proj_%'
+                WHERE p.database_name LIKE 'proj_%'
                 ORDER BY p.name
             """)
             
