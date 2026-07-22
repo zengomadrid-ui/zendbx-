@@ -5,6 +5,14 @@ const nextConfig = {
     remotePatterns: [],
   },
   compress: true,
+  eslint: {
+    // Allow production builds to complete even with ESLint warnings
+    ignoreDuringBuilds: false,
+  },
+  typescript: {
+    // Allow production builds to complete even with TypeScript errors
+    ignoreBuildErrors: false,
+  },
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
     NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
