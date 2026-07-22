@@ -663,6 +663,7 @@ async def admin_fix_all_privileges(x_admin_secret: str = Header(None, alias="X-A
 print("⚠️  Emergency migration endpoint registered BEFORE middleware: POST /emergency/apply-migration-003")
 print("⚠️  Emergency provisioning endpoint registered BEFORE middleware: POST /emergency/provision-all-projects")
 print("⚠️  Admin privilege fix endpoint registered BEFORE middleware: POST /admin/fix-all-privileges")
+print("   Endpoint should be accessible without project context")
 
 # Add Project Context Middleware for multi-tenant support
 from app.middleware.project_context import ProjectContextMiddleware
