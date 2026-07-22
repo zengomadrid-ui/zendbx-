@@ -767,6 +767,7 @@ from app.api import (
     mcp_server,  # MCP Server Implementation
     project_settings,  # Project Settings API
     schemas,  # Schema Discovery API (multi-schema table navigation)
+    admin_fix_privileges,  # Admin privilege fix endpoint
 )
 
 # Multi-tenant APIs (new slug-based routing) - These MUST come first to override old endpoints
@@ -843,6 +844,9 @@ app.include_router(admin_quotas.router, tags=["admin-quotas"])
 
 # Database Migration API (one-time use)
 app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])
+
+# Admin Privilege Fix API (one-time use)
+app.include_router(admin_fix_privileges.router, tags=["admin"])
 
 # Temporary Setup Endpoint (remove after initial setup)
 app.include_router(setup_project.router, tags=["setup"])
