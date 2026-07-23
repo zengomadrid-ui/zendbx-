@@ -4,7 +4,7 @@ Provides Model Context Protocol server for AI tools
 """
 
 from fastapi import APIRouter, HTTPException, Request, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from app.core.database import get_main_db_pool
 from app.core.config import settings
 from app.core.db_router import validate_project_key, get_project_db_direct
@@ -206,7 +206,7 @@ async def mcp_server_request(
     
     try:
         logger.info(f"📨 MCP POST request received for project: {project_slug}")
-        logger.info(f"🔑 Authorization header present: {bool(authorization)}")
+        logger.info(f"� Authorization header present: {bool(authorization)}")
         
         # Step 1: Parse JSON-RPC request
         try:
@@ -306,7 +306,53 @@ async def mcp_server_request(
         
         # Step 4: Handle different MCP methods
         logger.info(f"🚀 Executing method: {method}")
-        if method == "tools/list":
+        
+        # MCP Initialization Protocol
+        if method == "initialize":
+            logger.info(f"🔄 MCP initialization request received")
+            client_info = params.get("clientInfo", {})
+            protocol_version = params.get("protocolVersion", "2024-11-05")
+            
+            logger.info(f"👤 Client: {client_info.get('name', 'unknown')} v{client_info.get('version', 'unknown')}")
+            logger.info(f"📡 Protocol version requested: {protocol_version}")
+            
+            # Return MCP initialization response
+            response = {
+                "jsonrpc": "2.0",
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {
+                        "tools": {
+                            "listChanged": True
+                        }
+                    },
+                    "serverInfo": {
+                        "name": "ZenDBX MCP Server",
+                        "version": "1.0.0"
+                    }
+                },
+                "id": request_id
+            }
+            
+            logger.info(f"✅ Initialization response sent")
+            return JSONResponse(content=response)
+        
+        # MCP Initialized Notification (no response needed)
+        elif method == "notifications/initialized" or method == "initialized":
+            logger.info(f"✅ Client initialization complete (notification received)")
+            # This is a notification - do not send a response
+            # Return 204 No Content for notifications without id
+            if request_id is None:
+                return Response(status_code=204)
+            else:
+                # If it has an id, it's not a proper notification, but acknowledge it
+                return JSONResponse(content={
+                    "jsonrpc": "2.0",
+                    "result": {},
+                    "id": request_id
+                })
+        
+        elif method == "tools/list":
             logger.info(f"📋 Listing available tools")
             return JSONResponse(content={
                 "jsonrpc": "2.0",
