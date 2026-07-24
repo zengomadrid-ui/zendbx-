@@ -5,7 +5,7 @@ Auth endpoints are fully public - no API key required for signup/login.
 """
 from fastapi import APIRouter, HTTPException, Header, status
 from fastapi.responses import Response
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from uuid import UUID
 import bcrypt
 import jwt
@@ -30,6 +30,14 @@ class SignUpRequest(BaseModel):
     email: EmailStr
     password: str
     name: str = None
+    
+    @field_validator('password', 'name', mode='before')
+    @classmethod
+    def reject_undefined_strings(cls, v):
+        """Reject JavaScript undefined that was serialized as string"""
+        if v == "undefined" or v == "null":
+            raise ValueError(f'Invalid value: "{v}". JavaScript undefined/null should not be sent to API.')
+        return v
 
 class SignInRequest(BaseModel):
     email: EmailStr
@@ -135,9 +143,22 @@ async def signup(project_slug: str, request_data: SignUpRequest):
     Creates user in auth.users table (Phase 1).
     Uses project_slug (public identifier).
     
-    VERSION: v2.0 - Slug-based routing, no user_profiles dependency
+    VERSION: v2.1 - Uses unified auth service for guaranteed security
     """
-    logger.info(f"🔵 SIGNUP v2.0 EXECUTING - Slug: {project_slug}, Module: public_auth_v2.py")
+    logger.error(f"🔵 ========== SIGNUP REQUEST DEBUG ==========")
+    logger.error(f"Project Slug: {project_slug}")
+    logger.error(f"Email: {request_data.email}")
+    logger.error(f"Password: {request_data.password}")
+    logger.error(f"Password Type: {type(request_data.password)}")
+    logger.error(f"Password == 'undefined': {request_data.password == 'undefined'}")
+    logger.error(f"Name: {request_data.name}")
+    logger.error(f"Name Type: {type(request_data.name)}")
+    logger.error(f"Request Data Dict: {request_data.model_dump()}")
+    logger.error(f"==========================================")
+    
+    # Import auth service
+    from ..services.auth_service import auth_service
+    
     try:
         pool = await get_main_db_pool()
         resolver = get_project_resolver()
@@ -158,46 +179,74 @@ async def signup(project_slug: str, request_data: SignUpRequest):
                 project_id, request_data.email
             )
             if existing:
+                logger.warning(f"❌ Signup failed - email already exists: {request_data.email}")
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="User with this email already exists"
                 )
 
-            # Hash password using bcrypt
-            hashed = hash_password(request_data.password)
+            # Create user using unified auth service
+            # This GUARANTEES:
+            # - Password is always hashed
+            # - Username is never NULL
+            # - Duplicate usernames are handled
+            # - Post-insert verification
+            logger.error(f"🚀 ABOUT TO CALL AUTH_SERVICE.CREATE_USER")
+            logger.error(f"   conn type: {type(conn)}")
+            logger.error(f"   email: {request_data.email}")
+            logger.error(f"   password: {request_data.password}")
+            logger.error(f"   name: {request_data.name}")
+            logger.error(f"   project_id: {project_id}")
+            logger.error(f"   auth_service: {auth_service}")
             
-            # Insert user into auth.users table WITH project_id (project-scoped)
-            user = await conn.fetchrow("""
-                INSERT INTO auth.users (
-                    project_id, email, username, password_hash, provider, 
-                    email_verified, created_at, last_login_at
-                )
-                VALUES ($1, $2, $3, $4, 'email', FALSE, NOW(), NOW())
-                RETURNING id, email, username, provider, email_verified, created_at
-            """, project_id, request_data.email, request_data.name, hashed)
-
-            logger.info(f"✅ Signup: {user['email']} in schema '{schema}'")
+            user = await auth_service.create_user(
+                conn=conn,
+                email=request_data.email,
+                password=request_data.password,
+                name=request_data.name,
+                project_id=project_id,
+                provider='email'
+            )
+            
+            logger.error(f"✅ AUTH_SERVICE.CREATE_USER RETURNED: {dict(user)}")
+            
+            user_dict = dict(user)
+            logger.info(f"✅ Signup: {user_dict['email']} (username: {user_dict['username']}) in schema '{schema}'")
 
         # Generate JWT access token
         access_token = generate_jwt(
-            user['id'], project_id, user['email'], 
+            user_dict['id'], project_id, user_dict['email'], 
             project['jwt_secret'], project.get('slug')
         )
 
         return {
             "access_token": access_token,
             "user": {
-                "id": str(user['id']),
-                "email": user['email'],
-                "username": user['username'],
-                "provider": user['provider'],
-                "email_verified": user['email_verified'],
-                "created_at": user['created_at'].isoformat()
+                "id": str(user_dict['id']),
+                "email": user_dict['email'],
+                "username": user_dict['username'],
+                "provider": user_dict['provider'],
+                "email_verified": user_dict['email_verified'],
+                "created_at": user_dict['created_at'].isoformat()
             }
         }
         
     except HTTPException:
         raise
+    except ValueError as e:
+        # Validation errors from auth service
+        logger.error(f"❌ Signup validation error for {request_data.email}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except RuntimeError as e:
+        # Password hashing or critical errors
+        logger.error(f"❌ Signup runtime error for {request_data.email}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to create account. Please try again."
+        )
     except Exception as e:
         # Log complete exception details
         exception_type = type(e).__name__

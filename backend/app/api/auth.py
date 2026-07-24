@@ -93,7 +93,10 @@ async def signup(request: Request, raw_data: dict, background_tasks: BackgroundT
     Register a new user with comprehensive server-side validation.
     All inputs are validated and sanitized regardless of frontend checks.
     Sends welcome email in background.
+    
+    VERSION: v2.1 - Uses unified auth service for guaranteed security
     """
+    from app.services.auth_service import auth_service
     
     try:
         # Server-side validation and sanitization
@@ -132,47 +135,55 @@ async def signup(request: Request, raw_data: dict, background_tasks: BackgroundT
         
         logger.info(f"✅ Email available: {user_data.email}")
         
-        # Hash password (already validated for strength)
+        # Create user using unified auth service
+        # This GUARANTEES:
+        # - Password is always hashed
+        # - Username/full_name is never NULL
+        # - Duplicate usernames are handled
+        # - Post-insert verification
         try:
-            password_hash = hash_password(user_data.password)
-            logger.info(f"✅ Password hashed successfully")
-        except Exception as e:
-            logger.error(f"❌ Password hashing failed: {str(e)}")
+            # Get database pool for auth service
+            from app.core.database import get_main_db_pool
+            pool = await get_main_db_pool()
+            async with pool.acquire() as conn:
+                user = await auth_service.create_user(
+                    conn=conn,
+                    email=user_data.email,
+                    password=user_data.password,
+                    name=user_data.full_name,
+                    project_id=None,  # Platform auth (no project_id)
+                    provider='email'
+                )
+                user_dict = dict(user)
+            
+            logger.info(f"✅ User created in database: {user_data.email}")
+        except ValueError as e:
+            logger.error(f"❌ Validation error: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e)
+            )
+        except RuntimeError as e:
+            logger.error(f"❌ Runtime error: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Unable to process request. Please try again."
+                detail="Unable to create account. Please try again."
             )
-        
-        # Create user
-        try:
-            result = await execute_on_main_db(
-                """
-                INSERT INTO users (email, password_hash, full_name)
-                VALUES ($1, $2, $3)
-                RETURNING id, email, full_name, avatar_url, is_active, is_verified, plan, created_at
-                """,
-                user_data.email,
-                password_hash,
-                user_data.full_name
-            )
-            logger.info(f"✅ User created in database: {user_data.email}")
         except Exception as e:
-            logger.error(f"❌ Database insert failed: {str(e)}")
+            logger.error(f"❌ User creation failed: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Unable to create account. Please try again."
             )
         
-        user = dict(result[0])
-        
         # Create access token with role
         try:
             access_token = create_access_token({
-                "sub": str(user["id"]),
-                "email": user["email"],
-                "role": user.get("role", "user")
+                "sub": str(user_dict["id"]),
+                "email": user_dict["email"],
+                "role": user_dict.get("role", "user")
             })
-            logger.info(f"✅ Access token created for: {user['email']}")
+            logger.info(f"✅ Access token created for: {user_dict['email']}")
         except Exception as e:
             logger.error(f"❌ Token creation failed: {str(e)}")
             raise HTTPException(
@@ -183,17 +194,17 @@ async def signup(request: Request, raw_data: dict, background_tasks: BackgroundT
         # Schedule welcome email in background (never blocks signup)
         background_tasks.add_task(
             send_welcome_email_background,
-            user_id=user["id"],
-            user_email=user["email"],
-            user_name=user.get("full_name") or user["email"]
+            user_id=user_dict["id"],
+            user_email=user_dict["email"],
+            user_name=user_dict.get("full_name") or user_dict["email"]
         )
-        logger.info(f"📧 Welcome email scheduled for: {user['email']}")
+        logger.info(f"📧 Welcome email scheduled for: {user_dict['email']}")
         
-        logger.info(f"🎉 Signup successful for: {user['email']} from IP: {client_ip}")
+        logger.info(f"🎉 Signup successful for: {user_dict['email']} from IP: {client_ip}")
         
         return Token(
             access_token=access_token,
-            user=UserResponse(**user)
+            user=UserResponse(**user_dict)
         )
         
     except HTTPException:

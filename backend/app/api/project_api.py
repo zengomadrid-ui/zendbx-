@@ -257,8 +257,18 @@ async def handle_list_rows(
     filters, operators = parse_filters(dict(request.query_params))
     
     try:
-        # Build query — all identifiers are quoted and validated
-        query = f"SELECT * FROM {safe_table}"
+        # 🔒 SECURITY: Exclude password_hash for auth.users
+        if table_name == "users" and api_key_data["database_name"] == "auth":
+            # Safe columns for auth.users (show "Protected" placeholder for password_hash)
+            select_columns = """
+                id, email, username, 'Protected' as password_hash, provider, email_verified, is_active, 
+                avatar_url, metadata, last_login_at, created_at, updated_at, project_id
+            """
+            query = f"SELECT {select_columns} FROM {safe_table}"
+        else:
+            # Build query — all identifiers are quoted and validated
+            query = f"SELECT * FROM {safe_table}"
+        
         conditions = []
         params = []
         param_count = 1
@@ -349,9 +359,21 @@ async def handle_get_row(
     
     try:
         safe_table = _safe_ident(table_name, "table name")
+        
+        # 🔒 SECURITY: Exclude password_hash for auth.users
+        if table_name == "users" and api_key_data["database_name"] == "auth":
+            # Safe columns for auth.users (show "Protected" placeholder for password_hash)
+            select_columns = """
+                id, email, username, 'Protected' as password_hash, provider, email_verified, is_active, 
+                avatar_url, metadata, last_login_at, created_at, updated_at, project_id
+            """
+            query = f"SELECT {select_columns} FROM {safe_table} WHERE id = $1"
+        else:
+            query = f"SELECT * FROM {safe_table} WHERE id = $1"
+        
         result = await execute_on_project_db(
             api_key_data["database_name"],
-            f"SELECT * FROM {safe_table} WHERE id = $1",
+            query,
             row_id
         )
         

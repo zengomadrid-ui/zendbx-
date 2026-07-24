@@ -456,11 +456,12 @@ async def get_schema_table_rows(
                 )
                 has_project_id_col = has_project_id[0]['exists'] if has_project_id else False
                 
-                # Safe columns to expose (never expose password_hash, tokens)
+                # Safe columns to expose (show "Protected" for password_hash instead of actual value)
                 safe_columns = """
                     id, 
                     email, 
                     username, 
+                    'Protected' as password_hash,
                     provider, 
                     email_verified, 
                     is_active, 
@@ -474,7 +475,7 @@ async def get_schema_table_rows(
                 if has_project_id_col:
                     # Filter by project_id for multi-tenant isolation
                     query = f"""
-                        SELECT {safe_columns}
+                        SELECT {safe_columns}, project_id
                         FROM "{schema_name}"."{table_name}"
                         WHERE project_id = $1
                         ORDER BY created_at DESC

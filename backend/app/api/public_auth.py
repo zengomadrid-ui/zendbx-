@@ -198,7 +198,11 @@ async def signup(
     """
     Sign up a new user to the project
     Requires: API key in Authorization header (Bearer <key>)
+    
+    VERSION: v1.1 - Uses unified auth service for guaranteed security
     """
+    from app.services.auth_service import auth_service
+    
     # Validate API key
     if not authorization or not authorization.startswith('Bearer '):
         raise HTTPException(
@@ -229,18 +233,22 @@ async def signup(
                 detail="Unable to create account. Please check your information and try again."
             )
         
-        # Hash password
-        hashed_password = hash_password(request.password)
+        # Create user using unified auth service
+        # This GUARANTEES:
+        # - Password is always hashed
+        # - Username is never NULL
+        # - Duplicate usernames are handled
+        user = await auth_service.create_user(
+            conn=conn,
+            email=request.email,
+            password=request.password,
+            name=request.full_name,
+            project_id=project_id,
+            provider='email'
+        )
         
-        # Create user
-        user = await conn.fetchrow("""
-            INSERT INTO project_users (
-                project_id, email, encrypted_password, full_name, 
-                provider, is_active, created_at
-            )
-            VALUES ($1, $2, $3, $4, 'email', TRUE, NOW())
-            RETURNING id, email, full_name, provider, created_at
-        """, project_id, request.email, hashed_password, request.full_name)
+        user_dict = dict(user)
+        logger.info(f"✅ User created via legacy endpoint: {user_dict['email']}")
         
         # Log auth event
         await conn.execute("""
@@ -252,27 +260,27 @@ async def signup(
         """, project_id, request.email)
         
         # Sync user to main users table and create default project
-        logger.info(f"🔄 Starting user sync for: {user['email']}")
+        logger.info(f"🔄 Starting user sync for: {user_dict['email']}")
         sync_result = await sync_user_to_main_table(
-            user['id'], 
-            user['email'], 
-            user['full_name'], 
-            user['provider']
+            user_dict['id'], 
+            user_dict['email'], 
+            user_dict.get('username') or user_dict.get('full_name'), 
+            user_dict['provider']
         )
         logger.info(f"✅ User sync completed: {sync_result}")
         
         # Generate JWT
         jwt_secret = await get_project_jwt_secret(project_id)
-        access_token = generate_jwt(user['id'], project_id, user['email'], jwt_secret)
+        access_token = generate_jwt(user_dict['id'], project_id, user_dict['email'], jwt_secret)
         
         response_data = {
             "access_token": access_token,
             "user": {
-                "id": str(user['id']),
-                "email": user['email'],
-                "full_name": user['full_name'],
-                "provider": user['provider'],
-                "created_at": user['created_at'].isoformat()
+                "id": str(user_dict['id']),
+                "email": user_dict['email'],
+                "full_name": user_dict.get('username') or user_dict.get('full_name'),
+                "provider": user_dict['provider'],
+                "created_at": user_dict['created_at'].isoformat()
             }
         }
         

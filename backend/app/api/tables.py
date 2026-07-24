@@ -373,8 +373,35 @@ async def get_table_rows(
         # Calculate offset
         offset = (page - 1) * limit
         
-        # Build base query
-        query = f"SELECT * FROM {table_name}"
+        # 🔒 SECURITY: Check if querying auth.users - exclude sensitive fields
+        if table_name == "auth.users" or table_name == '"auth"."users"' or table_name == 'users':
+            # Check if this table is in the auth schema
+            schema_check = await execute_on_project_db(
+                project["database_name"],
+                """
+                SELECT table_schema FROM information_schema.tables 
+                WHERE table_name = 'users' AND table_schema IN ('auth', $1)
+                LIMIT 1
+                """,
+                project["database_name"]
+            )
+            
+            is_auth_table = schema_check and schema_check[0]['table_schema'] == 'auth'
+            
+            if is_auth_table:
+                # Safe columns for auth.users (show "Protected" placeholder for password_hash)
+                select_columns = """
+                    id, email, username, 'Protected' as password_hash, provider, email_verified, is_active, 
+                    avatar_url, metadata, last_login_at, created_at, updated_at, project_id
+                """
+                query = f"SELECT {select_columns} FROM {table_name}"
+            else:
+                # Regular table
+                query = f"SELECT * FROM {table_name}"
+        else:
+            # Build base query
+            query = f"SELECT * FROM {table_name}"
+        
         conditions = []
         params = []
         param_count = 1
@@ -738,10 +765,38 @@ async def export_table_data(
     project = await verify_project_access(project_id, current_user["id"])
     
     try:
-        # Get all rows
+        # 🔒 SECURITY: Check if exporting auth.users - exclude sensitive fields
+        if table_name == "auth.users" or table_name == '"auth"."users"' or table_name == 'users':
+            # Check if this table is in the auth schema
+            schema_check = await execute_on_project_db(
+                project["database_name"],
+                """
+                SELECT table_schema FROM information_schema.tables 
+                WHERE table_name = 'users' AND table_schema IN ('auth', $1)
+                LIMIT 1
+                """,
+                project["database_name"]
+            )
+            
+            is_auth_table = schema_check and schema_check[0]['table_schema'] == 'auth'
+            
+            if is_auth_table:
+                # Safe columns for auth.users (show "Protected" placeholder for password_hash)
+                select_columns = """
+                    id, email, username, 'Protected' as password_hash, provider, email_verified, is_active, 
+                    avatar_url, metadata, last_login_at, created_at, updated_at, project_id
+                """
+                query = f"SELECT {select_columns} FROM {table_name}"
+            else:
+                # Regular table
+                query = f"SELECT * FROM {table_name}"
+        else:
+            # Get all rows
+            query = f"SELECT * FROM {table_name}"
+        
         rows = await execute_on_project_db(
             project["database_name"],
-            f"SELECT * FROM {table_name}"
+            query
         )
         
         data = [dict(row) for row in rows]
