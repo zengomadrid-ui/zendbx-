@@ -56,6 +56,8 @@ export default function TablesPage() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [rlsEnabled, setRlsEnabled] = useState(false);
   const [rlsPolicyCount, setRlsPolicyCount] = useState(0);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const rowsPerPage = 50;
 
   useEffect(() => {
@@ -503,6 +505,61 @@ export default function TablesPage() {
     }
   };
 
+  const deleteTable = async () => {
+    if (!selectedTable) return;
+    
+    if (selectedTable.readOnly) {
+      showToast('This table is read-only', 'error');
+      return;
+    }
+    
+    if (selectedTable.systemManaged) {
+      showToast('System-managed tables cannot be deleted', 'error');
+      return;
+    }
+    
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteTable = async () => {
+    if (!selectedTable) return;
+    
+    const tableName = selectedTable.table;
+    
+    if (deleteConfirmText !== tableName) {
+      showToast('Table name did not match', 'error');
+      return;
+    }
+    
+    const projectId = localStorage.getItem('current_project_id');
+    if (!projectId) return;
+    
+    setLoading(true);
+    setShowDeleteModal(false);
+    setDeleteConfirmText('');
+    
+    try {
+      setSelectedTable(null);
+      setTableData(null);
+      
+      await apiClient.delete(`/api/projects/${projectId}/tables/${tableName}`);
+      showToast(`Table deleted`, 'success');
+      await fetchSchemas();
+      
+    } catch (err: any) {
+      console.error('Failed to delete table:', err);
+      showToast(err.message || 'Failed to delete table', 'error');
+      await fetchSchemas();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cancelDeleteTable = () => {
+    setShowDeleteModal(false);
+    setDeleteConfirmText('');
+  };
+
   const totalPages = Math.ceil(totalRows / rowsPerPage);
   const startRow = (page - 1) * rowsPerPage + 1;
   const endRow = Math.min(page * rowsPerPage, totalRows);
@@ -546,6 +603,67 @@ export default function TablesPage() {
           background: #1F1F1F;
         }
       `}</style>
+      
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0, 0, 0, 0.7)' }}
+          onClick={cancelDeleteTable}
+        >
+          <div 
+            className="rounded-lg p-6 max-w-md w-full mx-4"
+            style={{
+              background: '#1F1F1F',
+              border: '1px solid #333333'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-medium text-white mb-4">Delete Table</h3>
+            <p className="text-[#CCCCCC] mb-4">
+              This will permanently delete the table <span className="text-[#FF6B00] font-medium">"{selectedTable?.table}"</span> and all its data.
+            </p>
+            <p className="text-[#888888] text-sm mb-4">
+              Type the table name to confirm:
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={selectedTable?.table}
+              className="w-full px-3 py-2 rounded mb-6 focus:outline-none focus:ring-2 focus:ring-[#FF6B00]"
+              style={{
+                background: '#0A0A0A',
+                border: '1px solid #333333',
+                color: '#FFFFFF'
+              }}
+              autoFocus
+            />
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelDeleteTable}
+                className="px-4 py-2 rounded text-sm text-white hover:opacity-80 transition-opacity"
+                style={{
+                  background: '#333333'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteTable}
+                disabled={deleteConfirmText !== selectedTable?.table}
+                className="px-4 py-2 rounded text-sm text-white hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  background: '#DC2626'
+                }}
+              >
+                Delete Table
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Left Sidebar */}
       <div 
         className="w-64 flex flex-col"
@@ -777,6 +895,24 @@ export default function TablesPage() {
               }}
             >
               Refresh
+            </button>
+            <button
+              onClick={deleteTable}
+              disabled={!selectedTable || selectedTable.readOnly || selectedTable.systemManaged}
+              className="px-3 py-1.5 text-white text-sm rounded hover:opacity-80 transition-opacity disabled:opacity-50"
+              style={{
+                background: '#DC2626',
+                border: '1px solid #991B1B'
+              }}
+              title={
+                selectedTable?.readOnly 
+                  ? 'This table is read-only' 
+                  : selectedTable?.systemManaged 
+                  ? 'System-managed tables cannot be deleted' 
+                  : 'Delete this table'
+              }
+            >
+              Delete Table
             </button>
             <button
               onClick={startAddRow}

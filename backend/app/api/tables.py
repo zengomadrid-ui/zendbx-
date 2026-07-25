@@ -310,40 +310,78 @@ async def delete_table(
     """Delete a table"""
     
     project = await verify_project_access(project_id, current_user["id"])
+    database_name = project["database_name"]
     
-    # Check if table exists
-    result = await execute_on_main_db(
-        "SELECT id FROM user_tables WHERE project_id = $1 AND table_name = $2",
-        project_id,
-        table_name
-    )
-    
-    if not result:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Table '{table_name}' not found"
-        )
+    print(f"\n{'='*60}")
+    print(f"🗑️  DELETE TABLE REQUEST")
+    print(f"{'='*60}")
+    print(f"Project ID: {project_id}")
+    print(f"Database Name: {database_name}")
+    print(f"Table Name: {table_name}")
+    print(f"User ID: {current_user['id']}")
     
     try:
-        # Drop table in project database
-        await execute_on_project_db(
-            project["database_name"],
-            f"DROP TABLE IF EXISTS {table_name} CASCADE"
+        # First check if table actually exists in the database
+        table_check = await execute_on_project_db(
+            project_id,
+            database_name,
+            """
+            SELECT table_schema, table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = $1 AND table_name = $2
+            """,
+            database_name,  # schema name = database name
+            table_name
         )
         
-        # Delete metadata
-        await execute_on_main_db(
-            "DELETE FROM user_tables WHERE project_id = $1 AND table_name = $2",
+        if not table_check:
+            print(f"❌ Table '{table_name}' not found in database")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Table '{table_name}' not found in database"
+            )
+        
+        print(f"✅ Table exists in schema: {table_check[0]['table_schema']}")
+        schema_name = table_check[0]['table_schema']
+        
+        # Drop table in project database with proper schema qualification
+        drop_sql = f'DROP TABLE IF EXISTS "{schema_name}"."{table_name}" CASCADE'
+        print(f"🔨 Executing: {drop_sql}")
+        
+        await execute_on_project_db(project_id, database_name, drop_sql)
+        
+        print(f"✅ Table dropped successfully")
+        
+        # Also delete from metadata if it exists (optional - for tables created via API)
+        metadata_result = await execute_on_main_db(
+            "SELECT id FROM user_tables WHERE project_id = $1 AND table_name = $2",
             project_id,
             table_name
         )
+        
+        if metadata_result:
+            await execute_on_main_db(
+                "DELETE FROM user_tables WHERE project_id = $1 AND table_name = $2",
+                project_id,
+                table_name
+            )
+            print(f"✅ Metadata cleaned up")
+        else:
+            print(f"ℹ️  No metadata found (table was not created via API)")
+        
+        print(f"{'='*60}\n")
         
         return MessageResponse(
             message=f"Table '{table_name}' deleted successfully",
             success=True
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ Error deleting table: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete table: {str(e)}"
