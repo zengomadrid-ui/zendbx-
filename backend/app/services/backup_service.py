@@ -148,46 +148,82 @@ class BackupService:
             raise Exception(f"Cannot access database '{db_name}': {validation.get('error')}")
         
         if validation.get("table_count", 0) == 0:
-            print(f"⚠️  Warning: Database '{db_name}' has no tables")
+            print(f"⚠️  Warning: Database/Schema '{db_name}' has no tables")
         else:
             print(f"✓ Database has {validation['table_count']} tables, {validation['row_count']} rows")
         
         # Parse database connection details
         db_url = settings.DATABASE_URL
-        # Extract components from URL: postgresql://user:pass@host:port/dbname
         parts = db_url.replace("postgresql://", "").split("@")
         user_pass = parts[0].split(":")
         host_port_db = parts[1].split("/")
         host_port = host_port_db[0].split(":")
         
         db_user = user_pass[0]
-        # URL-decode the password (e.g., %40 -> @)
         db_password = unquote(user_pass[1]) if len(user_pass) > 1 else ""
         db_host = host_port[0]
         db_port = host_port[1] if len(host_port) > 1 else "5432"
         
-        print(f"🔧 Connection: {db_user}@{db_host}:{db_port}/{db_name}")
+        # Determine if we're backing up a schema or a database
+        is_schema = validation.get("is_schema", False)
         
-        # pg_dump command with data
-        cmd = [
-            self.pg_dump_path,
-            "-h", db_host,
-            "-p", db_port,
-            "-U", db_user,
-            "-d", db_name,
-            "-f", str(file_path),
-            "--format=plain",
-            "--no-owner",
-            "--no-acl",
-            "--clean",
-            "--if-exists",
-            "--verbose",
-            "--data-only" if validation.get("table_count", 0) == 0 else "--inserts"  # Use inserts for better compatibility
-        ]
+        # Check if using Neon (requires special connection parameters)
+        is_neon = "neon.tech" in db_host or "neon.tech" in db_url
+        
+        if is_schema:
+            # Backup a schema from the main database
+            actual_db_name = validation.get("current_database")
+            print(f"🔧 Connection: {db_user}@{db_host}:{db_port}/{actual_db_name} (schema: {db_name})")
+            
+            # pg_dump command for schema only
+            cmd = [
+                self.pg_dump_path,
+                "-h", db_host,
+                "-p", db_port,
+                "-U", db_user,
+                "-d", actual_db_name,
+                "-n", db_name,  # Only this schema
+                "-f", str(file_path),
+                "--format=plain",
+                "--no-owner",
+                "--no-acl",
+                "--clean",
+                "--if-exists",
+                "--verbose"
+            ]
+        else:
+            # Backup entire database
+            print(f"🔧 Connection: {db_user}@{db_host}:{db_port}/{db_name}")
+            
+            cmd = [
+                self.pg_dump_path,
+                "-h", db_host,
+                "-p", db_port,
+                "-U", db_user,
+                "-d", db_name,
+                "-f", str(file_path),
+                "--format=plain",
+                "--no-owner",
+                "--no-acl",
+                "--clean",
+                "--if-exists",
+                "--verbose"
+            ]
         
         # Set password via environment
         env = os.environ.copy()
         env["PGPASSWORD"] = db_password
+        
+        # Add Neon-specific SSL settings
+        if is_neon:
+            print(f"🔐 Detected Neon database - using SSL connection")
+            env["PGSSLMODE"] = "require"
+            # Extract endpoint ID from Neon hostname
+            # Format: ep-xxxxx-xxxxx.us-east-1.aws.neon.tech
+            if "." in db_host:
+                endpoint_id = db_host.split(".")[0]
+                env["PGOPTIONS"] = f"-c endpoint={endpoint_id}"
+                print(f"🔑 Using Neon endpoint: {endpoint_id}")
         
         # Execute
         print(f"🚀 Executing pg_dump...")
@@ -208,13 +244,18 @@ class BackupService:
         # Check for errors
         if result.returncode != 0:
             error_msg = result.stderr
-            # Parse common errors
             if "does not exist" in error_msg:
-                raise Exception(f"Database '{db_name}' does not exist or is not accessible")
+                raise Exception(f"Database/Schema '{db_name}' does not exist or is not accessible")
             elif "authentication failed" in error_msg:
                 raise Exception("Database authentication failed - check credentials")
             elif "could not connect" in error_msg:
                 raise Exception(f"Could not connect to database server: {error_msg}")
+            elif "Endpoint ID is not specified" in error_msg or "connection is insecure" in error_msg:
+                raise Exception(
+                    "Neon database connection requires SSL. "
+                    "Please ensure your pg_dump version is 14+ or update your PostgreSQL installation. "
+                    f"Error: {error_msg}"
+                )
             else:
                 raise Exception(f"pg_dump failed: {error_msg}")
         
@@ -224,7 +265,7 @@ class BackupService:
         
         # Check file size
         file_size = os.path.getsize(file_path)
-        if file_size < 100:  # Less than 100 bytes
+        if file_size < 100:
             raise Exception(f"Backup file is too small ({file_size} bytes) - likely empty or failed")
         
         # Log success
@@ -525,40 +566,101 @@ class BackupService:
     async def _validate_database_access(self, db_name: str) -> Dict[str, Any]:
         """Validate we can access the database and get basic info"""
         try:
-            pool = await get_project_db_pool(db_name)
+            # For local development, use the main database instead of project-specific databases
+            pool = await get_main_db_pool()
             async with pool.acquire() as conn:
-                # Test connection
-                current_db = await conn.fetchval("SELECT current_database()")
-                
-                # Get table count
-                table_count = await conn.fetchval(
+                # Check if this is a project schema (not a separate database)
+                schema_exists = await conn.fetchval(
                     """
-                    SELECT COUNT(*)
-                    FROM information_schema.tables
-                    WHERE table_schema = 'public'
-                    """
+                    SELECT EXISTS(
+                        SELECT 1 FROM information_schema.schemata 
+                        WHERE schema_name = $1
+                    )
+                    """,
+                    db_name
                 )
                 
-                # Get row count
-                row_count = await conn.fetchval(
-                    """
-                    SELECT SUM(n_live_tup)
-                    FROM pg_stat_user_tables
-                    """
-                )
+                if schema_exists:
+                    # It's a schema, not a separate database
+                    # Get table count from the schema
+                    table_count = await conn.fetchval(
+                        """
+                        SELECT COUNT(*)
+                        FROM information_schema.tables
+                        WHERE table_schema = $1
+                        """,
+                        db_name
+                    )
+                    
+                    # Get row count from the schema
+                    row_count = await conn.fetchval(
+                        """
+                        SELECT COALESCE(SUM(n_live_tup), 0)
+                        FROM pg_stat_user_tables
+                        WHERE schemaname = $1
+                        """,
+                        db_name
+                    )
+                    
+                    # Get schema size
+                    schema_size = await conn.fetchval(
+                        """
+                        SELECT COALESCE(SUM(pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(tablename))), 0)
+                        FROM pg_tables
+                        WHERE schemaname = $1
+                        """,
+                        db_name
+                    )
+                    
+                    return {
+                        "accessible": True,
+                        "current_database": await conn.fetchval("SELECT current_database()"),
+                        "schema_name": db_name,
+                        "is_schema": True,
+                        "table_count": int(table_count) if table_count else 0,
+                        "row_count": int(row_count) if row_count else 0,
+                        "database_size": int(schema_size) if schema_size else 0
+                    }
                 
-                # Get database size
-                db_size = await conn.fetchval(
-                    "SELECT pg_database_size(current_database())"
-                )
-                
-                return {
-                    "accessible": True,
-                    "current_database": current_db,
-                    "table_count": int(table_count) if table_count else 0,
-                    "row_count": int(row_count) if row_count else 0,
-                    "database_size": int(db_size) if db_size else 0
-                }
+                # Try to connect as a separate database
+                try:
+                    project_pool = await get_project_db_pool(db_name)
+                    async with project_pool.acquire() as project_conn:
+                        current_db = await project_conn.fetchval("SELECT current_database()")
+                        
+                        table_count = await project_conn.fetchval(
+                            """
+                            SELECT COUNT(*)
+                            FROM information_schema.tables
+                            WHERE table_schema = 'public'
+                            """
+                        )
+                        
+                        row_count = await project_conn.fetchval(
+                            """
+                            SELECT COALESCE(SUM(n_live_tup), 0)
+                            FROM pg_stat_user_tables
+                            """
+                        )
+                        
+                        db_size = await project_conn.fetchval(
+                            "SELECT pg_database_size(current_database())"
+                        )
+                        
+                        return {
+                            "accessible": True,
+                            "current_database": current_db,
+                            "is_schema": False,
+                            "table_count": int(table_count) if table_count else 0,
+                            "row_count": int(row_count) if row_count else 0,
+                            "database_size": int(db_size) if db_size else 0
+                        }
+                except Exception as e:
+                    return {
+                        "accessible": False,
+                        "error": f"Schema '{db_name}' does not exist and cannot connect as database: {str(e)}"
+                    }
+                    
         except Exception as e:
             return {
                 "accessible": False,
@@ -569,9 +671,81 @@ class BackupService:
         """Get metadata about the database being backed up"""
         
         try:
+            # Check if it's a schema or database
+            pool = await get_main_db_pool()
+            async with pool.acquire() as conn:
+                schema_exists = await conn.fetchval(
+                    """
+                    SELECT EXISTS(
+                        SELECT 1 FROM information_schema.schemata 
+                        WHERE schema_name = $1
+                    )
+                    """,
+                    db_name
+                )
+                
+                if schema_exists:
+                    # It's a schema
+                    table_count = await conn.fetchval(
+                        """
+                        SELECT COUNT(*)
+                        FROM information_schema.tables
+                        WHERE table_schema = $1
+                        """,
+                        db_name
+                    )
+                    
+                    row_count = await conn.fetchval(
+                        """
+                        SELECT COALESCE(SUM(n_live_tup), 0)
+                        FROM pg_stat_user_tables
+                        WHERE schemaname = $1
+                        """,
+                        db_name
+                    )
+                    
+                    schema_size = await conn.fetchval(
+                        """
+                        SELECT COALESCE(SUM(pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(tablename))), 0)
+                        FROM pg_tables
+                        WHERE schemaname = $1
+                        """,
+                        db_name
+                    )
+                    
+                    tables = await conn.fetch(
+                        """
+                        SELECT 
+                            schemaname,
+                            tablename,
+                            n_live_tup as row_count
+                        FROM pg_stat_user_tables
+                        WHERE schemaname = $1
+                        ORDER BY n_live_tup DESC
+                        LIMIT 10
+                        """,
+                        db_name
+                    )
+                    
+                    return {
+                        "table_count": int(table_count) if table_count else 0,
+                        "row_count": int(row_count) if row_count else 0,
+                        "database_size": int(schema_size) if schema_size else 0,
+                        "database_name": db_name,
+                        "is_schema": True,
+                        "top_tables": [
+                            {
+                                "schema": t["schemaname"],
+                                "table": t["tablename"],
+                                "rows": int(t["row_count"]) if t["row_count"] else 0
+                            }
+                            for t in tables
+                        ]
+                    }
+            
+            # Try as separate database
             pool = await get_project_db_pool(db_name)
             async with pool.acquire() as conn:
-                # Get table count
                 table_count = await conn.fetchval(
                     """
                     SELECT COUNT(*)
@@ -580,20 +754,17 @@ class BackupService:
                     """
                 )
                 
-                # Get total row count (approximate)
                 row_count = await conn.fetchval(
                     """
-                    SELECT SUM(n_live_tup)
+                    SELECT COALESCE(SUM(n_live_tup), 0)
                     FROM pg_stat_user_tables
                     """
                 )
                 
-                # Get database size
                 db_size = await conn.fetchval(
                     "SELECT pg_database_size(current_database())"
                 )
                 
-                # Get table list with row counts
                 tables = await conn.fetch(
                     """
                     SELECT 
@@ -611,6 +782,7 @@ class BackupService:
                     "row_count": int(row_count) if row_count else 0,
                     "database_size": int(db_size) if db_size else 0,
                     "database_name": db_name,
+                    "is_schema": False,
                     "top_tables": [
                         {
                             "schema": t["schemaname"],

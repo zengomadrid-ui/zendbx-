@@ -781,6 +781,12 @@ app.add_middleware(ProjectContextMiddleware)
 from app.middleware.rls_context import RLSContextMiddleware
 app.add_middleware(RLSContextMiddleware)
 
+# Reject Undefined Middleware DISABLED - causing asyncio.CancelledError
+# Using Pydantic validators in SignUpRequest instead (more reliable)
+# from app.middleware.reject_undefined import RejectUndefinedMiddleware
+# app.add_middleware(RejectUndefinedMiddleware)
+# print(f"🛡️  Reject Undefined middleware enabled - blocks 'undefined' strings")
+
 @app.on_event("startup")
 async def startup():
     """Initialize application"""
@@ -911,10 +917,29 @@ async def startup():
             print(f"🔗 WebSocket server: {settings.WEBSOCKET_SERVER_URL}")
         except Exception as e:
             print(f"⚠️  Realtime listener failed (continuing without realtime): {str(e)}")
+    
+    # Start backup scheduler
+    try:
+        from app.services.backup_scheduler import get_scheduler
+        scheduler = await get_scheduler()
+        await scheduler.start()
+        print(f" Backup scheduler started")
+    except Exception as e:
+        print(f"  Backup scheduler failed to start: {str(e)}")
 
 @app.on_event("shutdown")
 async def shutdown():
     """Cleanup on shutdown"""
+    
+    # Stop backup scheduler
+    try:
+        from app.services.backup_scheduler import get_scheduler
+        scheduler = await get_scheduler()
+        await scheduler.stop()
+        print(f" Backup scheduler stopped")
+    except Exception as e:
+        print(f"Backup scheduler stop failed: {str(e)}")
+    
     # Disconnect Redis (if connected)
     try:
         from app.core.redis_client import redis_client
@@ -990,7 +1015,7 @@ from app.api import (
     rest_v1, public_auth_v2,  # New multi-tenant APIs
     db_tables, db_functions, db_triggers, db_schema,  # Database management
     project_stats,  # Project statistics
-    backups,  # Backup & Restore
+    backups, backup_schedules,  # Backup & Restore
     realtime,  # Realtime management
     team,  # Team collaboration
     analytics,  # Performance analytics
@@ -1063,6 +1088,7 @@ app.include_router(project_stats.router, prefix="/api/projects", tags=["statisti
 
 # Backup & Restore API
 app.include_router(backups.router, tags=["backups"])
+app.include_router(backup_schedules.router, tags=["backup-schedules"])
 
 # Realtime API
 app.include_router(realtime.router, prefix="/api", tags=["realtime"])
