@@ -170,61 +170,90 @@ class BackupService:
         # Check if using Neon (requires special connection parameters)
         is_neon = "neon.tech" in db_host or "neon.tech" in db_url
         
+        # For Neon, construct a connection string with endpoint parameter
+        if is_neon and "." in db_host:
+            endpoint_id = db_host.split(".")[0]
+            # Build Neon connection string with endpoint parameter
+            db_name_to_connect = validation.get("current_database") if is_schema else db_name
+            neon_connection_string = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name_to_connect}?sslmode=require&options=endpoint%3D{endpoint_id}"
+            print(f"🔐 Using Neon connection string with endpoint: {endpoint_id}")
+        else:
+            neon_connection_string = None
+        
         if is_schema:
             # Backup a schema from the main database
             actual_db_name = validation.get("current_database")
             print(f"🔧 Connection: {db_user}@{db_host}:{db_port}/{actual_db_name} (schema: {db_name})")
             
-            # pg_dump command for schema only
-            cmd = [
-                self.pg_dump_path,
-                "-h", db_host,
-                "-p", db_port,
-                "-U", db_user,
-                "-d", actual_db_name,
-                "-n", db_name,  # Only this schema
-                "-f", str(file_path),
-                "--format=plain",
-                "--no-owner",
-                "--no-acl",
-                "--clean",
-                "--if-exists",
-                "--verbose"
-            ]
+            if neon_connection_string:
+                # Use connection string for Neon
+                cmd = [
+                    self.pg_dump_path,
+                    "-d", neon_connection_string,
+                    "-n", db_name,  # Only this schema
+                    "-f", str(file_path),
+                    "--format=plain",
+                    "--no-owner",
+                    "--no-acl",
+                    "--clean",
+                    "--if-exists",
+                    "--verbose"
+                ]
+            else:
+                # Use host/port for regular databases
+                cmd = [
+                    self.pg_dump_path,
+                    "-h", db_host,
+                    "-p", db_port,
+                    "-U", db_user,
+                    "-d", actual_db_name,
+                    "-n", db_name,  # Only this schema
+                    "-f", str(file_path),
+                    "--format=plain",
+                    "--no-owner",
+                    "--no-acl",
+                    "--clean",
+                    "--if-exists",
+                    "--verbose"
+                ]
         else:
             # Backup entire database
             print(f"🔧 Connection: {db_user}@{db_host}:{db_port}/{db_name}")
             
-            cmd = [
-                self.pg_dump_path,
-                "-h", db_host,
-                "-p", db_port,
-                "-U", db_user,
-                "-d", db_name,
-                "-f", str(file_path),
-                "--format=plain",
-                "--no-owner",
-                "--no-acl",
-                "--clean",
-                "--if-exists",
-                "--verbose"
-            ]
+            if neon_connection_string:
+                # Use connection string for Neon
+                cmd = [
+                    self.pg_dump_path,
+                    "-d", neon_connection_string,
+                    "-f", str(file_path),
+                    "--format=plain",
+                    "--no-owner",
+                    "--no-acl",
+                    "--clean",
+                    "--if-exists",
+                    "--verbose"
+                ]
+            else:
+                # Use host/port for regular databases
+                cmd = [
+                    self.pg_dump_path,
+                    "-h", db_host,
+                    "-p", db_port,
+                    "-U", db_user,
+                    "-d", db_name,
+                    "-f", str(file_path),
+                    "--format=plain",
+                    "--no-owner",
+                    "--no-acl",
+                    "--clean",
+                    "--if-exists",
+                    "--verbose"
+                ]
         
-        # Set password via environment
+        # Set password via environment (only if not using connection string)
         env = os.environ.copy()
-        env["PGPASSWORD"] = db_password
-        
-        # Add Neon-specific SSL settings
-        if is_neon:
-            print(f"🔐 Detected Neon database - using SSL connection")
-            env["PGSSLMODE"] = "require"
-            # Extract endpoint ID from Neon hostname
-            # Format: ep-xxxxx-xxxxx.us-east-1.aws.neon.tech
-            if "." in db_host:
-                endpoint_id = db_host.split(".")[0]
-                # Use proper format for PGOPTIONS with endpoint
-                env["PGOPTIONS"] = f"--endpoint={endpoint_id}"
-                print(f"🔑 Using Neon endpoint: {endpoint_id}")
+        if not neon_connection_string:
+            env["PGPASSWORD"] = db_password
         
         # Execute
         print(f"🚀 Executing pg_dump...")
