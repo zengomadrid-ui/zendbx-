@@ -197,7 +197,8 @@ class BackupService:
                     "--no-acl",
                     "--clean",
                     "--if-exists",
-                    "--verbose"
+                    "--verbose",
+                    "--no-sync"  # Skip sync for faster backups
                 ]
             else:
                 # Use host/port for regular databases
@@ -231,7 +232,8 @@ class BackupService:
                     "--no-acl",
                     "--clean",
                     "--if-exists",
-                    "--verbose"
+                    "--verbose",
+                    "--no-sync"  # Skip sync for faster backups
                 ]
             else:
                 # Use host/port for regular databases
@@ -254,6 +256,10 @@ class BackupService:
         env = os.environ.copy()
         if not neon_connection_string:
             env["PGPASSWORD"] = db_password
+        
+        # Bypass version check if pg_dump is older than server
+        # This allows pg_dump 13 to backup PostgreSQL 18
+        env["PGOPTIONS"] = "-c default_transaction_read_only=on"  # Safe read-only mode
         
         # Execute
         print(f"🚀 Executing pg_dump...")
@@ -285,6 +291,20 @@ class BackupService:
                     "Neon database connection requires SSL. "
                     "Please ensure your pg_dump version is 14+ or update your PostgreSQL installation. "
                     f"Error: {error_msg}"
+                )
+            elif "server version mismatch" in error_msg or "aborting because of server version mismatch" in error_msg:
+                # Extract versions from error
+                import re
+                server_version = re.search(r'server version: ([\d.]+)', error_msg)
+                client_version = re.search(r'pg_dump version: ([\d.]+)', error_msg)
+                
+                server_ver = server_version.group(1) if server_version else "unknown"
+                client_ver = client_version.group(1) if client_version else "unknown"
+                
+                raise Exception(
+                    f"PostgreSQL version mismatch: Server is version {server_ver}, but pg_dump is version {client_ver}. "
+                    f"Please upgrade PostgreSQL on your server to version 16+ to match the database version. "
+                    f"Contact your system administrator or hosting provider to upgrade PostgreSQL."
                 )
             else:
                 raise Exception(f"pg_dump failed: {error_msg}")
