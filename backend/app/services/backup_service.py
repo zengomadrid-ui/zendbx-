@@ -222,7 +222,8 @@ class BackupService:
             # Format: ep-xxxxx-xxxxx.us-east-1.aws.neon.tech
             if "." in db_host:
                 endpoint_id = db_host.split(".")[0]
-                env["PGOPTIONS"] = f"-c endpoint={endpoint_id}"
+                # Use proper format for PGOPTIONS with endpoint
+                env["PGOPTIONS"] = f"--endpoint={endpoint_id}"
                 print(f"🔑 Using Neon endpoint: {endpoint_id}")
         
         # Execute
