@@ -238,32 +238,107 @@ async def get_records(
         # 🔒 SECURITY: Check auth table protection
         check_auth_table_protection(schema_part, bare_table, 'SELECT', schema)
 
+        # Initialize type mapper for filter type conversion
+        type_mapper = get_type_mapper(pool)
+        column_types = await type_mapper.get_column_types(bare_table, schema_part)
+
         # Build WHERE conditions from ALL query params (Supabase-style)
         where_parts = []
         params = []
         param_idx = 1
         skip_keys = {'select', 'limit', 'offset', 'order'}
 
+        logger.info(f"🔍 FILTER PARSING DEBUG:")
         for key, val in request.query_params.items():
             if key in skip_keys:
                 continue
-            actual_val = val[3:] if val.startswith("eq.") else val
-            where_parts.append(f'"{key}" = ${param_idx}')
-            params.append(actual_val)
-            param_idx += 1
+            
+            # Parse operator prefix (eq., neq., gt., gte., lt., lte., in., contains., match., not.)
+            operator = '='
+            actual_val = val
+            
+            if val.startswith('eq.'):
+                operator = '='
+                actual_val = val[3:]
+            elif val.startswith('neq.'):
+                operator = '!='
+                actual_val = val[4:]
+            elif val.startswith('gt.'):
+                operator = '>'
+                actual_val = val[3:]
+            elif val.startswith('gte.'):
+                operator = '>='
+                actual_val = val[4:]
+            elif val.startswith('lt.'):
+                operator = '<'
+                actual_val = val[3:]
+            elif val.startswith('lte.'):
+                operator = '<='
+                actual_val = val[4:]
+            elif val.startswith('in.'):
+                operator = 'IN'
+                actual_val = val[3:]
+                # Parse comma-separated list for IN operator
+                if '(' in actual_val and ')' in actual_val:
+                    actual_val = actual_val.strip('()')
+                actual_val = tuple(v.strip() for v in actual_val.split(','))
+            elif val.startswith('contains.'):
+                operator = 'LIKE'
+                actual_val = f"%{val[9:]}%"
+            elif val.startswith('match.'):
+                operator = '~'  # PostgreSQL regex match
+                actual_val = val[6:]
+            elif val.startswith('not.'):
+                operator = '!='
+                actual_val = val[4:]
+            
+            # Convert value to proper PostgreSQL type
+            pg_type = column_types.get(key)
+            if pg_type:
+                if operator == 'IN' and isinstance(actual_val, tuple):
+                    # Convert each value in the tuple
+                    converted_val = tuple(type_mapper.convert_value(v, pg_type) for v in actual_val)
+                else:
+                    converted_val = type_mapper.convert_value(actual_val, pg_type)
+            else:
+                converted_val = actual_val
+            
+            logger.info(f"   Filter: {key} {operator} {actual_val} (type={pg_type}, converted={converted_val}, python_type={type(converted_val).__name__})")
+            
+            # Build WHERE clause
+            if operator == 'IN':
+                placeholders = ', '.join(f'${param_idx + i}' for i in range(len(converted_val)))
+                where_parts.append(f'"{key}" IN ({placeholders})')
+                params.extend(converted_val)
+                param_idx += len(converted_val)
+            else:
+                where_parts.append(f'"{key}" {operator} ${param_idx}')
+                params.append(converted_val)
+                param_idx += 1
 
+        # Validate and sanitize SELECT columns
+        if select != "*":
+            # Split columns and trim whitespace
+            columns = [col.strip() for col in select.split(',')]
+            # Quote each column identifier
+            select = ', '.join(f'"{col}"' for col in columns if col)
+        
         query = f"SELECT {select} FROM {qualified_table}"
         if where_parts:
             query += " WHERE " + " AND ".join(where_parts)
 
+        # Fix ORDER BY - properly quote column identifier
         if order:
             if "." in order:
                 col, direction = order.split(".", 1)
-                query += f" ORDER BY {col} {direction.upper()}"
+                query += f' ORDER BY "{col}" {direction.upper()}'
             else:
-                query += f" ORDER BY {order}"
+                query += f' ORDER BY "{order}"'
 
         query += f" LIMIT {limit} OFFSET {offset}"
+
+        logger.info(f"🔍 GENERATED SQL: {query}")
+        logger.info(f"🔍 BOUND PARAMS: {params} (types: {[type(p).__name__ for p in params]})")
 
         records = await enforcer.execute(pool, query, *params)
         result = [dict(r) for r in records]
@@ -329,10 +404,10 @@ async def update_record(
         # Determine filter
         if id:
             filter_col = "id"
-            filter_val = id[3:] if id.startswith("eq.") else id
+            filter_val_raw = id[3:] if id.startswith("eq.") else id
         else:
             filter_col = "user_id"
-            filter_val = user_id[3:] if user_id.startswith("eq.") else user_id
+            filter_val_raw = user_id[3:] if user_id.startswith("eq.") else user_id
         
         # Initialize type mapper
         type_mapper = get_type_mapper(pool)
@@ -345,6 +420,18 @@ async def update_record(
                     detail="Project schema is required. Table name must be qualified (schema.table) or project context must be set."
                 )
             schema_part = schema
+        
+        # Get column types for type conversion
+        column_types = await type_mapper.get_column_types(bare_table_name, schema_part)
+        
+        # Convert filter value to proper type
+        filter_col_type = column_types.get(filter_col)
+        if filter_col_type:
+            filter_val = type_mapper.convert_value(filter_val_raw, filter_col_type)
+            logger.info(f"🔍 UPDATE FILTER: {filter_col} = {filter_val_raw} → {filter_val} (type={filter_col_type}, python_type={type(filter_val).__name__})")
+        else:
+            filter_val = filter_val_raw
+            logger.info(f"⚠️ UPDATE FILTER: {filter_col} type unknown, using raw value {filter_val_raw}")
         
         # Convert data values using PostgreSQL type mapper
         converted_data = await type_mapper.convert_dict(
@@ -443,10 +530,25 @@ async def delete_record(
             schema_part, bare_table = table_name.split('.', 1)
             qualified_table = f'"{schema_part}"."{bare_table}"'
         else:
+            bare_table = table_name
+            schema_part = schema
             qualified_table = f'"{schema}"."{table_name}"' if schema else f'"{table_name}"'
 
         # Parse ID
-        id_value = id[3:] if id.startswith("eq.") else id
+        id_value_raw = id[3:] if id.startswith("eq.") else id
+        
+        # Initialize type mapper for id type conversion
+        type_mapper = get_type_mapper(pool)
+        column_types = await type_mapper.get_column_types(bare_table, schema_part)
+        
+        # Convert id value to proper type
+        id_col_type = column_types.get('id')
+        if id_col_type:
+            id_value = type_mapper.convert_value(id_value_raw, id_col_type)
+            logger.info(f"🔍 DELETE FILTER: id = {id_value_raw} → {id_value} (type={id_col_type}, python_type={type(id_value).__name__})")
+        else:
+            id_value = id_value_raw
+            logger.info(f"⚠️ DELETE FILTER: id type unknown, using raw value {id_value_raw}")
         
         # Execute delete with RLS enforcement
         result = await enforcer.execute_command(
