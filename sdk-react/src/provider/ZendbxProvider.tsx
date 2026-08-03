@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import type { ZendbxClient } from '@zendbx/sdk';
 import { ZendbxContext } from './ZendbxContext';
-import type { CacheConfig } from '../types';
 import {
   DEFAULT_STALE_TIME,
   DEFAULT_CACHE_TIME,

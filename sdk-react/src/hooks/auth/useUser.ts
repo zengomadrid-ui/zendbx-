@@ -42,7 +42,7 @@ export function useUser(): QueryState<User | null> {
       setError(null);
 
       const user = await client.auth.getUser();
-      setData(user);
+      setData(user as unknown as typeof data);
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Failed to fetch user');
       setError(error);

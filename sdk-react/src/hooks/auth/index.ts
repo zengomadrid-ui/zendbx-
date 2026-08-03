@@ -7,3 +7,5 @@ export { useUser } from './useUser';
 export { useSignIn } from './useSignIn';
 export { useSignUp } from './useSignUp';
 export { useSignOut } from './useSignOut';
+export { useSession } from './useSession';
+export type { SessionState } from './useSession';

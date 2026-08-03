@@ -53,8 +53,55 @@ export {
   useSignIn,
   useSignUp,
   useSignOut,
+  useSession,
 } from './hooks/auth';
-export type { AuthState } from './hooks/auth';
+export type { AuthState, SessionState } from './hooks/auth';
+
+// ========================================
+// Data Hooks
+// ========================================
+export {
+  useQuery,
+  useMutation,
+  useInsert,
+  useUpdate,
+  useDelete,
+} from './hooks/data';
+export type { UpdateVariables, DeleteVariables } from './hooks/data';
+
+// ========================================
+// Realtime Hooks
+// ========================================
+export {
+  useSubscription,
+  useChannel,
+} from './hooks/realtime';
+export type { ChannelState, ChannelOptions } from './hooks/realtime';
+
+// ========================================
+// Storage Hooks
+// ========================================
+export {
+  useUpload,
+  useDownload,
+  useFileList,
+} from './hooks/storage';
+export type {
+  UploadState,
+  DownloadState,
+  DownloadOptions,
+  FileMetadata,
+  FileListOptions,
+} from './hooks/storage';
+
+// ========================================
+// Cache Hooks
+// ========================================
+export {
+  useQueryCache,
+  useInvalidateQuery,
+} from './hooks/cache';
+export type { QueryCache } from './hooks/cache';
 
 // ========================================
 // Components

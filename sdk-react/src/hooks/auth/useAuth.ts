@@ -50,7 +50,7 @@ export function useAuth(): AuthState {
       if (currentSession) {
         // Fetch user data
         const userData = await client.auth.getUser();
-        setUser(userData);
+        setUser(userData as unknown as typeof user);
       } else {
         setUser(null);
       }
