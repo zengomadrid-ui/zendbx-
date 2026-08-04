@@ -1030,6 +1030,7 @@ from app.api import (
     mcp_server,  # MCP Server Implementation
     project_settings,  # Project Settings API
     schemas,  # Schema Discovery API (multi-schema table navigation)
+    cli_auth,  # CLI Authentication
 )
 
 # Multi-tenant APIs (new slug-based routing) - These MUST come first to override old endpoints
@@ -1045,6 +1046,7 @@ app.include_router(oauth_redirects.router)  # OAuth redirect URL management
 
 # Existing APIs
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(cli_auth.router, tags=["cli-auth"])  # CLI Authentication
 app.include_router(oauth.router, prefix="/api/auth", tags=["oauth"])
 app.include_router(oauth_settings.router, prefix="/api/auth", tags=["oauth-settings"])
 app.include_router(sessions.router, tags=["sessions"])

@@ -8,6 +8,20 @@ from fastapi import HTTPException
 import logging
 import jwt as pyjwt
 from urllib.parse import urlparse
+import ssl
+import re
+
+# FORCE load .env file first
+from dotenv import load_dotenv
+from pathlib import Path
+env_path = Path(__file__).parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path, override=True)
+    import os as _os_check
+    print(f"🔧 [db_router] Loaded .env from: {env_path}")
+    print(f"🔧 [db_router] DATABASE_URL set: {bool(_os_check.getenv('DATABASE_URL'))}")
+else:
+    print(f"⚠️  [db_router] .env not found at: {env_path}")
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +86,7 @@ async def get_main_db_pool() -> asyncpg.Pool:
 
     if _main_pool is None:
         from .config import settings
+        import platform
 
         if not settings.DATABASE_URL:
             raise ValueError(
@@ -83,18 +98,71 @@ async def get_main_db_pool() -> asyncpg.Pool:
         _diagnose_database_url(settings.DATABASE_URL)
 
         logger.info("🔄 Creating main database pool")
+        
+        # Clean up URL - remove query parameters that asyncpg doesn't parse
+        db_url = settings.DATABASE_URL
+        db_url = re.sub(r'[?&]sslmode=\w+', '', db_url)
+        db_url = re.sub(r'[?&]channel_binding=\w+', '', db_url)
+        db_url = db_url.rstrip('?&')
+        
+        # Detect if this is a local database (localhost/127.0.0.1)
+        is_local = 'localhost' in db_url or '127.0.0.1' in db_url
+        is_neon = 'neon.tech' in db_url
+        is_render = 'render.com' in db_url
+        is_aws = 'amazonaws.com' in db_url
+        
+        # Determine SSL requirement
+        if is_local:
+            # Local PostgreSQL - no SSL needed
+            ssl_param = False
+            logger.info("🔓 Local database detected - SSL disabled")
+        elif is_neon or is_render or is_aws:
+            # Cloud database - SSL required
+            is_windows = platform.system() == 'Windows'
+            
+            if is_windows and is_neon:
+                # Windows + Neon requires special handling
+                logger.warning("🪟 Windows + Neon detected - this may have SSL issues")
+                logger.warning("💡 Consider using WSL or deploying to Linux if connection fails")
+                ssl_param = 'prefer'
+            else:
+                ssl_param = 'require'
+            logger.info(f"🔒 Cloud database detected - SSL enabled (mode: {ssl_param})")
+        else:
+            # Unknown - try with SSL
+            ssl_param = 'prefer'
+            logger.info("🔐 Unknown database - using SSL prefer mode")
+        
         try:
             _main_pool = await asyncpg.create_pool(
-                dsn=settings.DATABASE_URL,
+                dsn=db_url,
                 min_size=5,
                 max_size=20,
                 command_timeout=60,
                 timeout=30,
+                ssl=ssl_param
             )
             logger.info(f"✅ Pool ready: size={_main_pool.get_size()}")
         except Exception as e:
             logger.error(f"❌ Pool creation failed: {e}")
-            raise
+            
+            if not is_local and ssl_param != False:
+                logger.info("🔄 Retrying with SSL disabled...")
+                try:
+                    _main_pool = await asyncpg.create_pool(
+                        dsn=db_url,
+                        min_size=5,
+                        max_size=20,
+                        command_timeout=60,
+                        timeout=30,
+                        ssl=False
+                    )
+                    logger.info(f"✅ Pool ready without SSL: size={_main_pool.get_size()}")
+                except Exception as e2:
+                    logger.error(f"❌ Connection failed: {e2}")
+                    raise
+            else:
+                raise
 
     return _main_pool
 

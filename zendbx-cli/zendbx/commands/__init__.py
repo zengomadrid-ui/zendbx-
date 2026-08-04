@@ -1,5 +1,35 @@
 """Command modules for ZenDBX CLI"""
 
-from . import init, connect, db_fix, db_analyze, db_dump, db_restore, status
+"""Command modules for ZenDBX CLI"""
 
-__all__ = ["init", "connect", "db_fix", "db_analyze", "db_dump", "db_restore", "status"]
+from . import (
+    auth,
+    init,
+    link,
+    projects,
+    db,
+    storage,
+    functions,
+    generators,
+    env,
+    secrets,
+    monitoring,
+    doctor,
+    update,
+)
+
+__all__ = [
+    'auth',
+    'init',
+    'link',
+    'projects',
+    'db',
+    'storage',
+    'functions',
+    'generators',
+    'env',
+    'secrets',
+    'monitoring',
+    'doctor',
+    'update',
+]

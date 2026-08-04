@@ -74,6 +74,8 @@ DATABASE_CONNECTION_FIX.md
 PRODUCTION_DEPLOYMENT_STEPS.md
 *_FIX.md
 *_FIX_*.md
+CLI_*.md
+WINDOWS_*.md
 
 # One-off SQL scripts (not migrations)
 GENERATE_PROJECT_KEYS.sql

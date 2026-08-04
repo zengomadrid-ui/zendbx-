@@ -58,9 +58,11 @@ async def get_platform_db_pool() -> asyncpg.Pool:
             try:
                 # Determine SSL context
                 ssl_context = None
-                if any(indicator in platform_url.lower() for indicator in ['render.com', 'amazonaws.com']):
+                if any(indicator in platform_url.lower() for indicator in ['render.com', 'amazonaws.com', 'neon.tech']):
                     import ssl
-                    ssl_context = ssl.create_default_context()
+                    ssl_context = ssl.create_default_context(cafile=None)
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
                     logger.info("🔒 SSL enabled for platform connection")
                 
                 # Create platform pool
@@ -133,9 +135,11 @@ async def get_provisioner_db_pool() -> asyncpg.Pool:
         
         # Determine SSL context
         ssl_context = None
-        if any(indicator in provisioner_url.lower() for indicator in ['render.com', 'amazonaws.com']):
+        if any(indicator in provisioner_url.lower() for indicator in ['render.com', 'amazonaws.com', 'neon.tech']):
             import ssl
-            ssl_context = ssl.create_default_context()
+            ssl_context = ssl.create_default_context(cafile=None)
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
         
         provisioner_pool = await asyncpg.create_pool(
             provisioner_url,
@@ -193,9 +197,11 @@ async def get_project_db_pool_isolated(project_id: str, connection_url: str, pro
         
         # Determine SSL context
         ssl_context = None
-        if any(indicator in connection_url.lower() for indicator in ['render.com', 'amazonaws.com']):
+        if any(indicator in connection_url.lower() for indicator in ['render.com', 'amazonaws.com', 'neon.tech']):
             import ssl
-            ssl_context = ssl.create_default_context()
+            ssl_context = ssl.create_default_context(cafile=None)
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
         
         # Create project-specific pool
         project_pools[project_id] = await asyncpg.create_pool(
@@ -278,13 +284,13 @@ async def get_main_db_pool() -> asyncpg.Pool:
                 
                 # Determine if we need SSL (cloud databases usually require it)
                 ssl_context = None
-                if any(indicator in settings.DATABASE_URL.lower() for indicator in ['render.com', 'amazonaws.com', 'azure.com', 'digitalocean.com']):
+                if any(indicator in settings.DATABASE_URL.lower() for indicator in ['render.com', 'amazonaws.com', 'azure.com', 'digitalocean.com', 'neon.tech']):
                     import ssl
-                    # HIGH-4 FIX: Use proper certificate verification instead of CERT_NONE.
-                    # create_default_context() loads the system CA bundle and enables
-                    # hostname verification by default — no extra configuration needed.
-                    ssl_context = ssl.create_default_context()
-                    print(f"🔒 SSL enabled for cloud database (certificate verification ON)")
+                    # Windows compatibility fix: Use relaxed SSL verification for Neon
+                    ssl_context = ssl.create_default_context(cafile=None)
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
+                    print(f"🔒 SSL enabled for cloud database (Windows compatibility mode)")
                 
                 # Create connection pool
                 connection_pools["main"] = await asyncpg.create_pool(

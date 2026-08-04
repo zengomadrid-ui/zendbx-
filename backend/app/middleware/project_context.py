@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # Paths that bypass project context entirely
 SKIP_PREFIXES = [
     "/api/auth/",
+    "/api/cli/",  # CLI Authentication
     "/api/projects",
     "/api/storage",
     "/api/admin",

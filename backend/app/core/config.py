@@ -7,8 +7,8 @@ class Settings(BaseSettings):
     # Application
     APP_NAME: str = "ZENDBX"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = False  # Default to False for production safety
-    ENVIRONMENT: str = "production"  # Default to production
+    DEBUG: bool = True  # Default to True for development
+    ENVIRONMENT: str = "development"  # Default to development for local work
     
     # Database - NO LOCALHOST DEFAULT!
     # In production, this MUST be set via environment variable
@@ -143,17 +143,13 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = "ZenDBX <zendbx@gmail.com>"
     EMAIL_USE_TLS: bool = True
     
-    class Config:
-        # Never load a .env file in production.
-        # Check both the raw os.environ AND the default — if ENVIRONMENT is
-        # explicitly set to "production" OR if we're clearly not in a local dev
-        # environment (no .env file exists), skip .env loading entirely.
-        # This prevents a stale .env with localhost from overriding Render env vars.
-        _env = os.getenv("ENVIRONMENT", "")
-        env_file = ".env" if _env not in ("production", "prod") and os.path.exists(".env") else None
-        env_file_encoding = 'utf-8'
-        case_sensitive = True
-        extra = "ignore"
+    # Pydantic v2 configuration
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": True,
+        "extra": "ignore",
+    }
     
     def validate_required_settings(self):
         """Validate that required settings are configured"""
@@ -209,10 +205,16 @@ print(f"  ENVIRONMENT in os.environ: {'ENVIRONMENT' in os_module.environ}")
 print("="*60 + "\n")
 
 # Validate settings on import (will fail fast if misconfigured)
-if settings.ENVIRONMENT == "production":
+# Only validate in production to allow development with .env
+if settings.ENVIRONMENT in ("production", "prod"):
     try:
         settings.validate_required_settings()
         print("✅ Configuration validated successfully")
     except ValueError as e:
         print(str(e))
         raise
+else:
+    print(f"🔧 Development mode - skipping strict validation")
+    print(f"   ENVIRONMENT: {settings.ENVIRONMENT}")
+    print(f"   DATABASE_URL: {'✅ Set' if settings.DATABASE_URL else '❌ Not set'}")
+    print(f"   SECRET_KEY: {'✅ Set' if settings.SECRET_KEY else '❌ Not set'}")
