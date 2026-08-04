@@ -232,6 +232,7 @@ async def handle_list_rows(
 
     # Get primary key column for this table
     pk_result = await execute_on_project_db(
+        project["id"],
         api_key_data["database_name"],
         """
         SELECT a.attname
@@ -324,6 +325,7 @@ async def handle_list_rows(
         
         # Execute
         rows = await execute_on_project_db(
+            project["id"],
             api_key_data["database_name"],
             query,
             *params
@@ -372,6 +374,7 @@ async def handle_get_row(
             query = f"SELECT * FROM {safe_table} WHERE id = $1"
         
         result = await execute_on_project_db(
+            project["id"],
             api_key_data["database_name"],
             query,
             row_id
@@ -429,6 +432,7 @@ async def handle_create_row(
         """
         
         result = await execute_on_project_db(
+            project["id"],
             api_key_data["database_name"],
             insert_sql,
             *values
@@ -478,6 +482,7 @@ async def handle_update_row(
         """
         
         result = await execute_on_project_db(
+            project["id"],
             api_key_data["database_name"],
             update_sql,
             *values
@@ -523,6 +528,7 @@ async def handle_delete_row(
     try:
         safe_table = _safe_ident(table_name, "table name")
         result = await execute_on_project_db(
+            project["id"],
             api_key_data["database_name"],
             f"DELETE FROM {safe_table} WHERE id = $1 RETURNING id",
             row_id

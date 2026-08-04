@@ -274,10 +274,11 @@ async def execute_csv_import(
                 )
             """
             
-            await execute_on_project_db(project["database_name"], create_sql)
+            await execute_on_project_db(project_id, project["database_name"], create_sql)
             
             # Create trigger — table name already validated above
             await execute_on_project_db(
+                project_id,
                 project["database_name"],
                 f"""
                 CREATE TRIGGER update_{table_name}_updated_at
@@ -329,6 +330,7 @@ async def execute_csv_import(
                 """
                 
                 await execute_on_project_db(
+                    project_id,
                     project["database_name"],
                     insert_sql,
                     *values
@@ -466,7 +468,7 @@ async def simple_csv_import(
             )
         """
         
-        await execute_on_project_db(project["database_name"], create_sql)
+        await execute_on_project_db(project_id, project["database_name"], create_sql)
         
         # Insert data
         inserted_count = 0
@@ -481,6 +483,7 @@ async def simple_csv_import(
                 """
                 
                 await execute_on_project_db(
+                    project_id,
                     project["database_name"],
                     insert_sql,
                     *row

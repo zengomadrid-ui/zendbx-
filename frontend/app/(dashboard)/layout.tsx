@@ -418,7 +418,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       >
         {/* Logo */}
         <div className="h-14 flex items-center px-5 border-b border-white/[0.04] flex-shrink-0">
-          <Link href="/" className="flex items-center gap-2.5 min-w-0">
+          <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0">
             <img src="/logo.png" alt="ZendBX" className="h-8 w-auto flex-shrink-0" />
             <span className="text-sm font-bold text-white tracking-tight truncate" style={{ fontVariantNumeric: 'tabular-nums' }}>
               ZendBX

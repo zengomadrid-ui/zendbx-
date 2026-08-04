@@ -6,11 +6,23 @@ import Link from 'next/link';
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 24);
     window.addEventListener('scroll', handler, { passive: true });
     return () => window.removeEventListener('scroll', handler);
+  }, []);
+
+  useEffect(() => {
+    // Check if user is authenticated
+    const token = localStorage.getItem('token');
+    const email = localStorage.getItem('user_email');
+    if (token) {
+      setIsAuthenticated(true);
+      setUserEmail(email);
+    }
   }, []);
 
   const navLinks = [
@@ -31,7 +43,7 @@ export default function Navbar() {
         }`}
       >
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2.5 group">
+        <Link href={isAuthenticated ? "/dashboard" : "/"} className="flex items-center gap-2.5 group">
           <div className="relative w-8 h-8">
             <div className="absolute inset-0 bg-orange-500 rounded-lg rotate-3 group-hover:rotate-6 transition-transform duration-300" />
             <div className="relative w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center">
@@ -56,21 +68,43 @@ export default function Navbar() {
 
         {/* Desktop CTAs */}
         <div className="hidden md:flex items-center gap-2">
-          <Link href="/login" className="px-3.5 py-2 text-[13px] font-medium text-neutral-400 hover:text-white transition-colors">
-            Sign in
-          </Link>
-          <Link
-            href="/signup"
-            className="relative group px-4 py-2 text-[13px] font-bold text-black rounded-xl overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-orange-500 group-hover:bg-orange-400 transition-colors duration-200" />
-            <span className="relative flex items-center gap-1.5">
-              Get started
-              <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-            </span>
-          </Link>
+          {isAuthenticated ? (
+            <>
+              <span className="px-3.5 py-2 text-[13px] font-medium text-neutral-400">
+                {userEmail}
+              </span>
+              <Link
+                href="/dashboard"
+                className="relative group px-4 py-2 text-[13px] font-bold text-black rounded-xl overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-orange-500 group-hover:bg-orange-400 transition-colors duration-200" />
+                <span className="relative flex items-center gap-1.5">
+                  Dashboard
+                  <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </span>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/login" className="px-3.5 py-2 text-[13px] font-medium text-neutral-400 hover:text-white transition-colors">
+                Sign in
+              </Link>
+              <Link
+                href="/signup"
+                className="relative group px-4 py-2 text-[13px] font-bold text-black rounded-xl overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-orange-500 group-hover:bg-orange-400 transition-colors duration-200" />
+                <span className="relative flex items-center gap-1.5">
+                  Get started
+                  <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </span>
+              </Link>
+            </>
+          )}
         </div>
 
         {/* Mobile burger */}
@@ -95,14 +129,28 @@ export default function Navbar() {
             </Link>
           ))}
           <div className="h-px bg-white/5 my-2" />
-          <Link href="/login" onClick={() => setMobileOpen(false)}
-            className="px-4 py-2.5 text-sm text-center text-neutral-400 hover:text-white rounded-xl hover:bg-white/5 transition-all">
-            Sign in
-          </Link>
-          <Link href="/signup" onClick={() => setMobileOpen(false)}
-            className="px-4 py-2.5 text-sm font-bold text-center text-black bg-orange-500 hover:bg-orange-400 rounded-xl transition-colors">
-            Get started free
-          </Link>
+          {isAuthenticated ? (
+            <>
+              <div className="px-4 py-2 text-xs text-neutral-500">
+                {userEmail}
+              </div>
+              <Link href="/dashboard" onClick={() => setMobileOpen(false)}
+                className="px-4 py-2.5 text-sm font-bold text-center text-black bg-orange-500 hover:bg-orange-400 rounded-xl transition-colors">
+                Go to Dashboard
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/login" onClick={() => setMobileOpen(false)}
+                className="px-4 py-2.5 text-sm text-center text-neutral-400 hover:text-white rounded-xl hover:bg-white/5 transition-all">
+                Sign in
+              </Link>
+              <Link href="/signup" onClick={() => setMobileOpen(false)}
+                className="px-4 py-2.5 text-sm font-bold text-center text-black bg-orange-500 hover:bg-orange-400 rounded-xl transition-colors">
+                Get started free
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>

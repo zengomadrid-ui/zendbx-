@@ -39,6 +39,7 @@ async def list_realtime_triggers(
         
         # List realtime triggers
         result = await execute_on_project_db(
+            project_id,
             database_name,
             "SELECT * FROM list_realtime_triggers()"
         )
@@ -77,6 +78,7 @@ async def add_realtime_trigger(
         
         # Add realtime trigger
         result = await execute_on_project_db(
+            project_id,
             database_name,
             f"SELECT add_realtime_trigger('{schema_name}', '{table_name}')"
         )
@@ -114,6 +116,7 @@ async def remove_realtime_trigger(
         
         # Remove realtime trigger
         result = await execute_on_project_db(
+            project_id,
             database_name,
             f"SELECT remove_realtime_trigger('{schema_name}', '{table_name}')"
         )
@@ -149,6 +152,7 @@ async def enable_realtime_all_tables(
         
         # Get all user tables
         tables_result = await execute_on_project_db(
+            project_id,
             database_name,
             """
             SELECT table_name 
@@ -164,6 +168,7 @@ async def enable_realtime_all_tables(
             table_name = row['table_name']
             try:
                 await execute_on_project_db(
+                    project_id,
                     database_name,
                     f"SELECT add_realtime_trigger('public', '{table_name}')"
                 )

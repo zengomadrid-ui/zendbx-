@@ -60,7 +60,7 @@ async def get_project_settings(
         AND tablename NOT LIKE 'information_schema_%'
         """
         
-        rls_result = await execute_on_project_db(database_name, rls_query)
+        rls_result = await execute_on_project_db(project_id, database_name, rls_query)
         rls_stats = rls_result[0] if rls_result else {"total_tables": 0, "rls_enabled_tables": 0}
         
         # Check Realtime status (if realtime functions exist)
@@ -71,7 +71,7 @@ async def get_project_settings(
             WHERE trigger_name LIKE '%realtime%' 
             AND event_object_schema = 'public'
             """
-            realtime_result = await execute_on_project_db(database_name, realtime_query)
+            realtime_result = await execute_on_project_db(project_id, database_name, realtime_query)
             realtime_count = realtime_result[0]["realtime_tables"] if realtime_result else 0
         except Exception as e:
             logger.warning(f"Could not check realtime status: {e}")
@@ -122,7 +122,7 @@ async def toggle_project_rls(
         AND table_name NOT LIKE 'pg_%'
         """
         
-        tables_result = await execute_on_project_db(database_name, tables_query)
+        tables_result = await execute_on_project_db(project_id, database_name, tables_query)
         
         affected_tables = []
         for row in tables_result:
@@ -130,11 +130,13 @@ async def toggle_project_rls(
             try:
                 if request.enabled:
                     await execute_on_project_db(
+                        project_id,
                         database_name,
                         f"ALTER TABLE \"{table_name}\" ENABLE ROW LEVEL SECURITY"
                     )
                 else:
                     await execute_on_project_db(
+                        project_id,
                         database_name,
                         f"ALTER TABLE \"{table_name}\" DISABLE ROW LEVEL SECURITY"
                     )
@@ -184,7 +186,7 @@ async def toggle_project_realtime(
         AND table_name NOT LIKE 'pg_%'
         """
         
-        tables_result = await execute_on_project_db(database_name, tables_query)
+        tables_result = await execute_on_project_db(project_id, database_name, tables_query)
         
         affected_tables = []
         for row in tables_result:
@@ -199,10 +201,11 @@ async def toggle_project_realtime(
                         AND routine_schema = 'public'
                     )
                     """
-                    function_exists = await execute_on_project_db(database_name, function_check)
+                    function_exists = await execute_on_project_db(project_id, database_name, function_check)
                     
                     if function_exists and function_exists[0].get('exists', False):
                         await execute_on_project_db(
+                            project_id,
                             database_name,
                             f"SELECT add_realtime_trigger('public', '{table_name}')"
                         )
@@ -226,15 +229,17 @@ async def toggle_project_realtime(
                         AFTER INSERT OR UPDATE OR DELETE ON "{table_name}"
                         FOR EACH ROW EXECUTE FUNCTION notify_realtime_{table_name}();
                         """
-                        await execute_on_project_db(database_name, trigger_sql)
+                        await execute_on_project_db(project_id, database_name, trigger_sql)
                 else:
                     # Remove realtime triggers
                     try:
                         await execute_on_project_db(
+                            project_id,
                             database_name,
                             f"DROP TRIGGER IF EXISTS realtime_trigger_{table_name} ON \"{table_name}\""
                         )
                         await execute_on_project_db(
+                            project_id,
                             database_name,
                             f"DROP FUNCTION IF EXISTS notify_realtime_{table_name}()"
                         )

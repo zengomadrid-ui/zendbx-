@@ -103,6 +103,7 @@ async def get_performance_metrics(
     try:
         # Get actual PostgreSQL stats
         db_stats = await execute_on_project_db(
+            project_id,
             project["database_name"],
             """
             SELECT 

@@ -268,6 +268,7 @@ async def auto_api_get(
             query = f"SELECT * FROM {safe_table} WHERE id = $1"
         
         result = await execute_on_project_db(
+            api_key_data["project_id"],
             api_key_data["database_name"],
             query,
             row_id
@@ -326,6 +327,7 @@ async def auto_api_create(
         """
         
         result = await execute_on_project_db(
+            api_key_data["project_id"],
             api_key_data["database_name"],
             insert_sql,
             *values
@@ -375,6 +377,7 @@ async def auto_api_update(
         """
         
         result = await execute_on_project_db(
+            api_key_data["project_id"],
             api_key_data["database_name"],
             update_sql,
             *values
@@ -420,6 +423,7 @@ async def auto_api_delete(
     try:
         safe_table = _safe_ident(table_name, "table name")
         result = await execute_on_project_db(
+            api_key_data["project_id"],
             api_key_data["database_name"],
             f"DELETE FROM {safe_table} WHERE id = $1 RETURNING id",
             row_id

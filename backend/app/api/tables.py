@@ -79,6 +79,7 @@ async def list_tables(
         print(f"🔍 Querying schema: '{schema_name}'")
         
         result = await execute_on_project_db(
+            project_id,
             database_name,
             f"""
             SELECT 
@@ -123,6 +124,7 @@ async def list_tables(
             try:
                 # Try with schema prefix first
                 count_result = await execute_on_project_db(
+                    project_id,
                     database_name,
                     f'SELECT COUNT(*) as count FROM "{row["table_schema"]}"."{row["table_name"]}"'
                 )
@@ -131,6 +133,7 @@ async def list_tables(
                 # Fallback to without schema prefix
                 try:
                     count_result = await execute_on_project_db(
+                        project_id,
                         database_name,
                         f'SELECT COUNT(*) as count FROM "{row["table_name"]}"'
                     )
@@ -215,10 +218,11 @@ async def create_table(
     
     try:
         # Execute in project database
-        await execute_on_project_db(project["database_name"], create_sql)
+        await execute_on_project_db(project_id, project["database_name"], create_sql)
         
         # Create trigger for updated_at
         await execute_on_project_db(
+            project_id,
             project["database_name"],
             f"""
             CREATE TRIGGER update_{table_data.table_name}_updated_at
@@ -415,6 +419,7 @@ async def get_table_rows(
         if table_name == "auth.users" or table_name == '"auth"."users"' or table_name == 'users':
             # Check if this table is in the auth schema
             schema_check = await execute_on_project_db(
+                project_id,
                 project["database_name"],
                 """
                 SELECT table_schema FROM information_schema.tables 
@@ -457,6 +462,7 @@ async def get_table_rows(
                 ORDER BY ordinal_position
             """
             columns = await execute_on_project_db(
+                project_id,
                 project["database_name"], 
                 col_query, 
                 schema_name, 
@@ -494,7 +500,7 @@ async def get_table_rows(
         params.extend([limit, offset])
         
         # Execute query
-        rows = await execute_on_project_db(project["database_name"], query, *params)
+        rows = await execute_on_project_db(project_id, project["database_name"], query, *params)
         
         # Get total count
         count_query = f"SELECT COUNT(*) as count FROM {table_name}"
@@ -502,6 +508,7 @@ async def get_table_rows(
             count_query += " WHERE " + " AND ".join(conditions[:len(conditions) - (2 if filters else 0)])
         
         count_result = await execute_on_project_db(
+            project_id,
             project["database_name"], 
             count_query,
             *params[:len(params) - 2]
@@ -556,6 +563,7 @@ async def insert_row(
         """
         
         result = await execute_on_project_db(
+            project_id,
             project["database_name"],
             insert_sql,
             *values
@@ -605,6 +613,7 @@ async def update_row(
         """
         
         result = await execute_on_project_db(
+            project_id,
             project["database_name"],
             update_sql,
             *values
@@ -660,6 +669,7 @@ async def update_cell(
         """
         
         result = await execute_on_project_db(
+            project_id,
             project["database_name"],
             update_sql,
             value,
@@ -720,6 +730,7 @@ async def bulk_insert_rows(
             """
             
             result = await execute_on_project_db(
+                project_id,
                 project["database_name"],
                 insert_sql,
                 *values
@@ -771,6 +782,7 @@ async def bulk_delete_rows(
         """
         
         result = await execute_on_project_db(
+            project_id,
             project["database_name"],
             delete_sql,
             *ids
@@ -807,6 +819,7 @@ async def export_table_data(
         if table_name == "auth.users" or table_name == '"auth"."users"' or table_name == 'users':
             # Check if this table is in the auth schema
             schema_check = await execute_on_project_db(
+                project_id,
                 project["database_name"],
                 """
                 SELECT table_schema FROM information_schema.tables 
@@ -833,6 +846,7 @@ async def export_table_data(
             query = f"SELECT * FROM {table_name}"
         
         rows = await execute_on_project_db(
+            project_id,
             project["database_name"],
             query
         )
