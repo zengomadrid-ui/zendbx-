@@ -101,7 +101,7 @@ export default function APIPlaygroundPage() {
       }
       
       const data = await res.json();
-      console.log('API Keys response:', data);
+      // Security: Do not log API keys in console
       
       setApiKeys(data.keys || []);
       if (data.keys && data.keys.length > 0) {

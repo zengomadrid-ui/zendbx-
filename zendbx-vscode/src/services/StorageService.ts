@@ -37,7 +37,7 @@ export class StorageService {
 
       console.log('[StorageService] listBuckets - projectId:', projectId);
       console.log('[StorageService] project keys present:', !!keys);
-      console.log('[StorageService] anon_key:', keys?.anon_key);
+      // Security: Do not log API keys
       
       if (!keys) {
         vscode.window.showErrorMessage('Failed to get project keys');

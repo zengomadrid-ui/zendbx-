@@ -89,7 +89,7 @@ export default function APIKeysPage() {
       // Use the /keys endpoint with reveal=true to get FULL keys
       const url = getApiUrl(`api/projects/${selectedProject}/keys?reveal=true`);
       
-      console.log('Fetching FULL API keys from:', url);
+      // Security: API key endpoint - do not log sensitive data
       
       const response = await fetch(url, {
         headers: {
@@ -111,8 +111,7 @@ export default function APIKeysPage() {
       if (data.keys?.anon) {
         // Priority: encrypted_key > full_key > key_prefix
         const fullKey = data.keys.anon.encrypted_key || data.keys.anon.full_key || data.keys.anon.key_prefix || 'No key available';
-        console.log('Anon key length:', fullKey.length);
-        console.log('Anon key:', fullKey.substring(0, 50) + '...');
+        // Security: Do not log API keys to console
         keysArray.push({
           id: data.keys.anon.id,
           name: data.keys.anon.name,
@@ -128,8 +127,7 @@ export default function APIKeysPage() {
       if (data.keys?.service_role) {
         // Priority: encrypted_key > full_key > key_prefix
         const fullKey = data.keys.service_role.encrypted_key || data.keys.service_role.full_key || data.keys.service_role.key_prefix || 'No key available';
-        console.log('Service role key length:', fullKey.length);
-        console.log('Service role key:', fullKey.substring(0, 50) + '...');
+        // Security: Do not log API keys to console
         keysArray.push({
           id: data.keys.service_role.id,
           name: data.keys.service_role.name,
@@ -142,7 +140,7 @@ export default function APIKeysPage() {
         });
       }
       
-      console.log('Transformed keys:', keysArray);
+      // Security: Do not log API keys array
       setApiKeys(keysArray);
     } catch (err: any) {
       console.error('Error fetching keys:', err);
