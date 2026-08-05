@@ -1,147 +1,310 @@
 import Link from 'next/link';
-import { CodeBlock, Note } from './components';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Zendbx Documentation — AI-Native Backend Platform',
+  title: 'ZendBX Documentation — AI-Native Backend Platform',
   description:
-    'Complete documentation for Zendbx: PostgreSQL, Authentication, Storage, Realtime APIs, REST, SDK, and CLI.',
+    'Everything you need to build with ZendBX — from quick starts to advanced guides on database, auth, storage, and realtime.',
   alternates: { canonical: 'https://zendbx.in/docs' },
   openGraph: {
-    title: 'Zendbx Documentation',
-    description: 'Complete docs for Zendbx BaaS: PostgreSQL, Auth, Storage, Realtime, REST API, SDK.',
+    title: 'ZendBX Documentation',
+    description: 'Complete docs for ZendBX BaaS: PostgreSQL, Auth, Storage, Realtime, REST API, SDK.',
     url: 'https://zendbx.in/docs',
-    siteName: 'Zendbx',
+    siteName: 'ZendBX',
     type: 'website',
   },
 };
 
-const cards = [
-  { label: 'Authentication', desc: 'Email, OAuth, sessions, JWT, and MFA.', href: '/docs/auth' },
-  { label: 'Database', desc: 'PostgreSQL with row-level security and a fluent query builder.', href: '/docs/database' },
-  { label: 'Storage', desc: 'Bucket-based file storage with signed URLs.', href: '/docs/storage' },
-  { label: 'Realtime', desc: 'WebSocket subscriptions for live database changes.', href: '/docs/realtime' },
-  { label: 'SDK', desc: 'Official TypeScript SDK — npm install @zendbx/sdk.', href: '/docs/sdk' },
-  { label: 'REST API', desc: 'Universal REST endpoints for any table.', href: '/docs/rest' },
-  { label: 'CLI', desc: 'Manage projects, backups, and migrations from the terminal.', href: '/docs/cli' },
-  { label: 'Architecture', desc: 'How ZendBX works under the hood.', href: '/docs/architecture' },
+const docSections = [
+  {
+    title: 'Getting Started',
+    pageCount: 5,
+    description: 'Everything you need to start building with ZendBX, from installation to your first project.',
+    pages: [
+      'Introduction',
+      'Quick Start',
+      'Installation',
+      'Dashboard',
+    ],
+    moreCount: 1,
+    exploreHref: '/docs',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Authentication',
+    pageCount: 5,
+    description: 'Secure user authentication with email/password, OAuth providers, sessions, and JWT.',
+    pages: [
+      'Overview',
+      'Email & Password',
+      'OAuth Providers',
+      'Sessions & JWT',
+    ],
+    moreCount: 1,
+    exploreHref: '/docs/auth',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Database',
+    pageCount: 7,
+    description: 'PostgreSQL database with row-level security, query builder, filters, and realtime subscriptions.',
+    pages: [
+      'Overview',
+      'Tables & Schemas',
+      'CRUD Operations',
+      'Query Builder',
+    ],
+    moreCount: 3,
+    exploreHref: '/docs/database',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Storage',
+    pageCount: 5,
+    description: 'Bucket-based file storage with signed URLs, upload, download, and access control.',
+    pages: [
+      'Overview',
+      'Buckets',
+      'Upload & Download',
+      'Signed URLs',
+    ],
+    moreCount: 1,
+    exploreHref: '/docs/storage',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Realtime',
+    pageCount: 3,
+    description: 'WebSocket subscriptions for live database changes and realtime collaboration features.',
+    pages: [
+      'Overview',
+      'Subscriptions',
+      'API Reference',
+    ],
+    moreCount: 0,
+    exploreHref: '/docs/realtime',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'SDK',
+    pageCount: 6,
+    description: 'Official TypeScript SDK with full type safety and IntelliSense support.',
+    pages: [
+      'Overview',
+      'createClient()',
+      'Authentication',
+      'Database',
+    ],
+    moreCount: 2,
+    exploreHref: '/docs/sdk',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+      </svg>
+    ),
+  },
+  {
+    title: 'REST API',
+    pageCount: 5,
+    description: 'Universal REST endpoints for every table with automatic CRUD, filtering, and pagination.',
+    pages: [
+      'Overview',
+      'Authentication',
+      'CRUD Endpoints',
+      'Schema-Qualified Tables',
+    ],
+    moreCount: 1,
+    exploreHref: '/docs/rest',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'CLI',
+    pageCount: 2,
+    description: 'Command-line interface to manage projects, backups, and migrations from your terminal.',
+    pages: [
+      'Installation',
+      'Commands',
+    ],
+    moreCount: 0,
+    exploreHref: '/docs/cli',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Security',
+    pageCount: 3,
+    description: 'Learn about JWT authentication, row-level security, rate limiting, and best practices.',
+    pages: [
+      'Overview',
+      'JWT & RLS',
+      'Rate Limiting',
+    ],
+    moreCount: 0,
+    exploreHref: '/docs/security',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    ),
+  },
+  {
+    title: 'Migration Guides',
+    pageCount: 2,
+    description: 'Step-by-step guides to migrate from Supabase, Firebase, or other backend platforms.',
+    pages: [
+      'Supabase → ZendBX',
+      'Firebase → ZendBX',
+    ],
+    moreCount: 0,
+    exploreHref: '/docs/migrate/supabase',
+    icon: (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+      </svg>
+    ),
+  },
 ];
-
-const quickStart = `npm install @zendbx/sdk`;
-
-const helloWorld = `import { createClient } from '@zendbx/sdk';
-
-const db = createClient({
-  apiUrl: process.env.ZENDBX_URL!,
-  anonKey: process.env.ZENDBX_ANON_KEY!,
-  projectSlug: 'my-project',
-});
-
-// Sign up a user
-const { data, error } = await db.auth.signUp({
-  email: 'user@example.com',
-  password: 'password123',
-});
-
-// Insert a row
-await db.from('todos').insert({ title: 'Build something', done: false });
-
-// Query with filters
-const { data: todos } = await db
-  .from('todos')
-  .select('*')
-  .eq('done', false)
-  .order('created_at', { ascending: false });`;
 
 export default function DocsPage() {
   return (
-    <article className="prose-docs">
-      {/* Hero */}
-      <div className="mb-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs font-semibold mb-4">
-          <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-          ZendBX v1.1.0
-        </div>
-        <h1 className="text-4xl font-extrabold text-white mb-3">ZendBX Documentation</h1>
-        <p className="text-lg text-gray-400 max-w-2xl">
-          ZendBX is an open Backend-as-a-Service platform built on PostgreSQL.
-          Authentication, database, storage, realtime, AI, and REST APIs — all in one place.
+    <div className="max-w-6xl">
+      {/* Hero Section */}
+      <div className="mb-12">
+        <h1 className="text-4xl md:text-5xl font-extrabold text-white mb-4">
+          Documentation
+        </h1>
+        <p className="text-lg text-gray-400 max-w-3xl mb-8">
+          Everything you need to build with ZendBX — from quick starts to advanced guides on database, auth, storage, and realtime.
         </p>
-      </div>
 
-      {/* Feature grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-12">
-        {cards.map((c) => (
+        {/* Featured Actions */}
+        <div className="flex flex-wrap items-center gap-3">
           <Link
-            key={c.label}
-            href={c.href}
-            className="flex items-start gap-3 p-4 rounded-xl border border-zinc-800 bg-zinc-950 hover:border-orange-500/40 hover:bg-zinc-900 transition-all group"
+            href="/docs/quickstart"
+            className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-medium rounded-lg transition-colors shadow-lg shadow-orange-500/20"
           >
-            <div>
-              <p className="text-sm font-semibold text-white group-hover:text-orange-400 transition-colors">{c.label}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{c.desc}</p>
+            Get Started
+          </Link>
+          <Link
+            href="/docs/sdk"
+            className="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-medium rounded-lg transition-colors border border-zinc-700"
+          >
+            SDK Documentation
+          </Link>
+          <button className="ml-auto hidden md:flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-gray-400 rounded-lg transition-colors border border-zinc-800">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <span className="text-sm">Search docs...</span>
+            <kbd className="ml-2 px-2 py-0.5 text-xs rounded bg-zinc-800 border border-zinc-700 font-mono">⌘K</kbd>
+          </button>
+        </div>
+      </div>
+
+      {/* Documentation Sections Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {docSections.map((section) => (
+          <div
+            key={section.title}
+            className="p-6 rounded-xl border border-zinc-800 bg-zinc-950 hover:border-orange-500/40 transition-all group"
+          >
+            {/* Section Header */}
+            <div className="flex items-start gap-4 mb-4">
+              <div className="p-3 rounded-lg bg-orange-500/10 text-orange-400 group-hover:bg-orange-500/20 transition-colors">
+                {section.icon}
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-lg font-bold text-white group-hover:text-orange-400 transition-colors">
+                    {section.title}
+                  </h3>
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-zinc-800 text-gray-400">
+                    {section.pageCount} pages
+                  </span>
+                </div>
+                <p className="text-sm text-gray-400">
+                  {section.description}
+                </p>
+              </div>
             </div>
-          </Link>
+
+            {/* Page List */}
+            <ul className="space-y-2 mb-4">
+              {section.pages.map((page) => (
+                <li key={page} className="text-sm text-gray-500 flex items-center gap-2">
+                  <svg className="w-3 h-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {page}
+                </li>
+              ))}
+              {section.moreCount > 0 && (
+                <li className="text-sm text-gray-600 italic ml-5">
+                  +{section.moreCount} more
+                </li>
+              )}
+            </ul>
+
+            {/* Explore Button */}
+            <Link
+              href={section.exploreHref}
+              className="inline-flex items-center gap-2 text-sm font-medium text-orange-400 hover:text-orange-300 transition-colors"
+            >
+              Explore
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
         ))}
       </div>
 
-      {/* Install */}
-      <h2 className="text-xl font-bold text-white mt-10 mb-3 pb-2 border-b border-zinc-800">
-        Install the SDK
-      </h2>
-      <CodeBlock code={quickStart} lang="bash" />
-
-      <Note>
-        The SDK is published to npm as <code className="text-orange-400">@zendbx/sdk</code>. 
-        It works in React, Next.js, Vue, Svelte, Node.js, and any modern JavaScript environment.
-      </Note>
-
-      {/* Hello world */}
-      <h2 className="text-xl font-bold text-white mt-10 mb-3 pb-2 border-b border-zinc-800">
-        Hello World
-      </h2>
-      <p className="text-gray-400 text-sm mb-2">Three operations in ten lines — sign up, insert, and query.</p>
-      <CodeBlock code={helloWorld} lang="typescript" />
-
-      {/* Core concepts */}
-      <h2 className="text-xl font-bold text-white mt-10 mb-3 pb-2 border-b border-zinc-800">
-        Core Concepts
-      </h2>
-      <div className="space-y-3 text-sm text-gray-400">
-        <div className="flex gap-3">
-          <span className="text-orange-500 font-bold mt-0.5">→</span>
-          <div><span className="text-white font-medium">Projects</span> — each project gets its own PostgreSQL schema, API keys, and isolated data.</div>
-        </div>
-        <div className="flex gap-3">
-          <span className="text-orange-500 font-bold mt-0.5">→</span>
-          <div><span className="text-white font-medium">API Keys</span> — every project has an <code className="text-orange-400">anon</code> key (public) and a <code className="text-orange-400">service_role</code> key (private, bypasses RLS).</div>
-        </div>
-        <div className="flex gap-3">
-          <span className="text-orange-500 font-bold mt-0.5">→</span>
-          <div><span className="text-white font-medium">Row Level Security (RLS)</span> — PostgreSQL policies control which rows each user can read or write. Enabled by default.</div>
-        </div>
-        <div className="flex gap-3">
-          <span className="text-orange-500 font-bold mt-0.5">→</span>
-          <div><span className="text-white font-medium">Project Slug</span> — human-readable identifier for your project, used in all API URLs: <code className="text-orange-400">/p/{'{'}slug{'}'}/...</code>.</div>
-        </div>
-      </div>
-
-      {/* Next steps */}
-      <h2 className="text-xl font-bold text-white mt-10 mb-3 pb-2 border-b border-zinc-800">
-        Next Steps
-      </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {[
-          { label: 'Quick Start →', href: '/docs/quickstart', desc: 'Build your first app in 5 minutes' },
-          { label: 'SDK Reference →', href: '/docs/sdk', desc: 'Every method documented with examples' },
-          { label: 'REST API →', href: '/docs/rest', desc: 'Use ZendBX from any language' },
-        ].map((n) => (
-          <Link key={n.href} href={n.href} className="p-4 rounded-xl border border-zinc-800 bg-zinc-950 hover:border-orange-500/40 transition-colors">
-            <p className="text-sm font-semibold text-orange-400">{n.label}</p>
-            <p className="text-xs text-gray-500 mt-1">{n.desc}</p>
+      {/* Bottom CTA */}
+      <div className="mt-12 p-6 rounded-xl border border-orange-500/20 bg-gradient-to-br from-orange-500/10 to-orange-500/5">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-white mb-1">Ready to build?</h3>
+            <p className="text-sm text-gray-400">
+              Create your first project and start shipping in minutes.
+            </p>
+          </div>
+          <Link
+            href="https://devapp.zendbx.in"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-5 py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-medium rounded-lg transition-colors shadow-lg shadow-orange-500/20 whitespace-nowrap"
+          >
+            Get Started Free
           </Link>
-        ))}
+        </div>
       </div>
-    </article>
+    </div>
   );
 }

@@ -71,10 +71,10 @@ export default function Hero() {
           className={`max-w-4xl text-5xl sm:text-6xl lg:text-[72px] font-semibold leading-[1.08] tracking-[-0.01em] text-white mb-6 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'}`}
           style={{ transitionDelay: '200ms' }}
         >
-          The instant backend
+          Cook your app.
           <br />
           <span className="relative">
-            <span className="text-orange-500">for modern apps.</span>
+            <span className="text-orange-500">We'll handle the backend.</span>
             {/* Underline accent */}
             <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 400 12" preserveAspectRatio="none">
               <path d="M0 8 Q100 2 200 8 Q300 14 400 8" stroke="#f97316" strokeWidth="2.5" fill="none" strokeOpacity="0.4" />

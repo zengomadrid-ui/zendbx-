@@ -22,7 +22,7 @@ export default function Footer() {
               <span className="text-white font-bold text-[15px]">ZendBX</span>
             </Link>
             <p className="text-sm text-neutral-700 leading-relaxed max-w-[220px]">
-              The instant backend platform for modern developers.
+              Cook your app. We'll handle the backend.
             </p>
             {/* Social */}
             <div className="flex gap-2 mt-5">

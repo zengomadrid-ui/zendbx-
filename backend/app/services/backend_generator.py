@@ -11,7 +11,7 @@ import re
 from typing import Dict, List, Any, Optional
 from uuid import UUID
 from app.core.config import settings
-from app.core.database import get_project_db_pool, execute_on_main_db
+from app.core.database import execute_on_main_db, execute_on_project_db
 import asyncpg
 
 
@@ -444,13 +444,12 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             
             db_name = project_result[0]["database_name"]
             project_slug = project_result[0]["slug"] or str(project_id)
-            pool = await get_project_db_pool(db_name)
             results["slug"] = project_slug
             
         except Exception as e:
             return {
                 "success": False,
-                "error": f"Failed to connect to project database: {str(e)}"
+                "error": f"Failed to get project information: {str(e)}"
             }
         
         # Execute plan steps
@@ -458,7 +457,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             # Step 1: Create all tables
             for table_def in plan.get("tables", []):
                 try:
-                    await self._create_table(pool, table_def, project_id, user_id, db_name)
+                    await self._create_table(project_id, db_name, table_def, user_id)
                     results["tables_created"].append(table_def["name"])
                 except Exception as e:
                     results["errors"].append(f"Failed to create table {table_def['name']}: {str(e)}")
@@ -468,7 +467,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             for table_def in plan.get("tables", []):
                 if "foreign_keys" in table_def and table_def["foreign_keys"]:
                     try:
-                        await self._create_foreign_keys(pool, table_def, db_name)
+                        await self._create_foreign_keys(project_id, db_name, table_def)
                         results["relationships_created"].append(table_def["name"])
                     except Exception as e:
                         results["errors"].append(f"Failed to create foreign keys for {table_def['name']}: {str(e)}")
@@ -477,7 +476,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             for table_def in plan.get("tables", []):
                 if "indexes" in table_def and table_def["indexes"]:
                     try:
-                        await self._create_indexes(pool, table_def, db_name)
+                        await self._create_indexes(project_id, db_name, table_def)
                         results["indexes_created"].append(table_def["name"])
                     except Exception as e:
                         results["errors"].append(f"Failed to create indexes for {table_def['name']}: {str(e)}")
@@ -486,7 +485,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             for table_def in plan.get("tables", []):
                 if table_def.get("enable_auth", False):
                     try:
-                        await self._enable_auth(pool, table_def, db_name)
+                        await self._enable_auth(project_id, db_name, table_def)
                         results["auth_enabled"].append(table_def["name"])
                     except Exception as e:
                         results["errors"].append(f"Failed to enable auth for {table_def['name']}: {str(e)}")
@@ -495,7 +494,7 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             for table_def in plan.get("tables", []):
                 if table_def.get("enable_realtime", False):
                     try:
-                        await self._enable_realtime(pool, table_def, db_name)
+                        await self._enable_realtime(project_id, db_name, table_def)
                         results["realtime_enabled"].append(table_def["name"])
                     except Exception as e:
                         results["errors"].append(f"Failed to enable realtime for {table_def['name']}: {str(e)}")
@@ -512,13 +511,12 @@ Adapt the table name and columns to match the description. Keep it minimal."""
     
     async def _create_table(
         self,
-        pool: asyncpg.Pool,
-        table_def: Dict[str, Any],
         project_id: UUID,
-        user_id: UUID,
-        schema_name: str
+        schema_name: str,
+        table_def: Dict[str, Any],
+        user_id: UUID
     ):
-        """Create a single table from definition"""
+        """Create a single table from definition using project role"""
         
         table_name = table_def["name"]
         columns = table_def["columns"]
@@ -542,18 +540,17 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             
             column_defs.append(col_def)
         
-        # CRITICAL: Create table with explicit schema prefix to ensure it's in the correct schema
+        # CRITICAL: Create table with explicit schema prefix using PROJECT ROLE
+        # This ensures tables are owned by zendbx_p_<uuid> NOT postgres superuser
         create_sql = f"""
         CREATE TABLE IF NOT EXISTS "{schema_name}"."{table_name}" (
             {', '.join(column_defs)}
         );
         """
         
-        async with pool.acquire() as conn:
-            # Set search_path to project schema
-            await conn.execute(f'SET search_path TO "{schema_name}", public')
-            await conn.execute(create_sql)
-            print(f"✅ Created table '{schema_name}'.'{table_name}'")
+        # Use execute_on_project_db to run as project role (NOT superuser)
+        await execute_on_project_db(project_id, schema_name, create_sql)
+        print(f"✅ Created table '{schema_name}'.'{table_name}' owned by project role")
         
         # Store in user_tables for tracking (with error handling)
         schema_def = {
@@ -578,8 +575,8 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             # If user_tables doesn't exist or has different schema, just skip tracking
             print(f"⚠️ Warning: Could not track table in user_tables: {str(e)}")
     
-    async def _create_foreign_keys(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
-        """Add foreign key constraints"""
+    async def _create_foreign_keys(self, project_id: UUID, schema_name: str, table_def: Dict[str, Any]):
+        """Add foreign key constraints using project role"""
         
         table_name = table_def["name"]
         
@@ -596,16 +593,17 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             ON DELETE {on_delete};
             """
             
-            async with pool.acquire() as conn:
-                await conn.execute(f'SET search_path TO "{schema_name}", public')
-                try:
-                    await conn.execute(alter_sql)
-                    print(f"✅ Created foreign key on '{schema_name}'.'{table_name}'.'{fk['column']}'")
-                except asyncpg.DuplicateObjectError:
-                    pass  # Constraint already exists
+            # Use execute_on_project_db to run as project role
+            try:
+                await execute_on_project_db(project_id, schema_name, alter_sql)
+                print(f"✅ Created foreign key on '{schema_name}'.'{table_name}'.'{fk['column']}'")
+            except Exception as e:
+                # Ignore duplicate constraint errors
+                if "already exists" not in str(e).lower():
+                    raise
     
-    async def _create_indexes(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
-        """Create indexes on table"""
+    async def _create_indexes(self, project_id: UUID, schema_name: str, table_def: Dict[str, Any]):
+        """Create indexes on table using project role"""
         
         table_name = table_def["name"]
         
@@ -621,104 +619,110 @@ Adapt the table name and columns to match the description. Keep it minimal."""
             ON "{schema_name}"."{table_name}" ({', '.join(f'"{col}"' for col in columns)});
             """
             
-            async with pool.acquire() as conn:
-                await conn.execute(f'SET search_path TO "{schema_name}", public')
-                await conn.execute(create_index_sql)
-                print(f"✅ Created index '{index_name}' on '{schema_name}'.'{table_name}'")
+            # Use execute_on_project_db to run as project role
+            await execute_on_project_db(project_id, schema_name, create_index_sql)
+            print(f"✅ Created index '{index_name}' on '{schema_name}'.'{table_name}'")
     
-    async def _enable_auth(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
-        """Enable RLS and create basic auth policy"""
+    async def _enable_auth(self, project_id: UUID, schema_name: str, table_def: Dict[str, Any]):
+        """Enable RLS and create basic auth policy using project role"""
         
         table_name = table_def["name"]
         rls_policy = table_def.get("rls_policy", "Users can only access their own data")
         
-        # Enable RLS with explicit schema prefix
-        async with pool.acquire() as conn:
-            await conn.execute(f'SET search_path TO "{schema_name}", public')
-            await conn.execute(f'ALTER TABLE "{schema_name}"."{table_name}" ENABLE ROW LEVEL SECURITY;')
-            
-            # Check if table has user_id column
-            has_user_id = await conn.fetchval(
-                f"""
-                SELECT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_schema = '{schema_name}' AND table_name = $1 AND column_name = 'user_id'
-                )
-                """,
-                table_name
-            )
-            
-            if not has_user_id:
-                # Skip policy creation if no user_id column
-                print(f"Warning: Table {table_name} has no user_id column, skipping RLS policy")
-                return
-            
-            # Create basic policy based on description
-            if "own data" in rls_policy.lower() or "user" in rls_policy.lower():
-                # Assume table has user_id column
-                policy_sql = f"""
-                CREATE POLICY "{table_name}_user_policy" ON "{schema_name}"."{table_name}"
-                FOR ALL
-                USING (
-                    auth.is_service_role() OR 
-                    user_id::TEXT = auth.current_user_id()
-                );
-                """
-                try:
-                    await conn.execute(policy_sql)
-                    print(f"✅ Enabled RLS on '{schema_name}'.'{table_name}'")
-                except asyncpg.DuplicateObjectError:
-                    pass
-                except Exception as e:
+        # Enable RLS with explicit schema prefix using project role
+        await execute_on_project_db(
+            project_id, 
+            schema_name, 
+            f'ALTER TABLE "{schema_name}"."{table_name}" ENABLE ROW LEVEL SECURITY;'
+        )
+        
+        # Check if table has user_id column
+        has_user_id_result = await execute_on_project_db(
+            project_id,
+            schema_name,
+            f"""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_schema = '{schema_name}' AND table_name = $1 AND column_name = 'user_id'
+            ) as has_user_id
+            """,
+            table_name
+        )
+        
+        has_user_id = has_user_id_result[0]["has_user_id"] if has_user_id_result else False
+        
+        if not has_user_id:
+            # Skip policy creation if no user_id column
+            print(f"Warning: Table {table_name} has no user_id column, skipping RLS policy")
+            return
+        
+        # Create basic policy based on description
+        if "own data" in rls_policy.lower() or "user" in rls_policy.lower():
+            # Assume table has user_id column
+            policy_sql = f"""
+            CREATE POLICY "{table_name}_user_policy" ON "{schema_name}"."{table_name}"
+            FOR ALL
+            USING (
+                auth.is_service_role() OR 
+                user_id::TEXT = auth.current_user_id()
+            );
+            """
+            try:
+                await execute_on_project_db(project_id, schema_name, policy_sql)
+                print(f"✅ Enabled RLS on '{schema_name}'.'{table_name}'")
+            except Exception as e:
+                # Ignore duplicate policy errors
+                if "already exists" not in str(e).lower():
                     print(f"Warning: Could not create RLS policy: {str(e)}")
     
-    async def _enable_realtime(self, pool: asyncpg.Pool, table_def: Dict[str, Any], schema_name: str):
-        """Enable realtime triggers on table"""
+    async def _enable_realtime(self, project_id: UUID, schema_name: str, table_def: Dict[str, Any]):
+        """Enable realtime triggers on table using project role"""
         
         table_name = table_def["name"]
         
-        async with pool.acquire() as conn:
-            await conn.execute(f'SET search_path TO "{schema_name}", public')
-            
-            # Always (re)create the notify function in the schema
-            try:
-                await conn.execute(f"""
-                    CREATE OR REPLACE FUNCTION "{schema_name}".notify_database_change()
-                    RETURNS TRIGGER AS $$
-                    BEGIN
-                        PERFORM pg_notify(
-                            'database_changes',
-                            json_build_object(
-                                'table', TG_TABLE_NAME,
-                                'action', TG_OP,
-                                'data', row_to_json(NEW)
-                            )::text
-                        );
-                        RETURN NEW;
-                    END;
-                    $$ LANGUAGE plpgsql;
-                """)
-            except Exception as e:
-                print(f"Warning: Could not create notify function: {str(e)}")
-                return
+        # Always (re)create the notify function in the schema using project role
+        try:
+            await execute_on_project_db(
+                project_id,
+                schema_name,
+                f"""
+                CREATE OR REPLACE FUNCTION "{schema_name}".notify_database_change()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    PERFORM pg_notify(
+                        'database_changes',
+                        json_build_object(
+                            'table', TG_TABLE_NAME,
+                            'action', TG_OP,
+                            'data', row_to_json(NEW)
+                        )::text
+                    );
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+                """
+            )
+        except Exception as e:
+            print(f"Warning: Could not create notify function: {str(e)}")
+            return
 
-            # Create trigger using the schema-qualified function
-            trigger_sql = f"""
-            CREATE TRIGGER "{table_name}_realtime_trigger"
-            AFTER INSERT OR UPDATE OR DELETE
-            ON "{schema_name}"."{table_name}"
-            FOR EACH ROW
-            EXECUTE FUNCTION "{schema_name}".notify_database_change();
-            """
-            
-            try:
-                await conn.execute(trigger_sql)
-                print(f"✅ Enabled realtime on '{schema_name}'.'{table_name}'")
-            except Exception as e:
-                if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
-                    pass  # Trigger already exists, that's fine
-                else:
-                    print(f"Warning: Could not create realtime trigger: {str(e)}")
+        # Create trigger using the schema-qualified function
+        trigger_sql = f"""
+        CREATE TRIGGER "{table_name}_realtime_trigger"
+        AFTER INSERT OR UPDATE OR DELETE
+        ON "{schema_name}"."{table_name}"
+        FOR EACH ROW
+        EXECUTE FUNCTION "{schema_name}".notify_database_change();
+        """
+        
+        try:
+            await execute_on_project_db(project_id, schema_name, trigger_sql)
+            print(f"✅ Enabled realtime on '{schema_name}'.'{table_name}'")
+        except Exception as e:
+            if 'already exists' in str(e).lower() or 'duplicate' in str(e).lower():
+                pass  # Trigger already exists, that's fine
+            else:
+                print(f"Warning: Could not create realtime trigger: {str(e)}")
     
     # ============================================
     # GEMINI FALLBACK

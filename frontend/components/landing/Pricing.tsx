@@ -22,40 +22,45 @@ function useReveal(delay = 0) {
 
 const PLANS = [
   {
-    name: 'Hobby',
+    name: 'Free Trial',
     badge: null,
-    price: '$0',
+    price: '₹0',
     per: 'forever',
-    desc: 'Perfect for personal projects and prototypes.',
-    features: ['2 projects', '1 GB database storage', 'Unlimited API requests', 'Built-in auth & OAuth', 'Community support'],
-    cta: 'Start for free',
+    desc: 'Perfect for testing and personal projects.',
+    features: [
+      '2 projects',
+      '1 GB database storage',
+      'Basic API requests',
+      'Built-in auth',
+      'Community support'
+    ],
+    cta: 'Start Free',
     href: '/signup',
     style: 'border-white/[0.08] bg-[#080808]',
     ctaStyle: 'bg-white/[0.06] hover:bg-white/[0.10] text-white border border-white/10',
   },
   {
     name: 'Pro',
-    badge: 'Most popular',
-    price: '$29',
+    badge: 'Best Value',
+    price: '₹499',
     per: 'per month',
-    desc: 'For professional developers shipping real products.',
-    features: ['Unlimited projects', '10 GB database storage', 'Priority support', 'Custom domains', 'Team collaboration', 'Advanced RBAC', 'Audit logs', '10k API req/day'],
-    cta: 'Start Pro — free 14 days',
+    desc: 'Everything you need to build and scale your application.',
+    features: [
+      'Unlimited projects',
+      '10 GB database storage',
+      'Unlimited API requests',
+      'Built-in auth & OAuth',
+      'Custom domains',
+      'Team collaboration',
+      'Advanced RBAC',
+      'Audit logs',
+      'Priority support',
+      'Advanced analytics'
+    ],
+    cta: 'Get Started',
     href: '/signup?plan=pro',
     style: 'border-orange-500/40 bg-[#0d0a06] shadow-2xl shadow-orange-900/20',
     ctaStyle: 'bg-orange-500 hover:bg-orange-400 text-black font-bold',
-  },
-  {
-    name: 'Team',
-    badge: null,
-    price: '$99',
-    per: 'per month',
-    desc: 'For growing teams that need scale and reliability.',
-    features: ['Everything in Pro', '100 GB storage', 'SSO / SAML', '99.9% SLA', 'Dedicated support', '100k API req/day', 'Advanced analytics'],
-    cta: 'Start Team trial',
-    href: '/signup?plan=team',
-    style: 'border-white/[0.08] bg-[#080808]',
-    ctaStyle: 'bg-white/[0.06] hover:bg-white/[0.10] text-white border border-white/10',
   },
 ];
 
@@ -85,7 +90,7 @@ export default function Pricing() {
         </div>
 
         {/* Cards */}
-        <div className="grid md:grid-cols-3 gap-3 items-start">
+        <div className="grid md:grid-cols-2 gap-4 max-w-4xl mx-auto">
           {PLANS.map((plan, i) => {
             const cardRef = useReveal(i * 80);
             return (

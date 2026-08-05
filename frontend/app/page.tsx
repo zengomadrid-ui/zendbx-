@@ -21,15 +21,13 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check if user is authenticated and redirect to dashboard
+    // Check if user is authenticated (but don't redirect)
+    // Users can still view the landing page
     const checkAuth = async () => {
       try {
         const token = localStorage.getItem('token');
         if (token) {
-          // User has a token, redirect to dashboard
-          router.push('/dashboard');
           setIsAuthenticated(true);
-          return;
         }
       } catch (error) {
         console.error('Auth check error:', error);
@@ -53,12 +51,7 @@ export default function Home() {
     );
   }
 
-  // If authenticated, show nothing (redirect is happening)
-  if (isAuthenticated) {
-    return null;
-  }
-
-  // Show landing page for unauthenticated users
+  // Show landing page (for both authenticated and unauthenticated users)
   return (
     <main className="min-h-screen bg-zinc-900">
       <Navbar />
