@@ -31,6 +31,15 @@ app = FastAPI(
 from fastapi import HTTPException as _HTTPException
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from json import JSONDecodeError
+
+@app.exception_handler(JSONDecodeError)
+async def json_decode_exception_handler(request: Request, exc: JSONDecodeError):
+    """Handle JSON parsing errors with HTTP 400."""
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"error": "invalid JSON body"},
+    )
 
 @app.exception_handler(_HTTPException)
 async def http_exception_handler(request: Request, exc: _HTTPException):
@@ -1025,6 +1034,7 @@ from app.api import (
     storage,  # Object Storage (legacy /api/storage)
     storage_v2,  # Object Storage v2 (project-scoped /p/{slug}/storage)
     run_migration,  # One-time database migrations
+    apply_migration_005,  # Migration 005: MCP Audit Tables
     setup_project,  # Temporary setup endpoint
     mcp_info,  # MCP Information API
     mcp_server,  # MCP Server Implementation
@@ -1109,6 +1119,9 @@ app.include_router(admin_quotas.router, tags=["admin-quotas"])
 
 # Database Migration API (one-time use)
 app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])
+
+# Migration 005: MCP Audit Tables
+app.include_router(apply_migration_005.router, tags=["admin"])
 
 # Temporary Setup Endpoint (remove after initial setup)
 app.include_router(setup_project.router, tags=["setup"])

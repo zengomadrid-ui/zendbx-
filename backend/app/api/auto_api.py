@@ -10,11 +10,113 @@ from app.core.rls_enforcer import RLSEnforcer, get_rls_enforcer
 from app.middleware.rls_context import set_rls_context
 from typing import Optional, Dict, Any
 from uuid import UUID
+from datetime import date, datetime
 import json
 import logging
 import re
 
 logger = logging.getLogger(__name__)
+
+# ============================================
+# Type Coercion for Date/Timestamp Columns
+# ============================================
+
+class PostgresTypeCoercer:
+    """Converts JSON-friendly types to PostgreSQL driver-compatible types."""
+    
+    @staticmethod
+    def coerce_value(value: Any, pg_type: str) -> Any:
+        """Convert a JSON value to the appropriate Python type for PostgreSQL."""
+        if value is None:
+            return None
+        
+        pg_type_upper = pg_type.upper().strip()
+        
+        try:
+            # Handle DATE columns
+            if pg_type_upper in ('DATE',):
+                if isinstance(value, str):
+                    return date.fromisoformat(value)
+                elif isinstance(value, (int, float)):
+                    from datetime import timedelta
+                    return date(1970, 1, 1) + timedelta(days=int(value))
+                return value
+            
+            # Handle TIMESTAMP columns
+            elif pg_type_upper in ('TIMESTAMP', 'TIMESTAMPTZ', 'TIMESTAMP WITH TIME ZONE', 
+                                   'TIMESTAMP WITHOUT TIME ZONE'):
+                if isinstance(value, str):
+                    value_cleaned = value.replace('Z', '+00:00')
+                    try:
+                        return datetime.fromisoformat(value_cleaned)
+                    except ValueError:
+                        for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f',
+                                   '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f']:
+                            try:
+                                return datetime.strptime(value, fmt)
+                            except ValueError:
+                                continue
+                        return datetime.fromisoformat(value)
+                elif isinstance(value, (int, float)):
+                    return datetime.fromtimestamp(value)
+                return value
+            
+            # Handle UUID columns
+            elif pg_type_upper in ('UUID',):
+                if isinstance(value, str):
+                    return UUID(value)
+                return value
+            
+            # Handle BOOLEAN columns
+            elif pg_type_upper in ('BOOLEAN', 'BOOL'):
+                if isinstance(value, str):
+                    return value.lower() in ('true', 't', 'yes', '1')
+                return bool(value)
+            
+            # Handle numeric types
+            elif pg_type_upper in ('INTEGER', 'INT', 'INT4', 'SMALLINT', 'INT2', 'BIGINT', 'INT8'):
+                return int(value)
+            elif pg_type_upper in ('REAL', 'FLOAT4', 'DOUBLE PRECISION', 'FLOAT8', 'NUMERIC', 'DECIMAL'):
+                return float(value)
+            
+            return value
+            
+        except Exception as e:
+            logger.warning(f"Failed to coerce value '{value}' to type '{pg_type}': {e}")
+            return value
+    
+    @staticmethod
+    async def get_table_column_types(pool, schema_name: str, table_name: str) -> Dict[str, str]:
+        """Get column types for a table from PostgreSQL information_schema."""
+        query = """
+            SELECT column_name, data_type, udt_name
+            FROM information_schema.columns
+            WHERE table_schema = $1 AND table_name = $2
+        """
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, schema_name, table_name)
+        
+        column_types = {}
+        for row in rows:
+            col_type = row['data_type']
+            if col_type == 'USER-DEFINED':
+                col_type = row['udt_name']
+            column_types[row['column_name']] = col_type
+        return column_types
+    
+    @classmethod
+    async def coerce_data_dict(cls, pool, schema_name: str, table_name: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Coerce all values in a data dictionary based on table schema."""
+        column_types = await cls.get_table_column_types(pool, schema_name, table_name)
+        coerced_data = {}
+        for column_name, value in data.items():
+            if column_name in column_types:
+                pg_type = column_types[column_name]
+                coerced_data[column_name] = cls.coerce_value(value, pg_type)
+            else:
+                logger.warning(f"Column '{column_name}' not found in {schema_name}.{table_name}")
+                coerced_data[column_name] = value
+        return coerced_data
 
 router = APIRouter()
 
@@ -301,7 +403,7 @@ async def auto_api_create(
     data: dict,
     x_api_key: Optional[str] = Header(None)
 ):
-    """Auto-generated API: Create new row"""
+    """Auto-generated API: Create new row with type coercion for dates/timestamps"""
     
     api_key_data = await verify_api_key(x_api_key, project_id)
     
@@ -314,11 +416,28 @@ async def auto_api_create(
     
     try:
         safe_table = _safe_ident(table_name, "table name")
-        columns = list(data.keys())
+        
+        # Get project database pool for type introspection
+        from app.core.db_router import get_project_db_direct
+        pool = await get_project_db_direct(str(project_id))
+        
+        # Coerce data types based on table schema
+        try:
+            coerced_data = await PostgresTypeCoercer.coerce_data_dict(
+                pool,
+                api_key_data["database_name"],
+                table_name,
+                data
+            )
+        except Exception as coerce_error:
+            logger.warning(f"Type coercion failed, using original data: {coerce_error}")
+            coerced_data = data
+        
+        columns = list(coerced_data.keys())
         # Validate all column names supplied by the caller
         safe_columns = [_safe_ident(c, "column name") for c in columns]
         placeholders = [f"${i+1}" for i in range(len(columns))]
-        values = list(data.values())
+        values = list(coerced_data.values())
         
         insert_sql = f"""
             INSERT INTO {safe_table} ({', '.join(safe_columns)})
@@ -353,7 +472,7 @@ async def auto_api_update(
     data: dict,
     x_api_key: Optional[str] = Header(None)
 ):
-    """Auto-generated API: Update row"""
+    """Auto-generated API: Update row with type coercion for dates/timestamps"""
     
     api_key_data = await verify_api_key(x_api_key, project_id)
     
@@ -365,8 +484,25 @@ async def auto_api_update(
     
     try:
         safe_table = _safe_ident(table_name, "table name")
-        updates = [f"{_safe_ident(col, 'column name')} = ${i+1}" for i, col in enumerate(data.keys())]
-        values = list(data.values())
+        
+        # Get project database pool for type introspection
+        from app.core.db_router import get_project_db_direct
+        pool = await get_project_db_direct(str(project_id))
+        
+        # Coerce data types based on table schema
+        try:
+            coerced_data = await PostgresTypeCoercer.coerce_data_dict(
+                pool,
+                api_key_data["database_name"],
+                table_name,
+                data
+            )
+        except Exception as coerce_error:
+            logger.warning(f"Type coercion failed, using original data: {coerce_error}")
+            coerced_data = data
+        
+        updates = [f"{_safe_ident(col, 'column name')} = ${i+1}" for i, col in enumerate(coerced_data.keys())]
+        values = list(coerced_data.values())
         values.append(row_id)
         
         update_sql = f"""
