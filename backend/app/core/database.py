@@ -467,6 +467,70 @@ async def execute_on_project_db(project_id: UUID, database_name: str, query: str
             # Set search_path to the project schema
             await conn.execute(f'SET search_path TO "{database_name}", public')
             await _inject_rls(conn)
+            
+            # FORENSIC INSTRUMENTATION - Single statement path
+            if 'ALTER TABLE' in query.upper():
+                logger.info("=" * 80)
+                logger.info("FORENSIC EVIDENCE: ALTER TABLE EXECUTION (SINGLE STATEMENT PATH)")
+                logger.info("=" * 80)
+                logger.info(f"EXACT SQL: {query}")
+                logger.info(f"DATABASE_NAME: {database_name}")
+                logger.info(f"PROJECT_ID: {project_id}")
+                
+                try:
+                    current_user_val = await conn.fetchval("SELECT current_user")
+                    session_user_val = await conn.fetchval("SELECT session_user")
+                    current_schema_val = await conn.fetchval("SELECT current_schema()")
+                    search_path_val = await conn.fetchval("SHOW search_path")
+                    
+                    logger.info(f"current_user: {current_user_val}")
+                    logger.info(f"session_user: {session_user_val}")
+                    logger.info(f"current_schema(): {current_schema_val}")
+                    logger.info(f"search_path: {search_path_val}")
+                    
+                    # Extract and check table ownership
+                    import re
+                    table_match = re.search(r'ALTER\s+TABLE\s+"?([^"\s.]+)"?(?:\.?"?([^"\s.]+)"?)?\s+', query, re.IGNORECASE)
+                    if table_match:
+                        if table_match.group(2):
+                            schema_name = table_match.group(1)
+                            table_name = table_match.group(2)
+                        else:
+                            schema_name = None
+                            table_name = table_match.group(1)
+                        
+                        logger.info(f"PARSED: schema={schema_name}, table={table_name}")
+                        
+                        if schema_name:
+                            table_owner = await conn.fetchval(
+                                """SELECT pg_get_userbyid(c.relowner) 
+                                   FROM pg_class c 
+                                   JOIN pg_namespace n ON n.oid = c.relnamespace
+                                   WHERE c.relname = $1 AND n.nspname = $2""",
+                                table_name, schema_name
+                            )
+                            schema_owner = await conn.fetchval(
+                                "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = $1",
+                                schema_name
+                            )
+                        else:
+                            table_owner = await conn.fetchval(
+                                "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = $1::regclass",
+                                table_name
+                            )
+                            schema_owner = await conn.fetchval(
+                                "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = $1",
+                                current_schema_val
+                            )
+                        
+                        logger.info(f"TABLE OWNER: {table_owner}")
+                        logger.info(f"SCHEMA OWNER: {schema_owner}")
+                        logger.info(f"MATCH: user={current_user_val}, table_owner={table_owner}, schema_owner={schema_owner}")
+                    
+                    logger.info("=" * 80)
+                except Exception as e:
+                    logger.error(f"FORENSIC ERROR: {e}")
+            
             try:
                 result = await conn.fetch(query)
                 return result
@@ -505,6 +569,87 @@ async def execute_on_project_db(project_id: UUID, database_name: str, query: str
             # CRITICAL: Set search_path for EACH statement in multi-statement queries
             await conn.execute(f'SET search_path TO "{database_name}", public')
             await _inject_rls(conn)
+            
+            # FORENSIC INSTRUMENTATION - Capture exact state before ALTER TABLE execution
+            if 'ALTER TABLE' in stmt.upper():
+                logger.info("=" * 80)
+                logger.info("FORENSIC EVIDENCE: ALTER TABLE EXECUTION CONTEXT")
+                logger.info("=" * 80)
+                logger.info(f"EXACT SQL: {stmt}")
+                logger.info(f"DATABASE_NAME: {database_name}")
+                logger.info(f"PROJECT_ID: {project_id}")
+                
+                try:
+                    # Capture session context
+                    current_user_val = await conn.fetchval("SELECT current_user")
+                    session_user_val = await conn.fetchval("SELECT session_user")
+                    current_schema_val = await conn.fetchval("SELECT current_schema()")
+                    search_path_val = await conn.fetchval("SHOW search_path")
+                    current_database_val = await conn.fetchval("SELECT current_database()")
+                    
+                    logger.info(f"current_user: {current_user_val}")
+                    logger.info(f"session_user: {session_user_val}")
+                    logger.info(f"current_schema(): {current_schema_val}")
+                    logger.info(f"search_path: {search_path_val}")
+                    logger.info(f"current_database(): {current_database_val}")
+                    
+                    # Extract table name from ALTER TABLE statement
+                    import re
+                    table_match = re.search(r'ALTER\s+TABLE\s+"?([^"\s.]+)"?\.?"?([^"\s.]+)"?\s+', stmt, re.IGNORECASE)
+                    if table_match:
+                        if table_match.group(2):
+                            # Schema.table format
+                            schema_name = table_match.group(1)
+                            table_name = table_match.group(2)
+                        else:
+                            # Just table name
+                            schema_name = None
+                            table_name = table_match.group(1)
+                        
+                        logger.info(f"PARSED TABLE: schema={schema_name}, table={table_name}")
+                        
+                        # Get table owner
+                        if schema_name:
+                            table_owner = await conn.fetchval(
+                                """SELECT pg_get_userbyid(c.relowner) 
+                                   FROM pg_class c 
+                                   JOIN pg_namespace n ON n.oid = c.relnamespace
+                                   WHERE c.relname = $1 AND n.nspname = $2""",
+                                table_name, schema_name
+                            )
+                        else:
+                            table_owner = await conn.fetchval(
+                                "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = $1::regclass",
+                                table_name
+                            )
+                        
+                        logger.info(f"TABLE OWNER: {table_owner}")
+                        
+                        # Get schema owner
+                        schema_to_check = schema_name if schema_name else current_schema_val
+                        schema_owner = await conn.fetchval(
+                            "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = $1",
+                            schema_to_check
+                        )
+                        logger.info(f"SCHEMA OWNER ({schema_to_check}): {schema_owner}")
+                        
+                        # Check ownership match
+                        logger.info(f"OWNERSHIP CHECK:")
+                        logger.info(f"  current_user == table_owner: {current_user_val == table_owner}")
+                        logger.info(f"  current_user == schema_owner: {current_user_val == schema_owner}")
+                        logger.info(f"  table_owner == schema_owner: {table_owner == schema_owner}")
+                        
+                        # Check if current user is member of table owner role
+                        is_member = await conn.fetchval(
+                            "SELECT pg_has_role($1, $2, 'MEMBER')",
+                            current_user_val, table_owner
+                        )
+                        logger.info(f"  current_user is member of table_owner role: {is_member}")
+                        
+                    logger.info("=" * 80)
+                    
+                except Exception as forensic_error:
+                    logger.error(f"FORENSIC INSTRUMENTATION ERROR: {forensic_error}")
             
             try:
                 result = await conn.fetch(stmt)

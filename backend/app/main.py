@@ -1034,7 +1034,6 @@ from app.api import (
     storage,  # Object Storage (legacy /api/storage)
     storage_v2,  # Object Storage v2 (project-scoped /p/{slug}/storage)
     run_migration,  # One-time database migrations
-    apply_migration_005,  # Migration 005: MCP Audit Tables
     setup_project,  # Temporary setup endpoint
     mcp_info,  # MCP Information API
     mcp_server,  # MCP Server Implementation
@@ -1042,6 +1041,9 @@ from app.api import (
     schemas,  # Schema Discovery API (multi-schema table navigation)
     cli_auth,  # CLI Authentication
 )
+
+# Import migration module separately since it's not in __init__.py
+from app.api import apply_migration_005
 
 # Multi-tenant APIs (new slug-based routing) - These MUST come first to override old endpoints
 print(f"📍 Registering slug-based auth router from: app.api.public_auth_v2")
