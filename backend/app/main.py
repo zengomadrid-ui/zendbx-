@@ -31,6 +31,15 @@ app = FastAPI(
 from fastapi import HTTPException as _HTTPException
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from json import JSONDecodeError
+
+@app.exception_handler(JSONDecodeError)
+async def json_decode_exception_handler(request: Request, exc: JSONDecodeError):
+    """Handle JSON parsing errors with HTTP 400."""
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"error": "invalid JSON body"},
+    )
 
 @app.exception_handler(_HTTPException)
 async def http_exception_handler(request: Request, exc: _HTTPException):
@@ -1032,8 +1041,6 @@ from app.api import (
     schemas,  # Schema Discovery API (multi-schema table navigation)
     cli_auth,  # CLI Authentication
 )
-
-# Multi-tenant APIs (new slug-based routing) - These MUST come first to override old endpoints
 print(f"📍 Registering slug-based auth router from: app.api.public_auth_v2")
 app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New: /p/{slug}/v1/auth/*
 app.include_router(rest_v1.router, tags=["rest-api"])  # New: /p/{slug}/v1/rest/{table}
