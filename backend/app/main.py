@@ -1041,12 +1041,6 @@ from app.api import (
     schemas,  # Schema Discovery API (multi-schema table navigation)
     cli_auth,  # CLI Authentication
 )
-SELECT
-    relname,
-    relrowsecurity
-FROM pg_class
-WHERE oid = 'customers'::regclass;
-# Multi-tenant APIs (new slug-based routing) - These MUST come first to override old endpoints
 print(f"📍 Registering slug-based auth router from: app.api.public_auth_v2")
 app.include_router(public_auth_v2.router, tags=["auth-v2"])  # New: /p/{slug}/v1/auth/*
 app.include_router(rest_v1.router, tags=["rest-api"])  # New: /p/{slug}/v1/rest/{table}
