@@ -1088,6 +1088,10 @@ app.include_router(project_oauth.router)  # Project OAuth (end users) - NEW
 app.include_router(oauth_providers.router)  # OAuth provider management
 app.include_router(oauth_redirects.router)  # OAuth redirect URL management
 
+# Platform OAuth for zendbx.in main website
+from .api import platform_oauth
+app.include_router(platform_oauth.router)  # Platform OAuth (main zendbx.in website)
+
 # Existing APIs
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(cli_auth.router, tags=["cli-auth"])  # CLI Authentication
