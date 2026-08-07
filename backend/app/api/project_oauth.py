@@ -118,10 +118,20 @@ async def project_oauth_initiate(
             )
             allowed_list = [row["redirect_url"] for row in allowed_urls]
             
-            if not validate_redirect_url(redirect_to, allowed_list):
+            # Normalize URLs for comparison (remove trailing slashes)
+            redirect_normalized = redirect_to.rstrip('/')
+            allowed_normalized = [url.rstrip('/') for url in allowed_list]
+            
+            if redirect_normalized not in allowed_normalized:
+                logger.error(
+                    f"[Project OAuth] Redirect URL not whitelisted | "
+                    f"project={project_slug} requested='{redirect_to}' "
+                    f"allowed={allowed_list}"
+                )
                 raise HTTPException(
                     status_code=400,
                     detail=f"redirect_to URL '{redirect_to}' is not whitelisted. "
+                           f"Configured URLs: {', '.join(allowed_list) if allowed_list else 'none'}. "
                            f"Add it in Authentication → Redirect URLs"
                 )
         else:
