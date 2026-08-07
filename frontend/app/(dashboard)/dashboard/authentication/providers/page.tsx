@@ -110,12 +110,23 @@ export default function ProvidersPage() {
             if (selected) {
               console.log('Loaded project:', selected);
               setSelectedProject(selected);
+            } else if (projects.length > 0) {
+              // Project not found, auto-select first project
+              console.log('Project not found, auto-selecting first project:', projects[0]);
+              setSelectedProject(projects[0]);
+              localStorage.setItem('current_project_id', projects[0].id);
+              if (projects[0].slug) {
+                localStorage.setItem('current_project_slug', projects[0].slug);
+              }
             }
           } else if (projects.length > 0) {
             // Auto-select first project if none selected
             console.log('Auto-selecting first project:', projects[0]);
             setSelectedProject(projects[0]);
-            localStorage.setItem('selectedProject', projects[0].id);
+            localStorage.setItem('current_project_id', projects[0].id);
+            if (projects[0].slug) {
+              localStorage.setItem('current_project_slug', projects[0].slug);
+            }
           }
         }
       } catch (error) {
@@ -239,6 +250,12 @@ export default function ProvidersPage() {
   const handleSave = async () => {
     if (selectedProvider && clientId && clientSecret && selectedProject) {
       try {
+        console.log('Saving OAuth config:', {
+          provider: selectedProvider,
+          project_id: selectedProject.id,
+          project_name: selectedProject.name
+        });
+
         // Call backend API to save OAuth provider configuration
         const response = await apiFetch(
           `api/oauth/providers?project_id=${selectedProject.id}`,
@@ -256,6 +273,7 @@ export default function ProvidersPage() {
 
         if (!response.ok) {
           const error = await response.json().catch(() => ({}));
+          console.error('Backend error:', error);
           throw new Error(error.detail || 'Failed to save provider configuration');
         }
 
@@ -283,17 +301,21 @@ export default function ProvidersPage() {
             ? error.message
             : 'Failed to save configuration';
 
-        setSuccessMessage(`${errorMessage}`);
+        setSuccessMessage(`❌ ${errorMessage}`);
         setShowSuccessPopup(true);
         setTimeout(() => setShowSuccessPopup(false), 5000);
       }
     } else {
-      console.error('Missing required fields:', {
-        selectedProvider,
-        clientId: clientId ? 'present' : 'missing',
-        clientSecret: clientSecret ? 'present' : 'missing',
-        selectedProject: selectedProject ? 'present' : 'missing'
-      });
+      const missing = [];
+      if (!selectedProvider) missing.push('provider');
+      if (!clientId) missing.push('client ID');
+      if (!clientSecret) missing.push('client secret');
+      if (!selectedProject) missing.push('project');
+      
+      console.error('Missing required fields:', missing.join(', '));
+      setSuccessMessage(`❌ Missing: ${missing.join(', ')}`);
+      setShowSuccessPopup(true);
+      setTimeout(() => setShowSuccessPopup(false), 5000);
     }
   };
 

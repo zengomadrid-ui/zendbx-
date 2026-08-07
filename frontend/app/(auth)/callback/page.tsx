@@ -43,19 +43,41 @@ function CallbackContent() {
       }
 
       try {
+        // Store token and basic info from URL params
         localStorage.setItem('token', token);
+        
+        const userId = searchParams.get('user_id');
+        const userEmail = searchParams.get('email');
+        
+        if (userId) localStorage.setItem('user_id', userId);
+        if (userEmail) localStorage.setItem('user_email', userEmail);
 
-        const apiUrl = "https://api.zendbx.in";
-        const response = await fetch(`${apiUrl}/api/auth/me`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        // Try to fetch full user profile (optional - will work after backend restart)
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+          const response = await fetch(`${apiUrl}/api/auth/me`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
 
-        if (!response.ok) throw new Error('Failed to fetch user information');
-
-        const user = await response.json();
-        localStorage.setItem('user_id', user.id);
-        localStorage.setItem('user_email', user.email);
-        localStorage.setItem('user', JSON.stringify(user));
+          if (response.ok) {
+            const user = await response.json();
+            localStorage.setItem('user_id', user.id);
+            localStorage.setItem('user_email', user.email);
+            localStorage.setItem('user', JSON.stringify(user));
+          } else {
+            // Fallback: use URL params data
+            console.warn('Could not fetch full user profile, using URL params');
+            if (userId && userEmail) {
+              localStorage.setItem('user', JSON.stringify({ 
+                id: userId, 
+                email: userEmail 
+              }));
+            }
+          }
+        } catch (meError) {
+          console.warn('Failed to fetch /api/auth/me:', meError);
+          // Continue anyway - we have token and basic info
+        }
 
         setStatus('success');
         setMessage('Login successful! Redirecting...');

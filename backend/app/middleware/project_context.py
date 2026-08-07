@@ -76,6 +76,10 @@ class ProjectContextMiddleware(BaseHTTPMiddleware):
         if re.match(r"^/p/[^/]+$", path):
             return await call_next(request)
         
+        # /p/{slug}/auth/{provider} - Project OAuth endpoints (PUBLIC - no auth required)
+        if re.match(r"^/p/[^/]+/auth/[^/]+(/callback)?$", path):
+            return await call_next(request)
+        
         # /p/{slug}/docs redirects to main docs
         _slug_sub = re.match(r"^/p/[^/]+(/docs|/redoc|/openapi\.json)$", path)
         if _slug_sub:
