@@ -971,8 +971,8 @@ async def startup():
             # Check if oauth_connections table exists (migration 009)
             oauth_connections_exists = await conn.fetchval("""
                 SELECT EXISTS (
-                    SELECT 1 FROM information_schema.tables 
-                    WHERE table_name = 'oauth_connections'
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = 'oauth_connections' AND column_name = 'provider'
                 )
             """)
             

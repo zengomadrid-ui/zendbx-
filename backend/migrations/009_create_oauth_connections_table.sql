@@ -19,6 +19,18 @@ CREATE TABLE IF NOT EXISTS oauth_connections (
     UNIQUE(user_id, provider)
 );
 
+-- Add provider column if table exists but column doesn't (handles existing tables)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'oauth_connections' AND column_name = 'provider'
+    ) THEN
+        ALTER TABLE oauth_connections 
+        ADD COLUMN provider TEXT NOT NULL CHECK (provider IN ('google', 'github'));
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_oauth_connections_user_id 
 ON oauth_connections(user_id);
 
