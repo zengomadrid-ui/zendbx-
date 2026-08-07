@@ -3,9 +3,12 @@
 -- Author: ZenDBX Team
 -- Date: 2026-08-07
 
+-- Drop existing table if it exists (to ensure clean schema)
+DROP TABLE IF EXISTS oauth_connections CASCADE;
+
 -- OAuth Connections Table
 -- Tracks which OAuth providers users have connected
-CREATE TABLE IF NOT EXISTS oauth_connections (
+CREATE TABLE oauth_connections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     provider TEXT NOT NULL CHECK (provider IN ('google', 'github')),
@@ -19,25 +22,13 @@ CREATE TABLE IF NOT EXISTS oauth_connections (
     UNIQUE(user_id, provider)
 );
 
--- Add provider column if table exists but column doesn't (handles existing tables)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'oauth_connections' AND column_name = 'provider'
-    ) THEN
-        ALTER TABLE oauth_connections 
-        ADD COLUMN provider TEXT NOT NULL CHECK (provider IN ('google', 'github'));
-    END IF;
-END $$;
-
-CREATE INDEX IF NOT EXISTS idx_oauth_connections_user_id 
+CREATE INDEX idx_oauth_connections_user_id 
 ON oauth_connections(user_id);
 
-CREATE INDEX IF NOT EXISTS idx_oauth_connections_provider 
+CREATE INDEX idx_oauth_connections_provider 
 ON oauth_connections(provider);
 
-CREATE INDEX IF NOT EXISTS idx_oauth_connections_provider_user_id 
+CREATE INDEX idx_oauth_connections_provider_user_id 
 ON oauth_connections(provider, provider_user_id);
 
 COMMENT ON TABLE oauth_connections IS 
