@@ -118,22 +118,32 @@ async def project_oauth_initiate(
             )
             allowed_list = [row["redirect_url"] for row in allowed_urls]
             
-            # Normalize URLs for comparison (remove trailing slashes)
-            redirect_normalized = redirect_to.rstrip('/')
-            allowed_normalized = [url.rstrip('/') for url in allowed_list]
-            
-            if redirect_normalized not in allowed_normalized:
-                logger.error(
-                    f"[Project OAuth] Redirect URL not whitelisted | "
-                    f"project={project_slug} requested='{redirect_to}' "
-                    f"allowed={allowed_list}"
-                )
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"redirect_to URL '{redirect_to}' is not whitelisted. "
-                           f"Configured URLs: {', '.join(allowed_list) if allowed_list else 'none'}. "
-                           f"Add it in Authentication → Redirect URLs"
-                )
+            # TEMPORARY: If no URLs configured, allow any HTTPS URL from api.zendbx.in
+            if not allowed_list:
+                logger.warning(f"[Project OAuth] No redirect URLs configured for project {project_slug}, allowing api.zendbx.in URLs temporarily")
+                if not redirect_to.startswith('https://api.zendbx.in/'):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"No redirect URLs configured. Temporarily only allowing https://api.zendbx.in/* URLs. "
+                               f"Configure redirect URLs in Authentication → Redirect URLs"
+                    )
+            else:
+                # Normalize URLs for comparison (remove trailing slashes)
+                redirect_normalized = redirect_to.rstrip('/')
+                allowed_normalized = [url.rstrip('/') for url in allowed_list]
+                
+                if redirect_normalized not in allowed_normalized:
+                    logger.error(
+                        f"[Project OAuth] Redirect URL not whitelisted | "
+                        f"project={project_slug} requested='{redirect_to}' "
+                        f"allowed={allowed_list}"
+                    )
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"redirect_to URL '{redirect_to}' is not whitelisted. "
+                               f"Configured URLs: {', '.join(allowed_list) if allowed_list else 'none'}. "
+                               f"Add it in Authentication → Redirect URLs"
+                    )
         else:
             # Use first redirect URL as default
             default = await conn.fetchrow(
