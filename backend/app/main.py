@@ -968,17 +968,21 @@ async def startup():
             else:
                 print("✅ OAuth columns already exist in users table")
             
-            # Check if oauth_connections table exists (migration 009)
-            oauth_connections_exists = await conn.fetchval("""
+            # Check if oauth_connections table has correct schema (migration 009)
+            # Check for the unique constraint on (provider, provider_user_id)
+            oauth_connections_constraint_exists = await conn.fetchval("""
                 SELECT EXISTS (
-                    SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'oauth_connections' AND column_name = 'provider'
+                    SELECT 1 FROM pg_constraint 
+                    WHERE conname LIKE 'oauth_connections%' 
+                    AND contype = 'u'
+                    AND conrelid = 'oauth_connections'::regclass
+                    AND pg_get_constraintdef(oid) LIKE '%provider, provider_user_id%'
                 )
             """)
             
-            if not oauth_connections_exists:
+            if not oauth_connections_constraint_exists:
                 print("\n" + "="*80)
-                print("🔄 oauth_connections table not found - applying migration 009...")
+                print("🔄 oauth_connections missing constraint - applying migration 009...")
                 print("="*80)
                 
                 migration_path = Path(__file__).parent.parent / "migrations" / "009_create_oauth_connections_table.sql"
@@ -989,7 +993,7 @@ async def startup():
                 else:
                     print(f"⚠️  Migration file not found: {migration_path}")
             else:
-                print("✅ oauth_connections table already exists")
+                print("✅ oauth_connections table has correct schema")
                 
     except Exception as e:
         print(f"⚠️  OAuth migration check/apply failed: {str(e)}")
