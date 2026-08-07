@@ -409,17 +409,67 @@ async def project_oauth_callback(
         if not email:
             raise HTTPException(status_code=400, detail="Email not provided by OAuth provider")
 
-        # Get project database info
+        # ── STEP 1: Create/update user in main database (platform level) ──
+        # This allows /api/auth/me to work properly
+        main_user = await conn.fetchrow(
+            "SELECT id FROM users WHERE email = $1",
+            email
+        )
+        
+        if main_user:
+            # Update existing platform user
+            platform_user_id = main_user["id"]
+            await conn.execute(
+                """
+                UPDATE users
+                SET full_name = COALESCE($1, full_name),
+                    avatar_url = COALESCE($2, avatar_url),
+                    is_verified = true,
+                    updated_at = NOW()
+                WHERE id = $3
+                """,
+                name, avatar, platform_user_id
+            )
+        else:
+            # Create new platform user
+            # Generate a random password hash for OAuth users (they won't use it)
+            import secrets
+            random_password_hash = secrets.token_hex(32)
+            
+            platform_user_id = await conn.fetchval(
+                """
+                INSERT INTO users
+                  (email, full_name, avatar_url, password_hash, is_verified, is_active, plan, role)
+                VALUES ($1, $2, $3, $4, true, true, 'free', 'user')
+                RETURNING id
+                """,
+                email, name, avatar, random_password_hash
+            )
+        
+        logger.info(f"[OAuth] Platform user: {platform_user_id} ({email})")
+
+        # ── STEP 2: Get project database info ──
         project = await conn.fetchrow(
             "SELECT database_name, slug FROM projects WHERE id = $1",
             project_id
         )
 
-        # Create / update user in project database
+        # ── STEP 3: Create / update user in project database ──
         from ..core.database import get_project_db_pool
         project_pool = await get_project_db_pool(project["database_name"])
 
         async with project_pool.acquire() as pconn:
+            # Check if email_verified column exists in this project's schema
+            schema_name = project["database_name"]
+            has_email_verified = await pconn.fetchval(f"""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = '{schema_name}'
+                    AND table_name = 'users'
+                    AND column_name = 'email_verified'
+                )
+            """)
+            
             existing = await pconn.fetchrow("SELECT id FROM users WHERE email = $1", email)
             if existing:
                 user_id = existing["id"]
@@ -434,19 +484,35 @@ async def project_oauth_callback(
                     name, avatar, user_id
                 )
             else:
-                user_id = await pconn.fetchval(
-                    """
-                    INSERT INTO users
-                      (email, full_name, avatar_url, email_verified, auth_provider, provider_user_id)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    RETURNING id
-                    """,
-                    email, name, avatar, True, provider, provider_user_id
-                )
+                # Insert with or without email_verified column depending on schema
+                # Try with email_verified first, fall back if it doesn't exist
+                try:
+                    user_id = await pconn.fetchval(
+                        """
+                        INSERT INTO users
+                          (email, full_name, avatar_url, email_verified, auth_provider, provider_user_id)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                        RETURNING id
+                        """,
+                        email, name, avatar, True, provider, provider_user_id
+                    )
+                except Exception as e:
+                    if 'email_verified' in str(e) and 'does not exist' in str(e):
+                        # Fallback for tables without email_verified column
+                        user_id = await pconn.fetchval(
+                            """
+                            INSERT INTO users (email, full_name, avatar_url)
+                            VALUES ($1, $2, $3)
+                            RETURNING id
+                            """,
+                            email, name, avatar
+                        )
+                    else:
+                        raise
 
         logger.info(
             f"[OAuth] callback | project={project_id} provider={provider} "
-            f"email={email} user_id={user_id} "
+            f"email={email} platform_user_id={platform_user_id} project_user_id={user_id} "
             f"external_client={is_external_client}"
         )
 
@@ -458,7 +524,7 @@ async def project_oauth_callback(
                   (project_id, provider, action, user_id, ip_address, user_agent, success)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 """,
-                project_id, provider, 'oauth_success', user_id,
+                project_id, provider, 'oauth_success', str(platform_user_id),
                 request.client.host if request.client else None,
                 request.headers.get('user-agent'),
                 True
@@ -487,7 +553,7 @@ async def project_oauth_callback(
                    redirect_uri, expires_at, used)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false)
                 """,
-                auth_code, project_id, provider, str(user_id), email,
+                auth_code, project_id, provider, str(platform_user_id), email,
                 client_id_val, client_redirect_uri, auth_code_expires
             )
 
@@ -506,9 +572,10 @@ async def project_oauth_callback(
 
         # ─────────────────────────────────────────────────────────────────────
         # ZENDBX-NATIVE — redirect with JWT tokens directly
+        # Use platform_user_id (main database) for JWT, not project user_id
         # ─────────────────────────────────────────────────────────────────────
         jwt_payload = {
-            "sub": str(user_id),
+            "sub": str(platform_user_id),  # Use platform user ID, not project user ID
             "email": email,
             "project_id": str(project_id),
             "project_slug": project["slug"]
@@ -518,10 +585,11 @@ async def project_oauth_callback(
 
         redirect_url = session["redirect_url"]
         if redirect_url:
-            final_url = f"{redirect_url}?{urlencode({'token': jwt_token, 'refresh_token': refresh_token, 'user_id': str(user_id), 'email': email})}"
+            final_url = f"{redirect_url}?{urlencode({'token': jwt_token, 'refresh_token': refresh_token, 'user_id': str(platform_user_id), 'email': email})}"
         else:
             frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
-            final_url = f"{frontend_url}/callback?{urlencode({'token': jwt_token, 'refresh_token': refresh_token, 'user_id': str(user_id), 'email': email})}"
+            # Frontend route is /callback (not /auth/callback due to Next.js route groups)
+            final_url = f"{frontend_url}/callback?{urlencode({'token': jwt_token, 'refresh_token': refresh_token, 'user_id': str(platform_user_id), 'email': email})}"
 
         return RedirectResponse(url=final_url)
 

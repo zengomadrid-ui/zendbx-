@@ -51,9 +51,25 @@ export const apiFetch = async (
 
 /**
  * Get OAuth provider URL
+ * Requires project context - gets from localStorage or uses default project
  */
-export const getOAuthUrl = (provider: string): string => {
-  return getApiUrl(`api/auth/oauth/${provider}/login`);
+export const getOAuthUrl = (provider: string, projectSlug?: string): string => {
+  // If project slug is provided, use it
+  if (projectSlug) {
+    return getApiUrl(`oauth/${provider}/${projectSlug}`);
+  }
+  
+  // Try to get from localStorage (for logged-in users switching projects)
+  if (typeof window !== 'undefined') {
+    const storedSlug = localStorage.getItem('current_project_slug');
+    if (storedSlug) {
+      return getApiUrl(`oauth/${provider}/${storedSlug}`);
+    }
+  }
+  
+  // Default to 'mark-32' project for initial login/signup
+  // TODO: Make this configurable or fetch default project from API
+  return getApiUrl(`oauth/${provider}/mark-32`);
 };
 
 /**

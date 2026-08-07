@@ -333,7 +333,7 @@ def get_allowed_origins_for_environment(environment: str = None) -> List[str]:
             "https://zendbx-2-zpp9.onrender.com",
         ]
     else:
-        # Development: Allow common local development origins
+        # Development: Allow common local development origins + production domains for testing
         return [
             "http://localhost:3000",
             "http://localhost:5173",
@@ -341,4 +341,9 @@ def get_allowed_origins_for_environment(environment: str = None) -> List[str]:
             "http://127.0.0.1:3000",
             "http://127.0.0.1:5173",
             "http://127.0.0.1:8000",
+            # Production domains for testing
+            "https://devapp.zendbx.in",
+            "https://zendbx.in",
+            "https://www.zendbx.in",
+            "https://api.zendbx.in",
         ]
