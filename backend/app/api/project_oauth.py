@@ -379,13 +379,14 @@ async def project_oauth_callback(
         refresh_token = create_access_token(jwt_payload, expires_delta=timedelta(days=30))
 
         # Redirect to client application with tokens
-        final_url = f"{redirect_url}?{urlencode({
+        query_params = urlencode({
             'access_token': jwt_token,
             'refresh_token': refresh_token,
             'token_type': 'bearer',
             'expires_in': 604800,  # 7 days in seconds
             'user_id': str(user_id),
             'email': email
-        })}"
+        })
+        final_url = f"{redirect_url}?{query_params}"
 
         return RedirectResponse(url=final_url)
