@@ -370,16 +370,52 @@ async def project_oauth_callback(
                         email, name, avatar, True, provider, provider_user_id
                     )
                 except Exception as e:
-                    if 'email_verified' in str(e) or 'auth_provider' in str(e):
-                        # Fallback for basic users table
-                        user_id = await pconn.fetchval(
-                            """
-                            INSERT INTO users (email, full_name, avatar_url)
-                            VALUES ($1, $2, $3)
-                            RETURNING id
-                            """,
-                            email, name, avatar
-                        )
+                    error_msg = str(e)
+                    
+                    # Try different fallbacks based on error
+                    if 'password_hash' in error_msg and 'not-null' in error_msg:
+                        # password_hash is required - use a placeholder for OAuth users
+                        try:
+                            user_id = await pconn.fetchval(
+                                """
+                                INSERT INTO users 
+                                  (email, full_name, avatar_url, password_hash, email_verified, auth_provider, provider_user_id)
+                                VALUES ($1, $2, $3, 'oauth', $4, $5, $6)
+                                RETURNING id
+                                """,
+                                email, name, avatar, True, provider, provider_user_id
+                            )
+                        except Exception:
+                            # If OAuth columns don't exist either, use basic insert with password placeholder
+                            user_id = await pconn.fetchval(
+                                """
+                                INSERT INTO users (email, full_name, avatar_url, password_hash)
+                                VALUES ($1, $2, $3, 'oauth')
+                                RETURNING id
+                                """,
+                                email, name, avatar
+                            )
+                    elif 'email_verified' in error_msg or 'auth_provider' in error_msg:
+                        # OAuth columns don't exist, try basic insert
+                        try:
+                            user_id = await pconn.fetchval(
+                                """
+                                INSERT INTO users (email, full_name, avatar_url, password_hash)
+                                VALUES ($1, $2, $3, 'oauth')
+                                RETURNING id
+                                """,
+                                email, name, avatar
+                            )
+                        except Exception:
+                            # Last resort - minimal fields
+                            user_id = await pconn.fetchval(
+                                """
+                                INSERT INTO users (email, password_hash)
+                                VALUES ($1, 'oauth')
+                                RETURNING id
+                                """,
+                                email
+                            )
                     else:
                         raise
 
