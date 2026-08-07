@@ -19,7 +19,8 @@ CREATE TABLE oauth_connections (
     is_primary BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(user_id, provider)
+    UNIQUE(user_id, provider),
+    UNIQUE(provider, provider_user_id)
 );
 
 CREATE INDEX idx_oauth_connections_user_id 
