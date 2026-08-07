@@ -118,17 +118,8 @@ async def project_oauth_initiate(
             )
             allowed_list = [row["redirect_url"] for row in allowed_urls]
             
-            # TEMPORARY: If no URLs configured, allow any HTTPS URL from api.zendbx.in
-            if not allowed_list:
-                logger.warning(f"[Project OAuth] No redirect URLs configured for project {project_slug}, allowing api.zendbx.in URLs temporarily")
-                if not redirect_to.startswith('https://api.zendbx.in/'):
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"No redirect URLs configured. Temporarily only allowing https://api.zendbx.in/* URLs. "
-                               f"Configure redirect URLs in Authentication → Redirect URLs"
-                    )
-            else:
-                # Normalize URLs for comparison (remove trailing slashes)
+            if allowed_list:
+                # URLs are configured - validate against whitelist
                 redirect_normalized = redirect_to.rstrip('/')
                 allowed_normalized = [url.rstrip('/') for url in allowed_list]
                 
@@ -137,6 +128,30 @@ async def project_oauth_initiate(
                         f"[Project OAuth] Redirect URL not whitelisted | "
                         f"project={project_slug} requested='{redirect_to}' "
                         f"allowed={allowed_list}"
+                    )
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"redirect_to URL '{redirect_to}' is not whitelisted. "
+                               f"Configured URLs: {', '.join(allowed_list)}. "
+                               f"Add it in Authentication → Redirect URLs"
+                    )
+            else:
+                # No URLs configured - allow localhost and HTTPS for development
+                logger.warning(f"[Project OAuth] No redirect URLs configured for project {project_slug}, allowing localhost and HTTPS URLs")
+                
+                is_localhost = (
+                    redirect_to.startswith('http://localhost:') or
+                    redirect_to.startswith('http://127.0.0.1:') or
+                    redirect_to.startswith('https://localhost:') or
+                    redirect_to.startswith('https://127.0.0.1:')
+                )
+                is_https = redirect_to.startswith('https://')
+                
+                if not (is_localhost or is_https):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"No redirect URLs configured. Temporarily allowing localhost and HTTPS URLs only. "
+                               f"Configure redirect URLs in Authentication → Redirect URLs"
                     )
                     raise HTTPException(
                         status_code=400,
