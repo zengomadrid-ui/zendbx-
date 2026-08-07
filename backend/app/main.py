@@ -891,6 +891,41 @@ async def startup():
     
     print(f"Database: Connected")
     
+    # Auto-apply OAuth migration if tables don't exist
+    try:
+        from app.core.database import get_main_db_pool
+        from pathlib import Path
+        
+        pool = await get_main_db_pool()
+        async with pool.acquire() as conn:
+            # Check if OAuth tables exist
+            oauth_tables_exist = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_name = 'oauth_provider_settings'
+                )
+            """)
+            
+            if not oauth_tables_exist:
+                print("\n" + "="*80)
+                print("🔄 OAuth tables not found - applying migration...")
+                print("="*80)
+                
+                # Read and execute migration
+                migration_path = Path(__file__).parent.parent / "migrations" / "006_create_oauth_tables.sql"
+                if migration_path.exists():
+                    migration_sql = migration_path.read_text()
+                    await conn.execute(migration_sql)
+                    print("✅ OAuth migration (006) applied successfully")
+                else:
+                    print(f"⚠️  Migration file not found: {migration_path}")
+            else:
+                print("✅ OAuth tables already exist")
+                
+    except Exception as e:
+        print(f"⚠️  OAuth migration check/apply failed: {str(e)}")
+        print("   OAuth features may not work until tables are created manually")
+    
     # Load OAuth providers from database
     try:
         from app.services.oauth_service import load_oauth_providers_from_db
