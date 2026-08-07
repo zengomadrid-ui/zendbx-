@@ -967,6 +967,29 @@ async def startup():
                     print(f"⚠️  Migration file not found: {migration_path}")
             else:
                 print("✅ OAuth columns already exist in users table")
+            
+            # Check if oauth_connections table exists (migration 009)
+            oauth_connections_exists = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_name = 'oauth_connections'
+                )
+            """)
+            
+            if not oauth_connections_exists:
+                print("\n" + "="*80)
+                print("🔄 oauth_connections table not found - applying migration 009...")
+                print("="*80)
+                
+                migration_path = Path(__file__).parent.parent / "migrations" / "009_create_oauth_connections_table.sql"
+                if migration_path.exists():
+                    migration_sql = migration_path.read_text()
+                    await conn.execute(migration_sql)
+                    print("✅ OAuth connections migration (009) applied successfully")
+                else:
+                    print(f"⚠️  Migration file not found: {migration_path}")
+            else:
+                print("✅ oauth_connections table already exists")
                 
     except Exception as e:
         print(f"⚠️  OAuth migration check/apply failed: {str(e)}")
