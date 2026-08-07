@@ -1066,6 +1066,7 @@ from app.api import (
     billing,  # Billing & Usage Quotas
     admin_quotas,  # Admin quota management
     oauth_providers, oauth_redirects, oauth_login,  # OAuth URL Generator System
+    project_oauth,  # Project-level OAuth (for end users)
     storage,  # Object Storage (legacy /api/storage)
     storage_v2,  # Object Storage v2 (project-scoped /p/{slug}/storage)
     run_migration,  # One-time database migrations
@@ -1082,7 +1083,8 @@ app.include_router(rest_v1.router, tags=["rest-api"])  # New: /p/{slug}/v1/rest/
 app.include_router(storage_v2.router, tags=["storage-v2"])  # New: /p/{slug}/v1/storage/*
 
 # OAuth URL Generator System (public endpoints - no prefix)
-app.include_router(oauth_login.router)  # Public OAuth login URLs
+app.include_router(oauth_login.router)  # Platform OAuth (ZenDBX dashboard)
+app.include_router(project_oauth.router)  # Project OAuth (end users) - NEW
 app.include_router(oauth_providers.router)  # OAuth provider management
 app.include_router(oauth_redirects.router)  # OAuth redirect URL management
 
