@@ -949,7 +949,7 @@ async def startup():
             oauth_columns_exist = await conn.fetchval("""
                 SELECT EXISTS (
                     SELECT 1 FROM information_schema.columns 
-                    WHERE table_name = 'users' AND column_name = 'oauth_provider'
+                    WHERE table_name = 'users' AND column_name = 'oauth_id'
                 )
             """)
             
