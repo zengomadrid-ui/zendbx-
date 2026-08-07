@@ -328,6 +328,7 @@ def get_allowed_origins_for_environment(environment: str = None) -> List[str]:
         # Production: Strict CORS - only configured origins
         return [
             "https://devapp.zendbx.in",
+            "https://api.zendbx.in",
             "https://zendbx.in",
             "https://www.zendbx.in",
             "https://zendbx-2-zpp9.onrender.com",
