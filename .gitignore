@@ -133,3 +133,58 @@ backend/*.ps1
 **/__pycache__/
 **/*.pyc
 .pytest_cache/
+
+# ========================================
+# SECURITY - NEVER COMMIT THESE FILES
+# Added: 2026-08-08 - Security Hardening
+# ========================================
+
+# Files with hardcoded secrets or admin bypasses
+*secret*.py
+*_bypass.py
+*_secret.py
+call_migration*.py
+apply_migration*.py
+fix_rls*.py
+fix_privileges*.py
+emergency_*.py
+admin_fix_*.py
+
+# Temporary debug/test scripts that might contain secrets
+temp_*.py
+debug_*.py
+test_secrets*.py
+test_admin*.py
+local_test*.py
+
+# Certificates, keys, and cryptographic material
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+id_rsa*
+*.pub
+*.gpg
+*.asc
+
+# Secret directories
+secrets/
+.secrets/
+credentials/
+keys/
+certs/
+
+# Backup files that might contain secrets
+*.backup
+*.bak
+*.old
+*.orig
+
+# Configuration files that might contain secrets
+config.local.*
+settings.local.*
+*_local.json
+*_local.yaml
+*_local.yml

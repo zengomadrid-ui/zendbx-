@@ -1,6 +1,12 @@
 """
 OAuth Authentication Endpoints
-Supports Google and GitHub login with PKCE and CSRF protection
+Supports Google and GitHub login with MANDATORY PKCE and CSRF protection
+
+Security Features:
+- PKCE is mandatory (not optional)
+- Rate limiting on all endpoints
+- Single-use state tokens
+- IP-based abuse prevention
 """
 from fastapi import APIRouter, HTTPException, Request, status, Depends
 from fastapi.responses import RedirectResponse
@@ -21,6 +27,7 @@ from app.services.oauth_service import (
     unlink_oauth_from_user,
     get_user_oauth_providers
 )
+from app.middleware.rate_limiter import rate_limit_per_ip
 from uuid import UUID
 from typing import Optional
 import json
@@ -47,28 +54,35 @@ class OAuthProvidersResponse(BaseModel):
 # ============================================
 
 @router.get("/oauth/{provider}/login")
+@rate_limit_per_ip(calls=10, period=60)  # 10 OAuth initiations per minute per IP
 async def oauth_login(
     provider: str, 
     request: Request,
-    redirect_to: Optional[str] = None,
-    use_pkce: bool = True
+    redirect_to: Optional[str] = None
 ):
     """
-    Initiate OAuth login flow with PKCE and CSRF protection
+    Initiate OAuth login flow with MANDATORY PKCE and CSRF protection
     
     Query params:
     - redirect_to: URL to redirect after successful login
-    - use_pkce: Enable PKCE flow (recommended for SPAs and mobile)
+    
+    Security:
+    - PKCE is now MANDATORY (not optional)
+    - State tokens expire in 5 minutes (not 10)
+    - Single-use state tokens enforced
     """
     try:
         # Generate state token for CSRF protection
         state = generate_state_token()
         
-        # Generate PKCE if enabled
-        code_verifier = None
-        code_challenge = None
-        if use_pkce:
-            code_verifier, code_challenge = generate_pkce()
+        # Generate PKCE (MANDATORY - not optional)
+        code_verifier, code_challenge = generate_pkce()
+        
+        if not code_verifier or not code_challenge:
+            raise HTTPException(
+                status_code=500,
+                detail="PKCE generation failed - OAuth security requirement"
+            )
         
         # Store state in database
         await store_oauth_state(
@@ -84,11 +98,10 @@ async def oauth_login(
         # Build redirect URI — hardcode to avoid url_for resolution issues
         redirect_uri = f"{settings.BACKEND_URL}/api/auth/oauth/{provider}/callback"
         
-        # Build authorization params
+        # Build authorization params (PKCE is now mandatory)
         auth_params = {'state': state}
-        if use_pkce and code_challenge:
-            auth_params['code_challenge'] = code_challenge
-            auth_params['code_challenge_method'] = 'S256'
+        auth_params['code_challenge'] = code_challenge
+        auth_params['code_challenge_method'] = 'S256'
         
         # Redirect to OAuth provider
         return await client.authorize_redirect(
@@ -108,6 +121,7 @@ async def oauth_login(
 
 
 @router.get("/oauth/{provider}/callback")
+@rate_limit_per_ip(calls=20, period=60)  # 20 callbacks per minute per IP
 async def oauth_callback(provider: str, request: Request):
     """
     Handle OAuth callback with state validation and PKCE

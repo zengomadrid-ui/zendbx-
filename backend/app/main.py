@@ -133,6 +133,11 @@ app.add_middleware(
 )
 print(f"🔐 Session middleware enabled for OAuth")
 
+# Security Headers Middleware - Add security headers to all responses
+from app.middleware.security_headers import SecurityHeadersMiddleware
+app.add_middleware(SecurityHeadersMiddleware)
+print(f"🛡️  Security headers middleware enabled (CSP, HSTS, X-Frame-Options)")
+
 # SEO & Security middleware — attaches X-Robots-Tag and blocks docs in production
 from app.middleware.seo_security import SEOSecurityMiddleware
 app.add_middleware(SEOSecurityMiddleware, environment=settings.ENVIRONMENT)
