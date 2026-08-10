@@ -59,6 +59,7 @@ const nav = [
     group: 'SDK',
     items: [
       { label: 'Overview', href: '/docs/sdk' },
+      { label: 'Python SDK', href: '/docs/sdk/python' },
       { label: 'createClient()', href: '/docs/sdk/client' },
       { label: 'Authentication', href: '/docs/sdk/auth' },
       { label: 'Database', href: '/docs/sdk/database' },
@@ -312,10 +313,10 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
 
             {/* Developer Resources */}
             <div className="pt-4 border-t border-zinc-800">
-              <p className="text-xs font-bold text-orange-500 uppercase tracking-widest mb-3">
+              <p className="text-xs font-bold text-orange-500 uppercase tracking-widest mb-2">
                 Developer Resources
               </p>
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-1.5 text-sm">
                 <li>
                   <a 
                     href="/docs/rest"
@@ -382,7 +383,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
                   <p className="text-xs text-gray-500 mb-2">Latest SDK Version</p>
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-1 rounded text-xs font-mono bg-zinc-900 text-orange-400 border border-zinc-800">
-                      @zendbx/sdk@1.1.0
+                      @zendbx/sdk@1.2.1
                     </span>
                   </div>
                 </div>
@@ -390,7 +391,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
                   <p className="text-xs text-gray-500 mb-2">Platform Version</p>
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-1 rounded text-xs font-mono bg-zinc-900 text-blue-400 border border-zinc-800">
-                      v1.1.0
+                      v1.2.1
                     </span>
                   </div>
                 </div>

@@ -168,11 +168,42 @@ export default function SDKPage() {
     <article>
       <Heading level={1}>SDK Reference</Heading>
       <p className="text-sm text-gray-400 mb-2">
+        Official SDKs for ZendBX. Choose your language to get started.
+      </p>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-8">
+        <a href="/docs/sdk/typescript" className="block p-6 border border-gray-700 rounded-lg hover:border-orange-500 transition-colors">
+          <div className="flex items-center gap-2 mb-2">
+            <Badge color="blue">TypeScript/JavaScript</Badge>
+            <Badge color="green">v1.2.1</Badge>
+          </div>
+          <h3 className="text-lg font-semibold mb-2">@zendbx/sdk</h3>
+          <p className="text-sm text-gray-400">
+            TypeScript SDK for React, Next.js, Vue, Svelte, Node.js, and modern JS runtimes.
+          </p>
+        </a>
+
+        <a href="/docs/sdk/python" className="block p-6 border border-gray-700 rounded-lg hover:border-orange-500 transition-colors">
+          <div className="flex items-center gap-2 mb-2">
+            <Badge color="blue">Python</Badge>
+            <Badge color="green">v1.0.3</Badge>
+          </div>
+          <h3 className="text-lg font-semibold mb-2">zendbx</h3>
+          <p className="text-sm text-gray-400">
+            Async Python SDK for FastAPI, Flask, Django, and any Python 3.8+ application.
+          </p>
+        </a>
+      </div>
+
+      <hr className="border-gray-700 my-8" />
+
+      <Heading level={1}>TypeScript SDK</Heading>
+      <p className="text-sm text-gray-400 mb-2">
         The official TypeScript SDK for ZendBX. Works in React, Next.js, Vue, Svelte, Node.js, and any modern JS runtime.
       </p>
       <div className="flex items-center gap-2 mb-8">
         <Badge color="orange">@zendbx/sdk</Badge>
-        <Badge color="green">v1.1.0</Badge>
+        <Badge color="green">v1.2.1</Badge>
         <Badge color="blue">TypeScript</Badge>
       </div>
 
