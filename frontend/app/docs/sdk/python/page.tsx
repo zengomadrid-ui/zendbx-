@@ -391,7 +391,7 @@ export default function PythonSDKPage() {
 
       <Heading level={3} id="manual-management">Manual Management</Heading>
       <CodeBlock code={createClientBasic} lang="python" />
-      <Note variant="warning">Always call <code className="text-orange-400">await client.close()</code> to prevent memory leaks.</Note>
+      <Note type="warning">Always call <code className="text-orange-400">await client.close()</code> to prevent memory leaks.</Note>
 
       <Heading level={3} id="environment-variables">With Environment Variables</Heading>
       <CodeBlock code={createClientEnv} lang="python" />
@@ -450,14 +450,14 @@ ZENDBX_ANON_KEY=your-anon-key`} lang="bash" />
       <Heading level={3} id="update">UPDATE</Heading>
       <CodeBlock code={update} lang="python" />
 
-      <Note variant="warning">
+      <Note type="warning">
         Always chain at least one filter before <code className="text-orange-400">.update()</code> to avoid modifying all rows.
       </Note>
 
       <Heading level={3} id="delete">DELETE</Heading>
       <CodeBlock code={delete_} lang="python" />
 
-      <Note variant="warning">
+      <Note type="warning">
         Always chain at least one filter before <code className="text-orange-400">.delete()</code> to avoid deleting all rows.
       </Note>
 
