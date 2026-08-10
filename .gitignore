@@ -188,3 +188,4 @@ settings.local.*
 *_local.json
 *_local.yaml
 *_local.yml
+*.md
