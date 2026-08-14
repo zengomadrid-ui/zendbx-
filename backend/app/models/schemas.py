@@ -183,6 +183,12 @@ class QueryResult(BaseModel):
     auto_fixed: Optional[bool] = False
     original_sql: Optional[str] = None
     fixed_sql: Optional[str] = None
+    # Statement count tracking (for multi-statement validation)
+    original_statement_count: Optional[int] = None
+    fixed_statement_count: Optional[int] = None
+    # Verification status
+    verification_status: Optional[str] = None  # NO_FIX_REQUIRED, FIXED_AND_VERIFIED, FIX_GENERATED_NOT_EXECUTED, PARTIAL_OR_INCOMPLETE_FIX, FIX_FAILED, EXECUTION_FAILED
+    verification_details: Optional[Dict[str, Any]] = None
     # Metadata refresh flag for DDL operations
     metadata_refresh: Optional[bool] = False
 
