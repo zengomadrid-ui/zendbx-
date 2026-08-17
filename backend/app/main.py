@@ -1227,6 +1227,10 @@ app.include_router(team.router, prefix="/api/projects", tags=["team"])
 # Performance Analytics API
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 
+# Data Visualizer API
+from .api import visualizer
+app.include_router(visualizer.router, prefix="/api", tags=["visualizer"])
+
 # Billing & Usage Quotas API
 app.include_router(billing.router, tags=["billing"])
 
