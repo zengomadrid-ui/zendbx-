@@ -188,7 +188,8 @@ export default function ChartPreviewPage() {
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto pr-4 min-h-0">
               {pieData.map((entry: any, index: number) => {
-                const percentage = ((entry.value / total) * 100).toFixed(1);
+                const percentageValue = (entry.value / total) * 100;
+                const percentage = percentageValue.toFixed(1);
                 return (
                   <div
                     key={index}
@@ -219,7 +220,7 @@ export default function ChartPreviewPage() {
                       <div
                         className="h-2 rounded-full transition-all"
                         style={{
-                          width: `${Math.max(percentage, 5)}px`,
+                          width: `${Math.max(percentageValue, 5)}px`,
                           backgroundColor: COLORS[index % COLORS.length],
                         }}
                       />
@@ -268,9 +269,9 @@ export default function ChartPreviewPage() {
       const yMax = Math.ceil(maxValue + range * 0.1);
 
       // Find highest and lowest points for annotation
-      const findExtreme = (isMax: boolean) => {
+      const findExtreme = (isMax: boolean): { x: any; y: number; key: string } | null => {
         let extremeValue = isMax ? -Infinity : Infinity;
-        let extremePoint = null;
+        let extremePoint: { x: any; y: number; key: string } | null = null;
         
         lineData.forEach((row: any) => {
           yKeys.forEach((key: string) => {

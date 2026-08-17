@@ -450,7 +450,7 @@ export default function KPICard({ chart, projectId }: KPICardProps) {
           {/* Category Bars */}
           <div className="pt-4 border-t border-[#2a2a2a]">
             <div className="flex gap-2 h-4 rounded-full overflow-hidden shadow-inner bg-gray-100">
-              {categories.map((cat, index) => {
+              {categories.map((cat: { label: string; value: number }, index: number) => {
                 const percent = (cat.value / total) * 100;
                 const color = colors[index % colors.length];
                 return (
@@ -491,7 +491,7 @@ export default function KPICard({ chart, projectId }: KPICardProps) {
         month: ["Apr", "May", "Jun", "Jul", "Aug", "Sep"][index] || `P${index}`,
       }));
 
-    const maxValue = Math.max(...barData.map((d) => d.value));
+    const maxValue = Math.max(...barData.map((d: { value: number; month: string }) => d.value));
     const isPositive = trendPercent >= 0;
 
     return (
@@ -548,7 +548,7 @@ export default function KPICard({ chart, projectId }: KPICardProps) {
 
             {/* Mini Bar Chart */}
             <div className="flex items-end gap-2 h-24">
-              {barData.map((item, index) => {
+              {barData.map((item: { value: number; month: string }, index: number) => {
                 const height = (item.value / maxValue) * 100;
                 const isLast = index === barData.length - 1;
                 return (
