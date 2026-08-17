@@ -429,7 +429,7 @@ export default function KPICard({ chart, projectId }: KPICardProps) {
 
           {/* Category Grid */}
           <div className="grid grid-cols-2 gap-4 mb-6">
-            {categories.map((cat, index) => {
+            {categories.map((cat: { label: string; value: number }, index: number) => {
               const color = colors[index % colors.length];
               return (
                 <div key={index} className={`${color.light} rounded-2xl p-4 border border-gray-100`}>
