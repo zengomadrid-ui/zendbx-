@@ -15,9 +15,15 @@ TYPE CONVERSION:
 AUTH TABLE PROTECTION:
 - ZendBX Auth system tables are protected from direct CRUD
 - Use auth endpoints instead: POST /p/{slug}/auth/signup, etc.
+
+BULK INSERT SUPPORT:
+- Single insert: POST with {"name": "John"} → returns single object
+- Bulk insert: POST with [{"name": "John"}, {"name": "Jane"}] → returns array
+- Bulk inserts are transactional (all or nothing)
+- Both formats respect RLS, constraints, and security policies
 """
 from fastapi import APIRouter, Request, HTTPException, Query, Depends
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 import logging
 from uuid import UUID
 
@@ -80,13 +86,19 @@ def check_auth_table_protection(
 async def create_record(
     project_slug: str,
     table: str,
-    data: Dict[str, Any],
+    data: Union[Dict[str, Any], List[Dict[str, Any]]],  # Accept both single and bulk
     request: Request,
     enforcer: RLSEnforcer = Depends(get_rls_enforcer)
 ):
     """
-    Universal POST endpoint - creates a record in any table
+    Universal POST endpoint - creates record(s) in any table
     Uses project_slug (public identifier)
+    
+    Supports:
+    - Single insert: {"name": "John"} → returns single object
+    - Bulk insert: [{"name": "John"}, {"name": "Jane"}] → returns array
+    
+    Bulk inserts are atomic (all or nothing) and respect RLS policies
     
     RLS: Respects INSERT policies on the table
     """
@@ -103,7 +115,48 @@ async def create_record(
     # Get schema from enforcer or fall back to request.state directly
     schema = enforcer.schema or getattr(request.state, 'project_schema', None)
     
-    logger.info(f"POST /rest/v1/{table_name} - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}, Schema: {schema}")
+    # Determine if bulk or single insert
+    is_bulk = isinstance(data, list)
+    
+    # Validate request payload
+    if is_bulk:
+        # Bulk insert validation
+        if not data:
+            raise HTTPException(
+                status_code=400,
+                detail="Bulk insert requires at least one record. Empty array not allowed."
+            )
+        
+        # Validate all items are dictionaries
+        for idx, item in enumerate(data):
+            if not isinstance(item, dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Bulk insert item at index {idx} must be an object, got {type(item).__name__}"
+                )
+            if not item:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Bulk insert item at index {idx} cannot be an empty object"
+                )
+        
+        records = data
+        logger.info(f"POST /rest/v1/{table_name} (BULK: {len(records)} records) - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}, Schema: {schema}")
+    else:
+        # Single insert validation
+        if not isinstance(data, dict):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Single insert requires an object, got {type(data).__name__}"
+            )
+        if not data:
+            raise HTTPException(
+                status_code=422,
+                detail="Insert requires at least one field. Empty object not allowed."
+            )
+        
+        records = [data]
+        logger.info(f"POST /rest/v1/{table_name} (SINGLE) - Project: {project_id}, User: {enforcer.user_id}, Role: {enforcer.role}, Schema: {schema}")
     
     try:
         # Parse schema.table notation (e.g. "auth.users" → schema=auth, table=users)
@@ -133,41 +186,110 @@ async def create_record(
                 )
             schema_part = schema
         
-        # Convert values using PostgreSQL type mapper
-        converted_values = await type_mapper.convert_values(
-            table_name=bare_table,
-            data=data,
-            schema=schema_part
-        )
+        # For bulk insert, collect all unique columns across all records
+        # This allows heterogeneous records (different optional columns)
+        all_columns = set()
+        for record in records:
+            all_columns.update(record.keys())
         
-        # Prepare insert query
-        columns = list(data.keys())
-        placeholders = [f"${i+1}" for i in range(len(converted_values))]
-
+        all_columns = sorted(all_columns)  # Consistent order
+        
+        if not all_columns:
+            raise HTTPException(
+                status_code=422,
+                detail="No columns provided for insert"
+            )
+        
+        # Convert all records' values using PostgreSQL type mapper
+        # Store as dict for safe column-to-value mapping
+        converted_records = []
+        for idx, record in enumerate(records):
+            try:
+                # Get column types for type conversion
+                column_types = await type_mapper.get_column_types(bare_table, schema_part)
+                
+                # Convert each value and store in dict (not list)
+                converted_dict = {}
+                for column_name, value in record.items():
+                    pg_type = column_types.get(column_name)
+                    if pg_type:
+                        converted_dict[column_name] = type_mapper.convert_value(value, pg_type)
+                    else:
+                        # Column not found in metadata - pass through as-is
+                        converted_dict[column_name] = value
+                
+                converted_records.append(converted_dict)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Type conversion failed for record {idx}: {str(e)}"
+                )
+        
+        # Build multi-row INSERT query
+        # Use consistent column order for all rows
+        placeholders_list = []
+        all_values = []
+        value_idx = 1
+        
+        for converted_dict in converted_records:
+            # For this record, build placeholders matching all_columns
+            # Use NULL for missing columns
+            record_placeholders = []
+            for col in all_columns:
+                if col in converted_dict:
+                    record_placeholders.append(f"${value_idx}")
+                    # Safe: get converted value by column name from dict
+                    all_values.append(converted_dict[col])
+                    value_idx += 1
+                else:
+                    # Column not in this record, use NULL
+                    record_placeholders.append("NULL")
+            
+            placeholders_list.append(f"({', '.join(record_placeholders)})")
+        
+        # Build final INSERT query
         query = f"""
-            INSERT INTO {qualified_table} ({', '.join(f'"{c}"' for c in columns)})
-            VALUES ({', '.join(placeholders)})
+            INSERT INTO {qualified_table} ({', '.join(f'"{c}"' for c in all_columns)})
+            VALUES {', '.join(placeholders_list)}
             RETURNING *
         """
-
-        # Insert data with RLS enforcement using converted values
-        result = await enforcer.execute_one(pool, query, *converted_values)
         
-        if not result:
+        logger.info(f"🔍 Bulk INSERT: {len(records)} record(s), {len(all_columns)} column(s), {len(all_values)} value(s)")
+        logger.info(f"🔍 Columns: {all_columns}")
+
+        # Execute INSERT with RLS enforcement
+        # Use execute() for bulk to get all rows
+        results = await enforcer.execute(pool, query, *all_values)
+        
+        if not results:
             raise HTTPException(
                 status_code=403,
                 detail="Insert blocked by row level security policy"
             )
         
-        logger.info(f"Record created in {table_name}: {dict(result).get('id')}")
+        # Verify all records were inserted
+        if len(results) != len(records):
+            logger.error(f"❌ Bulk insert mismatch: expected {len(records)}, got {len(results)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Bulk insert partial failure: {len(results)} of {len(records)} records inserted"
+            )
         
-        # Filter sensitive fields from response
-        return filter_sensitive_fields(dict(result), schema_part)
+        logger.info(f"✅ {len(results)} record(s) created in {table_name}")
+        
+        # Filter sensitive fields from all results
+        filtered_results = [filter_sensitive_fields(dict(r), schema_part) for r in results]
+        
+        # Return format matches request format
+        if is_bulk:
+            return filtered_results
+        else:
+            return filtered_results[0]
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating record in {table_name}: {str(e)}")
+        logger.error(f"Error creating record(s) in {table_name}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
