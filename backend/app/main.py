@@ -110,6 +110,7 @@ app.add_middleware(
         "Cache-Control",
         "Pragma",
         "X-Requested-With",
+        "Prefer",
     ],
     expose_headers=[
         "X-RateLimit-Limit",
