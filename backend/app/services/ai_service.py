@@ -293,13 +293,18 @@ Response:"""
         error_message: str,
         table_schemas: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Explain SQL error and suggest fixes using Groq"""
+        """
+        Explain SQL error and optionally suggest fixes.
+        
+        CRITICAL: This is an EXPLANATION endpoint, not an execution endpoint.
+        It NEVER claims SQL is fixed unless it has been validated/executed.
+        """
         
         schema_context = ""
         if table_schemas:
             schema_context = f"\n\nAvailable Tables:\n{self._build_schema_context(table_schemas)}"
         
-        prompt = f"""A SQL query failed with an error. Explain what went wrong and how to fix it.
+        prompt = f"""A SQL query failed with an error. Explain what went wrong and suggest how to fix it.
 
 SQL Query:
 {sql}
@@ -310,11 +315,14 @@ Error Message:
 
 Provide:
 1. A simple explanation of what caused the error
-2. The specific problem in the query
-3. A corrected version of the query
+2. The specific problem in the query (type, message, location)
+3. A suggested correction (UNVERIFIED - not executed)
 4. Tips to avoid this error in the future
 
-Format your response as JSON with keys: "explanation", "problem", "fixed_sql", "tips" (array of strings)
+IMPORTANT: The suggested correction is UNVERIFIED and has NOT been executed.
+Only suggest corrections that match the actual table schemas provided.
+
+Format your response as JSON with keys: "explanation", "problem" (object with type, message, location), "suggested_sql", "tips" (array of strings)
 
 Response:"""
         
@@ -331,7 +339,7 @@ Response:"""
                         "messages": [
                             {
                                 "role": "system",
-                                "content": "You are a SQL expert that helps debug and fix SQL errors. Return JSON format."
+                                "content": "You are a SQL expert that helps debug SQL errors. Provide explanations and UNVERIFIED suggestions. Never claim a fix is verified unless it has been executed. Return JSON format."
                             },
                             {
                                 "role": "user",
@@ -353,13 +361,36 @@ Response:"""
                 try:
                     content = content.replace("```json", "").replace("```", "").strip()
                     explanation = json.loads(content)
-                except:
+                    
+                    # CRITICAL: Rename any "fixed_sql" to "suggested_sql" to prevent confusion
+                    if "fixed_sql" in explanation:
+                        explanation["suggested_sql"] = explanation.pop("fixed_sql")
+                    
+                    # Ensure problem is an object, not a string
+                    if isinstance(explanation.get("problem"), str):
+                        explanation["problem"] = {
+                            "type": "SQL Error",
+                            "message": explanation["problem"],
+                            "location": "Unknown"
+                        }
+                    
+                    # Add metadata to clarify this is NOT a verified fix
+                    explanation["fix_status"] = "NOT_FIXED"
+                    explanation["suggestion_status"] = "UNVERIFIED"
+                    
+                except Exception as parse_error:
                     # Fallback if not JSON
                     explanation = {
                         "explanation": content,
-                        "problem": "See explanation above",
-                        "fixed_sql": sql,
-                        "tips": ["Check the error message carefully", "Verify table and column names"]
+                        "problem": {
+                            "type": "SQL Error",
+                            "message": error_message,
+                            "location": "See error message"
+                        },
+                        "suggested_sql": None,  # No suggestion if parsing failed
+                        "tips": ["Check the error message carefully", "Verify table and column names"],
+                        "fix_status": "NOT_FIXED",
+                        "suggestion_status": "UNAVAILABLE"
                     }
                 
                 return explanation

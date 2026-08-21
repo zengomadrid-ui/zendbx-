@@ -1,48 +1,182 @@
 // ─── Core Response Shape ────────────────────────────────────────────────────
 
+/**
+ * Standard response envelope for all ZendBX SDK operations
+ * @template T - Type of data returned on success
+ */
 export interface ZendbxResponse<T = unknown> {
+  /** Data payload on success, null on error */
   data: T | null;
+  /** Error details on failure, null on success */
   error: ZendbxError | null;
 }
 
+/**
+ * Error object returned by the ZendBX API
+ */
 export interface ZendbxError {
+  /** Human-readable error message */
   message: string;
+  /** HTTP status code */
   status?: number;
+  /** Additional error context */
   details?: unknown;
+  /** Error code for programmatic handling */
+  code?: string;
+  /** Server-side hint for resolving the error */
+  hint?: string;
 }
+
+// ─── Generic Database Types ─────────────────────────────────────────────────
+
+/**
+ * JSON-compatible primitive value types
+ */
+export type JsonPrimitive = string | number | boolean | null;
+
+/**
+ * Recursive JSON value type
+ */
+export type JsonValue =
+  | JsonPrimitive
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+/**
+ * Generic database row - a record with unknown columns
+ * Use generics for type-safe operations:
+ * 
+ * @example
+ * interface User extends DatabaseRow {
+ *   id: string;
+ *   email: string;
+ *   created_at: string;
+ * }
+ * 
+ * const { data } = await client.from<User>('users').select()
+ */
+export type DatabaseRow = Record<string, unknown>;
 
 // ─── Auth Types ─────────────────────────────────────────────────────────────
 
+/**
+ * Authenticated user object
+ */
 export interface User {
+  /** Unique user identifier */
   id: string;
+  /** User's email address */
   email: string;
+  /** Optional display name */
   name?: string;
+  /** Username (if applicable) */
+  username?: string;
+  /** Authentication provider (e.g., 'email', 'google', 'github') */
+  provider?: string;
+  /** Email verification status */
+  email_verified?: boolean;
+  /** User role */
   role?: string;
+  /** Account creation timestamp */
   created_at?: string;
+  /** Last update timestamp */
+  updated_at?: string;
+  /** Additional user metadata */
   [key: string]: unknown;
 }
 
+/**
+ * Session object containing access token and user info
+ */
 export interface Session {
+  /** JWT access token for authenticated requests */
   access_token: string;
+  /** Refresh token for obtaining new access tokens */
+  refresh_token: string;
+  /** Token type (always 'bearer') */
   token_type: 'bearer';
+  /** Authenticated user */
   user: User;
+  /** Token expiry duration in seconds */
   expires_in: number;
+  /** Token expiration timestamp */
+  expires_at?: number;
 }
 
+/**
+ * Complete authentication state
+ */
 export interface AuthData {
+  /** Current user, null if not authenticated */
   user: User | null;
+  /** Current session, null if not authenticated */
   session: Session | null;
 }
 
+/**
+ * Sign-up credentials
+ */
 export interface SignUpCredentials {
+  /** User's email address */
   email: string;
+  /** Password (minimum 6 characters) */
   password: string;
+  /** Optional display name */
   name?: string;
+  /** Additional metadata */
+  metadata?: Record<string, unknown>;
 }
 
+/**
+ * Sign-in credentials
+ */
 export interface SignInCredentials {
+  /** User's email address */
   email: string;
+  /** Password */
   password: string;
+}
+
+/**
+ * Password reset request
+ */
+export interface PasswordResetRequest {
+  /** Email address for password reset */
+  email: string;
+}
+
+/**
+ * Password reset confirmation
+ */
+export interface PasswordResetConfirm {
+  /** Reset token from email */
+  token: string;
+  /** New password */
+  password: string;
+}
+
+/**
+ * Email verification request
+ */
+export interface EmailVerification {
+  /** Verification token from email */
+  token: string;
+}
+
+/**
+ * User update payload
+ */
+export interface UserUpdatePayload {
+  /** Updated email */
+  email?: string;
+  /** Updated password */
+  password?: string;
+  /** Updated name */
+  name?: string;
+  /** Updated username */
+  username?: string;
+  /** Additional metadata updates */
+  metadata?: Record<string, unknown>;
 }
 
 // Auth state change events
@@ -51,7 +185,13 @@ export type AuthChangeEvent =
   | 'SIGNED_OUT'
   | 'TOKEN_REFRESHED'
   | 'USER_UPDATED'
-  | 'PASSWORD_RECOVERY';
+  | 'PASSWORD_RECOVERY'
+  | 'USER_DELETED';
+
+/**
+ * Auth state change callback function
+ */
+export type AuthCallback = (event: AuthChangeEvent, session: Session | null) => void;
 
 export interface AuthStateSubscription {
   unsubscribe: () => void;
@@ -64,17 +204,108 @@ export interface AuthStateSubscription {
 
 // ─── Query Builder Types ─────────────────────────────────────────────────────
 
-export type FilterOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'like' | 'ilike' | 'in' | 'is';
+/**
+ * PostgREST-compatible filter operators
+ */
+export type FilterOperator = 
+  | 'eq'    // Equal to
+  | 'neq'   // Not equal to
+  | 'gt'    // Greater than
+  | 'gte'   // Greater than or equal
+  | 'lt'    // Less than
+  | 'lte'   // Less than or equal
+  | 'like'  // SQL LIKE pattern match
+  | 'ilike' // Case-insensitive LIKE
+  | 'in'    // Value in array
+  | 'is'    // IS null/true/false
+  | 'not'   // Negation
+  | 'cs'    // Contains (array/JSON)
+  | 'cd'    // Contained by (array/JSON)
+  | 'ov'    // Overlap (array)
+  | 'sl'    // Strictly left of (range)
+  | 'sr'    // Strictly right of (range)
+  | 'nxr'   // Does not extend right of (range)
+  | 'nxl'   // Does not extend left of (range)
+  | 'adj'   // Adjacent to (range)
+  | 'fts'   // Full-text search (tsvector)
+  | 'plfts' // Plain full-text search
+  | 'phfts' // Phrase full-text search
+  | 'wfts'; // Websearch full-text search
 
+/**
+ * Filter condition for query builder
+ */
 export interface QueryFilter {
+  /** Column name */
   column: string;
+  /** Filter operator */
   op: FilterOperator;
+  /** Comparison value */
   value: unknown;
 }
 
+/**
+ * Order direction
+ */
+export type OrderDirection = 'asc' | 'desc';
+
+/**
+ * Order clause for sorting
+ */
 export interface OrderClause {
+  /** Column to order by */
   column: string;
+  /** Sort direction (default: ascending) */
   ascending: boolean;
+  /** NULLS FIRST or NULLS LAST */
+  nullsFirst?: boolean;
+}
+
+/**
+ * Count algorithm for COUNT header
+ */
+export type CountType = 'exact' | 'planned' | 'estimated';
+
+/**
+ * Select options
+ */
+export interface SelectOptions {
+  /** Request row count with specified algorithm */
+  count?: CountType;
+  /** Return single object instead of array */
+  single?: boolean;
+  /** Return single object or null (no error on 0 rows) */
+  maybeSingle?: boolean;
+}
+
+/**
+ * Insert options
+ */
+export interface InsertOptions {
+  /** Return inserted rows */
+  returning?: boolean;
+  /** Columns to return */
+  select?: string;
+  /** Upsert on conflict */
+  onConflict?: string;
+}
+
+/**
+ * Update options
+ */
+export interface UpdateOptions {
+  /** Return updated rows */
+  returning?: boolean;
+  /** Columns to return */
+  select?: string;
+}
+
+/**
+ * Delete options
+ */
+export interface DeleteOptions {
+  /** Return deleted rows */
+  returning?: boolean;
 }
 
 // ─── Project Types ───────────────────────────────────────────────────────────

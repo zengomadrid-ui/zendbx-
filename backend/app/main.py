@@ -110,6 +110,7 @@ app.add_middleware(
         "Cache-Control",
         "Pragma",
         "X-Requested-With",
+        "Prefer",
     ],
     expose_headers=[
         "X-RateLimit-Limit",
@@ -1227,11 +1228,19 @@ app.include_router(team.router, prefix="/api/projects", tags=["team"])
 # Performance Analytics API
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 
+# Data Visualizer API
+from .api import visualizer
+app.include_router(visualizer.router, prefix="/api", tags=["visualizer"])
+
 # Billing & Usage Quotas API
 app.include_router(billing.router, tags=["billing"])
 
 # Admin Quota Management API
 app.include_router(admin_quotas.router, tags=["admin-quotas"])
+
+# Project-Scoped Admin API (service_role operations)
+from .api import project_admin
+app.include_router(project_admin.router, tags=["project-admin"])
 
 # Database Migration API (one-time use)
 app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])

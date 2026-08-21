@@ -43,6 +43,7 @@ SKIP_PREFIXES = [
     "/api/sessions",
     "/api/users",
     "/api/audit",
+    "/api/visualizer",  # Data Visualizer
     "/docs",
     "/openapi.json",
     "/health",

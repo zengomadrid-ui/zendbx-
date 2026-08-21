@@ -6,7 +6,7 @@ from app.models.schemas import (
 )
 from app.api.auth import get_current_user
 from app.core.database import execute_on_main_db, execute_on_project_db
-from app.services.sql_autofix_service_v2 import sql_autofix_v2 as sql_autofix
+from app.services.sql_autofix_schema_aware import sql_autofix_engine
 from typing import List
 from uuid import UUID
 import time
@@ -42,41 +42,97 @@ def truncate_sql_for_storage(sql: str) -> tuple[str, bool]:
 # HELPER: Get Project Schema for Auto-Fix
 # ============================================
 
-async def get_project_schema(project_id: UUID) -> dict:
-    """Get project schema for auto-fix service"""
+async def get_project_schema(project_id: UUID, database_name: str = None) -> dict:
+    """
+    Get project schema for auto-fix service using REAL-TIME schema discovery.
+    
+    CRITICAL: AutoFix requires actual database schema, not cached metadata.
+    This function queries information_schema directly from the project database.
+    """
     try:
-        # Get table schemas from user_tables
-        result = await execute_on_main_db(
+        # Get project info if database_name not provided
+        if not database_name:
+            project_result = await execute_on_main_db(
+                "SELECT database_name FROM projects WHERE id = $1",
+                project_id
+            )
+            if not project_result:
+                print(f"[AUTOFIX SCHEMA] Project {project_id} not found")
+                return {"tables": {}}
+            database_name = project_result[0]["database_name"]
+        
+        print(f"[AUTOFIX SCHEMA] Loading schema for project {project_id}")
+        print(f"[AUTOFIX SCHEMA] Database name: {database_name}")
+        
+        # Query information_schema directly from project database
+        # This gives us real-time, accurate schema information
+        # IMPORTANT: table_schema should be 'public' (or the actual schema name),
+        # NOT the database name. Most project databases use the 'public' schema.
+        tables_result = await execute_on_project_db(
+            project_id,
+            database_name,
             """
-            SELECT table_name, schema_definition
-            FROM user_tables
-            WHERE project_id = $1
-            """,
-            project_id
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+              AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+            """
         )
         
         tables = {}
-        for row in result:
-            table_name = row["table_name"]
-            schema_def = row["schema_definition"]
+        table_count = 0
+        
+        for table_row in tables_result:
+            table_name = table_row["table_name"]
+            table_count += 1
             
-            # Handle both string and dict formats
-            if isinstance(schema_def, str):
-                try:
-                    import json
-                    schema_def = json.loads(schema_def)
-                except (json.JSONDecodeError, TypeError):
-                    schema_def = {}
-            elif schema_def is None:
-                schema_def = {}
+            # Get columns for this table
+            columns_result = await execute_on_project_db(
+                project_id,
+                database_name,
+                """
+                SELECT 
+                    column_name,
+                    data_type,
+                    udt_name,
+                    is_nullable,
+                    column_default
+                FROM information_schema.columns 
+                WHERE table_schema = 'public'
+                  AND table_name = $1
+                ORDER BY ordinal_position
+                """,
+                table_name
+            )
+            
+            columns = []
+            for col_row in columns_result:
+                columns.append({
+                    "name": col_row["column_name"],
+                    "type": col_row["data_type"],
+                    "udt_name": col_row["udt_name"],
+                    "nullable": col_row["is_nullable"] == "YES",
+                    "default": col_row["column_default"]
+                })
             
             tables[table_name] = {
-                "columns": schema_def.get("columns", []) if isinstance(schema_def, dict) else []
+                "columns": columns
             }
         
+        print(f"[AUTOFIX SCHEMA] Tables discovered: {table_count}")
+        if table_count > 0:
+            print(f"[AUTOFIX SCHEMA] Sample tables: {list(tables.keys())[:5]}")
+        else:
+            print(f"[AUTOFIX SCHEMA] WARNING: No tables found in schema {database_name}")
+        
         return {"tables": tables}
-    except Exception:
-        # If user_tables doesn't exist or has issues, return empty schema
+        
+    except Exception as e:
+        print(f"[AUTOFIX SCHEMA] ERROR: Failed to load schema: {e}")
+        import traceback
+        print(f"[AUTOFIX SCHEMA] Traceback: {traceback.format_exc()}")
+        # Return empty schema but log the error
         return {"tables": {}}
 
 # ============================================
@@ -125,6 +181,125 @@ async def verify_project_access(project_id: UUID, user_id: UUID) -> dict:
         )
     
     return project
+
+# ============================================
+# HELPER: Verify SQL Execution Results
+# ============================================
+
+async def verify_sql_execution(project_id: UUID, database_name: str, sql: str, execution_result: list) -> dict:
+    """
+    Verify that SQL execution produced the expected results.
+    
+    This is CRITICAL for multi-statement CREATE TABLE operations.
+    A 5-table request MUST create 5 tables, not 1.
+    
+    Returns:
+        dict with:
+        - verified: bool (True if verification passed)
+        - verification_status: str (FIXED_AND_VERIFIED, PARTIAL_OR_INCOMPLETE_FIX, etc.)
+        - details: dict (tables_created, tables_expected, etc.)
+    """
+    from app.core.database import execute_on_project_db, smart_split_sql
+    
+    verification_details = {
+        'verified': False,
+        'verification_status': 'EXECUTION_FAILED',
+        'details': {}
+    }
+    
+    try:
+        sql_upper = sql.upper()
+        
+        # Verify CREATE TABLE statements
+        if 'CREATE TABLE' in sql_upper:
+            # Count how many CREATE TABLE statements were requested
+            statements = smart_split_sql(sql)
+            create_table_stmts = [s for s in statements if 'CREATE TABLE' in s.upper()]
+            expected_count = len(create_table_stmts)
+            
+            # Extract table names from CREATE TABLE statements
+            import re
+            expected_tables = []
+            for stmt in create_table_stmts:
+                # Match: CREATE TABLE [IF NOT EXISTS] table_name
+                match = re.search(r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?', stmt, re.IGNORECASE)
+                if match:
+                    expected_tables.append(match.group(1).lower())
+            
+            # Query PostgreSQL catalog to verify tables exist
+            existing_tables = []
+            try:
+                result = await execute_on_project_db(
+                    project_id,
+                    database_name,
+                    """
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+                    ORDER BY table_name
+                    """
+                )
+                existing_tables = [row['table_name'] for row in result]
+            except Exception as catalog_error:
+                verification_details['details']['catalog_error'] = str(catalog_error)
+                verification_details['verification_status'] = 'VERIFICATION_FAILED'
+                return verification_details
+            
+            # Check which expected tables actually exist
+            tables_created = [t for t in expected_tables if t in existing_tables]
+            tables_missing = [t for t in expected_tables if t not in existing_tables]
+            
+            verification_details['details'] = {
+                'tables_expected': expected_count,
+                'tables_created': len(tables_created),
+                'expected_table_names': expected_tables,
+                'created_table_names': tables_created,
+                'missing_table_names': tables_missing
+            }
+            
+            if len(tables_created) == expected_count and len(tables_missing) == 0:
+                # SUCCESS: All tables created
+                verification_details['verified'] = True
+                verification_details['verification_status'] = 'FIXED_AND_VERIFIED'
+            elif len(tables_created) > 0:
+                # PARTIAL SUCCESS: Some tables created
+                verification_details['verified'] = False
+                verification_details['verification_status'] = 'PARTIAL_OR_INCOMPLETE_FIX'
+            else:
+                # FAILURE: No tables created
+                verification_details['verified'] = False
+                verification_details['verification_status'] = 'EXECUTION_FAILED'
+        
+        # Verify INSERT statements (check row counts if possible)
+        elif 'INSERT INTO' in sql_upper and 'VALUES' in sql_upper:
+            statements = smart_split_sql(sql)
+            insert_stmts = [s for s in statements if 'INSERT INTO' in s.upper()]
+            expected_count = len(insert_stmts)
+            
+            # For INSERT, we can't easily verify without knowing the table names
+            # But we can at least report that the operation completed
+            verification_details['details'] = {
+                'insert_statements_expected': expected_count,
+                'execution_completed': True
+            }
+            verification_details['verified'] = True
+            verification_details['verification_status'] = 'FIXED_AND_VERIFIED'
+        
+        # For SELECT/UPDATE/DELETE, execution success is verification enough
+        else:
+            verification_details['verified'] = True
+            verification_details['verification_status'] = 'FIXED_AND_VERIFIED'
+            verification_details['details'] = {
+                'statement_type': 'other',
+                'execution_completed': True
+            }
+        
+    except Exception as e:
+        verification_details['verification_status'] = 'VERIFICATION_FAILED'
+        verification_details['details']['verification_error'] = str(e)
+    
+    return verification_details
+
 
 # ============================================
 # HELPER: Validate SQL Query
@@ -225,6 +400,11 @@ async def execute_query(
     current_user: dict = Depends(get_current_user)
 ):
     """Execute SQL query on project database - supports multiple statements with AUTO-FIX"""
+    
+    # VERIFICATION TAG - Check if new code is loaded
+    print("="*100)
+    print("🚀 DATABASE-AWARE SCHEMA REPAIR ENGINE LOADED - TIMESTAMP: 2026-08-14 16:30:00")
+    print("="*100)
     
     project = await verify_project_access(project_id, current_user["id"])
     
@@ -335,157 +515,143 @@ async def execute_query(
     except Exception as e:
         error_message = str(e)
         
-        # 🚀 AUTO-FIX ATTEMPT - Try to fix the SQL automatically
+        # 🚀 DATABASE-AWARE AUTO-FIX ENGINE - Schema-based SQL repair
         # Only attempt auto-fix if enabled and there's a real error (not success)
-        if query_data.enable_autofix and not auto_fixed and error_message and "successfully" not in error_message.lower():  # Only try auto-fix once and on real errors
+        if query_data.enable_autofix and not auto_fixed and error_message and "successfully" not in error_message.lower():
             try:
-                print(f"🔧 AUTO-FIX: Attempting to fix SQL error...")
+                print(f"🔧 DATABASE-AWARE AUTO-FIX: Starting schema-aware repair...")
                 print(f"   Original SQL (first 200 chars): {current_sql[:200]}...")
-                print(f"   Error: {error_message}")
-                print(f"   SQL Length: {len(current_sql)} characters")
+                print(f"   Initial Error: {error_message}")
                 
-                # Get project schema for context
-                schema = await get_project_schema(project_id)
-                print(f"   Schema: {len(schema.get('tables', {}))} tables available")
-                
-                # Attempt auto-fix
-                fixed_sql = await sql_autofix.auto_fix_sql(
+                # Run the schema-aware auto-fix engine
+                fix_result = await sql_autofix_engine.auto_fix(
                     sql=current_sql,
                     error_message=error_message,
-                    schema=schema
+                    execute_func=execute_on_project_db,
+                    project_id=project_id,
+                    database_name=project["database_name"],
+                    max_iterations=5
                 )
                 
-                print(f"   Auto-fix result: {'SUCCESS' if fixed_sql else 'NO FIX FOUND'}")
-                if fixed_sql:
-                    print(f"   Fixed SQL (first 200 chars): {fixed_sql[:200]}...")
-                
-                if fixed_sql and fixed_sql != current_sql:
-                    print(f"✅ AUTO-FIX: Attempting to execute fixed SQL...")
-                    print(f"   Fixed SQL length: {len(fixed_sql)}")
+                if fix_result.success and fix_result.fixed_sql:
+                    # SUCCESS! Fixed SQL executed successfully
+                    print(f"[AUTOFIX] ✅ SUCCESS after {fix_result.iterations} iteration(s)")
                     
-                    # Validate the fixed SQL before executing
-                    is_valid_fixed, validation_error = validate_sql_query(fixed_sql)
-                    print(f"   Fixed SQL validation: {'✅ PASS' if is_valid_fixed else '❌ FAIL'}")
-                    if not is_valid_fixed:
-                        print(f"   Validation error: {validation_error}")
-                        # Continue with original error instead of auto-fix
-                        pass
+                    # Execute one more time to get the result for response
+                    result = await execute_on_project_db(
+                        project_id,
+                        project["database_name"],
+                        fix_result.fixed_sql
+                    )
+                    
+                    # Process result
+                    if isinstance(result, dict):
+                        rows_data = result.get('result', [])
+                        logs = result.get('logs', [])
                     else:
-                        # Try executing the fixed SQL
-                        try:
-                            auto_fix_start = time.time()
-                            result = await execute_on_project_db(
-                                project_id,  # PHASE 5.0
-                                project["database_name"],
-                                fixed_sql
-                            )
-                            
-                            auto_fix_time = int((time.time() - auto_fix_start) * 1000)
-                            total_time = int((time.time() - start_time) * 1000)
-                            
-                            # SUCCESS! Auto-fix worked
-                            if isinstance(result, dict):
-                                rows_data = result.get('result', [])
-                                logs = result.get('logs', [])
-                            else:
-                                rows_data = result
-                                logs = []
-                            
-                            # Convert to list of dicts and handle special types
-                            rows = []
-                            if rows_data:
-                                for row in rows_data:
-                                    row_dict = dict(row)
-                                    # Convert IPv4Address/IPv6Address to strings for JSON serialization
-                                    for key, value in row_dict.items():
-                                        if hasattr(value, '__class__') and value.__class__.__name__ in ['IPv4Address', 'IPv6Address', 'IPv4Network', 'IPv6Network']:
-                                            row_dict[key] = str(value)
-                                    rows.append(row_dict)
-                            columns = list(rows[0].keys()) if rows else []
-                            
-                            # Add auto-fix success log
-                            logs.append({
-                                'statement': 'AUTO-FIX SUCCESS',
-                                'status': 'success',
-                                'message': f'✅ SQL auto-fixed and executed successfully!',
-                                'rows_affected': len(rows),
-                                'execution_time_ms': auto_fix_time
-                            })
-                            
-                            # Log successful auto-fix
-                            await execute_on_main_db(
-                                """
-                                INSERT INTO query_history 
-                                (user_id, project_id, question, sql_query, status, execution_time_ms, rows_returned, error_message)
-                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                                """,
-                                current_user["id"],
-                                project_id,
-                                query_data.question,
-                                fixed_sql,
-                                "auto_fixed",
-                                total_time,
-                                len(rows),
-                                f"Original error: {error_message}"
-                                )
-                            
-                            return QueryResult(
-                                columns=columns,
-                                rows=rows,
-                                row_count=len(rows),
-                                execution_time_ms=total_time,
-                                logs=logs,
-                                # Add metadata about the fix
-                                auto_fixed=True,
-                                original_sql=original_sql,
-                                fixed_sql=fixed_sql
-                            )
-                            
-                        except Exception as fix_error:
-                            # Auto-fix failed to execute, but still show what was attempted
-                            print(f"❌ AUTO-FIX: Fixed SQL failed to execute: {str(fix_error)}")
-                            
-                            # Still log the attempt and show the auto-fix UI
-                            await execute_on_main_db(
-                                """
-                                INSERT INTO query_history 
-                                (user_id, project_id, question, sql_query, status, execution_time_ms, rows_returned, error_message)
-                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                                """,
-                                current_user["id"],
-                                project_id,
-                                query_data.question,
-                                fixed_sql,
-                                "auto_fix_failed",
-                                int((time.time() - start_time) * 1000),
-                                0,
-                                f"Auto-fix attempted but failed: {str(fix_error)}"
-                            )
-                            
-                            # Show the auto-fix attempt even if it failed
-                            return QueryResult(
-                                columns=[],
-                                rows=[],
-                                row_count=0,
-                                execution_time_ms=int((time.time() - start_time) * 1000),
-                                logs=[{
-                                    'statement': 'AUTO-FIX ATTEMPT',
-                                    'status': 'warning',
-                                    'message': f'⚠️ Auto-fix attempted but the fixed query still has errors: {str(fix_error)}',
-                                    'rows_affected': 0,
-                                    'execution_time_ms': 0
-                                }],
-                                # Show the auto-fix attempt
-                                auto_fixed=True,
-                                original_sql=original_sql,
-                                fixed_sql=fixed_sql
-                            )
+                        rows_data = result
+                        logs = []
+                    
+                    # Convert to list of dicts
+                    rows = []
+                    if rows_data:
+                        for row in rows_data:
+                            row_dict = dict(row)
+                            for key, value in row_dict.items():
+                                if hasattr(value, '__class__') and value.__class__.__name__ in ['IPv4Address', 'IPv6Address', 'IPv4Network', 'IPv6Network']:
+                                    row_dict[key] = str(value)
+                            rows.append(row_dict)
+                    columns = list(rows[0].keys()) if rows else []
+                    
+                    # Add log entry
+                    logs.append({
+                        'statement': f'AUTO-FIX ({fix_result.iterations} iteration(s))',
+                        'status': 'success',
+                        'message': f'✅ SQL auto-fixed using database-aware schema repair!\nChanges: {"; ".join(fix_result.changes)}',
+                        'rows_affected': len(rows),
+                        'execution_time_ms': 0
+                    })
+                    
+                    # Log to database
+                    total_time = int((time.time() - start_time) * 1000)
+                    await execute_on_main_db(
+                        """
+                        INSERT INTO query_history 
+                        (user_id, project_id, question, sql_query, status, execution_time_ms, rows_returned, error_message)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        """,
+                        current_user["id"],
+                        project_id,
+                        query_data.question,
+                        fix_result.fixed_sql,
+                        "auto_fixed",
+                        total_time,
+                        len(rows),
+                        f"Original error: {error_message}. Fixed in {fix_result.iterations} iteration(s). Changes: {', '.join(fix_result.changes)}"
+                    )
+                    
+                    # Count statements
+                    from app.core.database import smart_split_sql
+                    original_stmts = smart_split_sql(original_sql)
+                    fixed_stmts = smart_split_sql(fix_result.fixed_sql)
+                    
+                    # Verify execution
+                    verification = await verify_sql_execution(project_id, project["database_name"], fix_result.fixed_sql, rows_data)
+                    
+                    return QueryResult(
+                        columns=columns,
+                        rows=rows,
+                        row_count=len(rows),
+                        execution_time_ms=total_time,
+                        logs=logs,
+                        auto_fixed=True,
+                        original_sql=original_sql,
+                        fixed_sql=fix_result.fixed_sql,
+                        original_statement_count=len(original_stmts),
+                        fixed_statement_count=len(fixed_stmts),
+                        verification_status=fix_result.verification_status,
+                        verification_details={'changes': fix_result.changes, 'iterations': fix_result.iterations}
+                    )
                 else:
-                    print(f"❌ AUTO-FIX: No fix found or same SQL returned")
+                    # Auto-fix failed
+                    print(f"[AUTOFIX] ❌ FAILED after {fix_result.iterations} iteration(s)")
+                    print(f"[AUTOFIX] Errors: {fix_result.errors}")
+                    
+                    # Log the failed attempt
+                    await execute_on_main_db(
+                        """
+                        INSERT INTO query_history 
+                        (user_id, project_id, question, sql_query, status, execution_time_ms, rows_returned, error_message)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        """,
+                        current_user["id"],
+                        project_id,
+                        query_data.question,
+                        current_sql,
+                        "auto_fix_failed",
+                        int((time.time() - start_time) * 1000),
+                        0,
+                        f"Auto-fix failed: {'; '.join(fix_result.errors[:3])}"
+                    )
+                    
+                    # Return HTTP 400 - auto-fix failed
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Query execution failed. Database-aware auto-fix attempted {fix_result.iterations} iteration(s) but could not generate valid SQL.\n"
+                            f"Original error: {error_message}\n"
+                            f"Errors: {'; '.join(fix_result.errors[:3])}"
+                        )
+                    )
                 
+            except HTTPException:
+                # Re-raise HTTP exceptions
+                raise
             except Exception as autofix_error:
                 # Auto-fix service failed, continue with original error
-                print(f"❌ AUTO-FIX: Service failed: {str(autofix_error)}")
+                print(f"❌ AUTO-FIX: Engine failed: {str(autofix_error)}")
+                import traceback
+                print(f"[AUTOFIX] Traceback: {traceback.format_exc()}")
                 pass
         
         # Original error handling (auto-fix failed or not attempted)

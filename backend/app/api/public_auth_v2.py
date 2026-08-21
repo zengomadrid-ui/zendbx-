@@ -133,6 +133,14 @@ async def login_options(project_slug: str):
 async def get_user_options(project_slug: str):
     return Response(status_code=200)
 
+@router.options(Routes.AUTH_REFRESH)
+async def refresh_options(project_slug: str):
+    return Response(status_code=200)
+
+@router.options(Routes.AUTH_LOGOUT)
+async def logout_options(project_slug: str):
+    return Response(status_code=200)
+
 
 # ── Signup ────────────────────────────────────────────────────────────────────
 
@@ -212,6 +220,10 @@ async def signup(project_slug: str, request_data: SignUpRequest):
             
             user_dict = dict(user)
             logger.info(f"✅ Signup: {user_dict['email']} (username: {user_dict['username']}) in schema '{schema}'")
+            
+            # Generate refresh token (still in same connection context)
+            from ..core.security import create_refresh_token
+            refresh_token = await create_refresh_token(conn, str(user_dict['id']), str(project_id))
 
         # Generate JWT access token
         access_token = generate_jwt(
@@ -219,8 +231,14 @@ async def signup(project_slug: str, request_data: SignUpRequest):
             project['jwt_secret'], project.get('slug')
         )
 
+        # Calculate expires_in (7 days in seconds)
+        expires_in = 7 * 24 * 60 * 60  # 7 days = 604800 seconds
+
         return {
             "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_in": expires_in,
             "user": {
                 "id": str(user_dict['id']),
                 "email": user_dict['email'],
@@ -342,15 +360,25 @@ async def login(project_slug: str, request_data: SignInRequest):
             """, user['id'], project_id)
 
             logger.info(f"✅ Login: {user['email']} in schema '{schema}' (auth.users)")
+            
+            # Generate refresh token (still in same connection context)
+            from ..core.security import create_refresh_token
+            refresh_token = await create_refresh_token(conn, str(user['id']), str(project_id))
 
         # Generate JWT access token
         access_token = generate_jwt(
             user['id'], project_id, user['email'], 
             project['jwt_secret'], project.get('slug')
         )
+        
+        # Calculate expires_in (7 days in seconds)
+        expires_in = 7 * 24 * 60 * 60  # 7 days = 604800 seconds
 
         return {
             "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_in": expires_in,
             "user": {
                 "id": str(user['id']),
                 "email": user['email'],
@@ -446,3 +474,160 @@ async def get_user(project_slug: str, authorization: str = Header(None)):
         "created_at": user['created_at'].isoformat() if user['created_at'] else None,
         "last_login_at": user['last_login_at'].isoformat() if user['last_login_at'] else None
     }
+
+
+# ── Refresh Token ─────────────────────────────────────────────────────────────
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post(Routes.AUTH_REFRESH)
+async def refresh(project_slug: str, request_data: RefreshRequest):
+    """
+    Refresh access token using refresh token (project-scoped).
+    Implements token rotation - old refresh token is revoked and new one issued.
+    """
+    import hashlib
+    
+    try:
+        project = await get_project_by_slug(project_slug)
+        project_id = project['id']
+        schema = project['database_name']
+        
+        token_hash = hashlib.sha256(request_data.refresh_token.encode()).hexdigest()
+        
+        pool = await get_main_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(f'SET search_path TO "{schema}", public, auth')
+            await set_rls_context(conn, user_id=None, role='service_role')
+            
+            # Verify refresh token (project-scoped)
+            token_record = await conn.fetchrow("""
+                SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked,
+                       u.email, u.username, u.provider, u.email_verified,
+                       u.is_active, u.avatar_url, u.metadata, u.created_at
+                FROM auth.refresh_tokens rt
+                JOIN auth.users u ON rt.user_id = u.id
+                WHERE rt.token_hash = $1 AND rt.project_id = $2
+            """, token_hash, project_id)
+            
+            if not token_record:
+                logger.warning(f"❌ Project refresh failed - invalid token for project: {project_slug}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired refresh token"
+                )
+            
+            # Check if revoked
+            if token_record["revoked"]:
+                logger.warning(f"❌ Project refresh failed - token revoked: {token_record['email']}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token has been revoked"
+                )
+            
+            # Check if expired
+            if datetime.utcnow() > token_record["expires_at"].replace(tzinfo=None):
+                logger.warning(f"❌ Project refresh failed - token expired: {token_record['email']}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token has expired"
+                )
+            
+            # Check if user is active
+            if not token_record["is_active"]:
+                logger.warning(f"❌ Project refresh failed - user inactive: {token_record['email']}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User account is not active"
+                )
+            
+            # Generate new JWT
+            access_token = generate_jwt(
+                token_record["user_id"], project_id, token_record["email"],
+                project['jwt_secret'], project.get('slug')
+            )
+            
+            # Revoke old refresh token (token rotation)
+            await conn.execute(
+                "UPDATE auth.refresh_tokens SET revoked = TRUE, updated_at = NOW() WHERE id = $1",
+                token_record["id"]
+            )
+            
+            # Generate new refresh token
+            from ..core.security import create_refresh_token
+            new_refresh_token = await create_refresh_token(conn, str(token_record["user_id"]), str(project_id))
+            
+            logger.info(f"✅ Project token refreshed for user: {token_record['email']}")
+        
+        # Calculate expires_in (7 days in seconds)
+        expires_in = 7 * 24 * 60 * 60  # 7 days = 604800 seconds
+        
+        return {
+            "access_token": access_token,
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+            "expires_in": expires_in,
+            "user": {
+                "id": str(token_record['user_id']),
+                "email": token_record['email'],
+                "username": token_record['username'],
+                "provider": token_record['provider'],
+                "email_verified": token_record['email_verified'],
+                "avatar_url": token_record['avatar_url'],
+                "metadata": parse_metadata(token_record['metadata']),
+                "created_at": token_record['created_at'].isoformat() if token_record['created_at'] else None
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Project refresh error: {type(e).__name__}: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unable to refresh token. Please login again."
+        )
+
+
+# ── Logout ────────────────────────────────────────────────────────────────────
+
+@router.post(Routes.AUTH_LOGOUT)
+async def logout(project_slug: str, authorization: str = Header(None), refresh_token: str = None):
+    """
+    Logout user and revoke refresh token (project-scoped).
+    """
+    import hashlib
+    
+    try:
+        if not refresh_token:
+            return {"message": "Logged out successfully"}
+        
+        project = await get_project_by_slug(project_slug)
+        project_id = project['id']
+        schema = project['database_name']
+        
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        
+        pool = await get_main_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(f'SET search_path TO "{schema}", public, auth')
+            await set_rls_context(conn, user_id=None, role='service_role')
+            
+            # Revoke refresh token
+            await conn.execute("""
+                UPDATE auth.refresh_tokens 
+                SET revoked = TRUE, updated_at = NOW()
+                WHERE token_hash = $1 AND project_id = $2
+            """, token_hash, project_id)
+            
+            logger.info(f"✅ Project refresh token revoked for project: {project_slug}")
+        
+        return {"message": "Logged out successfully"}
+        
+    except Exception as e:
+        logger.error(f"❌ Logout error: {str(e)}")
+        # Return success even if revocation fails (client-side logout still works)
+        return {"message": "Logged out successfully"}

@@ -231,7 +231,19 @@ async def explain_error(
     request: dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Explain SQL error and suggest fixes"""
+    """
+    Explain SQL error and optionally suggest fixes.
+    
+    CRITICAL: This is an EXPLANATION endpoint.
+    - It does NOT execute SQL
+    - It does NOT verify suggestions
+    - It does NOT claim corrections are fixed
+    
+    Only the real AutoFix pipeline can set:
+    - fixed_sql
+    - auto_fixed=True  
+    - verification_status=FIXED_AND_VERIFIED
+    """
     
     await verify_project_access(project_id, current_user["id"])
     
@@ -254,13 +266,16 @@ async def explain_error(
             table_schemas=table_schemas
         )
         
+        # Return explanation with clear distinction between explanation and suggestion
         return {
             "sql": sql,
             "error": error_message,
             "explanation": result.get("explanation", ""),
-            "problem": result.get("problem", ""),
-            "fixed_sql": result.get("fixed_sql", ""),
-            "tips": result.get("tips", [])
+            "problem": result.get("problem", {"type": "SQL Error", "message": error_message}),
+            "suggested_sql": result.get("suggested_sql"),  # UNVERIFIED suggestion
+            "tips": result.get("tips", []),
+            "fix_status": result.get("fix_status", "NOT_FIXED"),
+            "suggestion_status": result.get("suggestion_status", "UNVERIFIED")
         }
         
     except Exception as e:
@@ -307,9 +322,22 @@ async def auto_fix_sql(
         )
     
     try:
-        # Get project schema for context
+        # Get project info for database name
+        from app.core.database import execute_on_main_db
+        project_result = await execute_on_main_db(
+            "SELECT database_name FROM projects WHERE id = $1",
+            project_id
+        )
+        if not project_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        database_name = project_result[0]["database_name"]
+        
+        # Get project schema for context (REAL-TIME discovery)
         from app.api.queries import get_project_schema
-        schema = await get_project_schema(project_id)
+        schema = await get_project_schema(project_id, database_name)
         
         # Import auto-fix service
         from app.services.sql_autofix_service_v2 import sql_autofix_v2 as sql_autofix

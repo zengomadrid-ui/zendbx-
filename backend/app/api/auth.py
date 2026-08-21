@@ -191,6 +191,20 @@ async def signup(request: Request, raw_data: dict, background_tasks: BackgroundT
                 detail="Unable to complete registration. Please try again."
             )
         
+        # Generate refresh token
+        try:
+            from app.core.security import create_refresh_token
+            pool = await get_main_db_pool()
+            async with pool.acquire() as conn:
+                refresh_token = await create_refresh_token(conn, str(user_dict["id"]), project_id=None)
+            logger.info(f"✅ Refresh token created for: {user_dict['email']}")
+        except Exception as e:
+            logger.error(f"❌ Refresh token creation failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Unable to complete registration. Please try again."
+            )
+        
         # Schedule welcome email in background (never blocks signup)
         background_tasks.add_task(
             send_welcome_email_background,
@@ -202,8 +216,14 @@ async def signup(request: Request, raw_data: dict, background_tasks: BackgroundT
         
         logger.info(f"🎉 Signup successful for: {user_dict['email']} from IP: {client_ip}")
         
+        # Get token expiration from settings
+        from app.core.config import settings
+        expires_in = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert minutes to seconds
+        
         return Token(
             access_token=access_token,
+            refresh_token=refresh_token,
+            expires_in=expires_in,
             user=UserResponse(**user_dict)
         )
         
@@ -427,13 +447,26 @@ async def login(request: Request, raw_data: dict):
             "role": user.get("role", "user")
         })
         
+        # Generate refresh token
+        from app.core.security import create_refresh_token
+        from app.core.database import get_main_db_pool
+        pool = await get_main_db_pool()
+        async with pool.acquire() as conn:
+            refresh_token = await create_refresh_token(conn, str(user["id"]), project_id=None)
+        
         # Remove password_hash from response
         user.pop("password_hash")
         
         logger.info(f"🎉 Login successful for: {user['email']} from IP: {client_ip}")
         
+        # Get token expiration from settings
+        from app.core.config import settings as config_settings
+        expires_in = config_settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert minutes to seconds
+        
         return Token(
             access_token=access_token,
+            refresh_token=refresh_token,
+            expires_in=expires_in,
             user=UserResponse(**user)
         )
         
@@ -548,12 +581,161 @@ async def update_profile(
 # ============================================
 
 @router.post("/logout", response_model=MessageResponse)
-async def logout(current_user: dict = Depends(get_current_user)):
-    """Logout user (client should remove token)"""
+async def logout(
+    current_user: dict = Depends(get_current_user),
+    refresh_token: Optional[str] = None
+):
+    """
+    Logout user and revoke refresh token if provided.
+    Client should also remove token from storage.
+    """
+    if refresh_token:
+        import hashlib
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        
+        try:
+            await execute_on_main_db(
+                """
+                UPDATE auth.refresh_tokens 
+                SET revoked = TRUE, updated_at = NOW()
+                WHERE token_hash = $1 AND user_id = $2
+                """,
+                token_hash, current_user["id"]
+            )
+            logger.info(f"✅ Refresh token revoked for user: {current_user['email']}")
+        except Exception as e:
+            logger.error(f"❌ Error revoking refresh token: {str(e)}")
+    
     return MessageResponse(
         message="Logged out successfully",
         success=True
     )
+
+# ============================================
+# REFRESH TOKEN
+# ============================================
+
+@router.post("/refresh", response_model=Token)
+async def refresh(raw_data: dict):
+    """
+    Refresh access token using refresh token.
+    Implements token rotation - old refresh token is revoked and new one issued.
+    """
+    from app.models.schemas import RefreshTokenRequest
+    from app.core.security import create_refresh_token
+    import hashlib
+    
+    try:
+        # Validate request
+        try:
+            refresh_request = RefreshTokenRequest(**raw_data)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid request format"
+            )
+        
+        token_hash = hashlib.sha256(refresh_request.refresh_token.encode()).hexdigest()
+        
+        # Verify refresh token
+        result = await execute_on_main_db(
+            """
+            SELECT rt.id, rt.user_id, rt.expires_at, rt.revoked,
+                   u.id as uid, u.email, u.full_name, u.avatar_url, 
+                   u.is_active, u.is_verified, u.plan, u.role, u.created_at
+            FROM auth.refresh_tokens rt
+            JOIN users u ON rt.user_id = u.id
+            WHERE rt.token_hash = $1 AND rt.project_id IS NULL
+            """,
+            token_hash
+        )
+        
+        if not result:
+            logger.warning("❌ Refresh failed - invalid token")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired refresh token"
+            )
+        
+        token_data = dict(result[0])
+        
+        # Check if revoked
+        if token_data["revoked"]:
+            logger.warning(f"❌ Refresh failed - token revoked for user: {token_data['email']}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has been revoked"
+            )
+        
+        # Check if expired
+        if datetime.utcnow() > token_data["expires_at"].replace(tzinfo=None):
+            logger.warning(f"❌ Refresh failed - token expired for user: {token_data['email']}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has expired"
+            )
+        
+        # Check if user is active
+        if not token_data["is_active"]:
+            logger.warning(f"❌ Refresh failed - user inactive: {token_data['email']}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is not active"
+            )
+        
+        # Generate new access token
+        access_token = create_access_token({
+            "sub": str(token_data["user_id"]),
+            "email": token_data["email"],
+            "role": token_data.get("role", "user")
+        })
+        
+        # Revoke old refresh token (token rotation)
+        await execute_on_main_db(
+            "UPDATE auth.refresh_tokens SET revoked = TRUE, updated_at = NOW() WHERE id = $1",
+            token_data["id"]
+        )
+        
+        # Generate new refresh token
+        from app.core.database import get_main_db_pool
+        pool = await get_main_db_pool()
+        async with pool.acquire() as conn:
+            new_refresh_token = await create_refresh_token(conn, str(token_data["user_id"]), project_id=None)
+        
+        logger.info(f"✅ Token refreshed for user: {token_data['email']}")
+        
+        # Build user response
+        user_dict = {
+            "id": token_data["uid"],
+            "email": token_data["email"],
+            "full_name": token_data["full_name"],
+            "avatar_url": token_data["avatar_url"],
+            "is_active": token_data["is_active"],
+            "is_verified": token_data["is_verified"],
+            "plan": token_data["plan"],
+            "role": token_data["role"],
+            "created_at": token_data["created_at"]
+        }
+        
+        # Get token expiration from settings
+        from app.core.config import settings as config_settings
+        expires_in = config_settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        
+        return Token(
+            access_token=access_token,
+            refresh_token=new_refresh_token,
+            expires_in=expires_in,
+            user=UserResponse(**user_dict)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in refresh: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unable to refresh token. Please login again."
+        )
 
 # ============================================
 # FORGOT PASSWORD
