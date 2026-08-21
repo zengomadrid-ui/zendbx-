@@ -24,6 +24,7 @@ export interface User {
 
 export interface Session {
   access_token: string;
+  refresh_token: string;
   token_type: 'bearer';
   user: User;
   expires_in: number;

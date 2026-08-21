@@ -252,6 +252,38 @@ def create_access_token(subject: Union[str, dict], expires_delta: Optional[timed
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
+
+async def create_refresh_token(conn, user_id: str, project_id: Optional[str] = None) -> str:
+    """
+    Generate a secure refresh token and store it in database.
+    
+    Args:
+        conn: Database connection
+        user_id: User UUID
+        project_id: Optional project UUID for project-scoped tokens
+    
+    Returns:
+        str: Refresh token (secure random string)
+    """
+    import secrets
+    from datetime import timedelta
+    
+    # Generate secure random token
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    expires_at = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    
+    # Store in auth.refresh_tokens table
+    await conn.execute(
+        """
+        INSERT INTO auth.refresh_tokens (user_id, token_hash, expires_at, project_id)
+        VALUES ($1, $2, $3, $4)
+        """,
+        user_id, token_hash, expires_at, project_id
+    )
+    
+    return token
+
 def decode_access_token(token: str) -> Optional[dict]:
     """Decode JWT access token"""
     try:

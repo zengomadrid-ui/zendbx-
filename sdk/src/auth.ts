@@ -62,7 +62,13 @@ export class AuthModule {
    */
   async signUp(credentials: SignUpCredentials): Promise<ZendbxResponse<AuthData>> {
     const { email, password, name } = credentials;
-    const result = await this.http.request<{ access_token: string; user: User }>(
+    const result = await this.http.request<{ 
+      access_token: string; 
+      refresh_token: string;
+      token_type: string;
+      expires_in: number;
+      user: User 
+    }>(
       this.routes.auth.signup(),
       {
         method: 'POST',
@@ -81,7 +87,13 @@ export class AuthModule {
    *   const { data, error } = await client.auth.signIn({ email, password })
    */
   async signIn(credentials: SignInCredentials): Promise<ZendbxResponse<AuthData>> {
-    const result = await this.http.request<{ access_token: string; user: User }>(
+    const result = await this.http.request<{ 
+      access_token: string; 
+      refresh_token: string;
+      token_type: string;
+      expires_in: number;
+      user: User 
+    }>(
       this.routes.auth.login(),
       { method: 'POST', body: credentials, allowAnon: true },
     );
@@ -124,6 +136,7 @@ export class AuthModule {
       data: {
         session: {
           access_token: this.http.token!,
+          refresh_token: '', // No refresh token available from getSession
           token_type: 'bearer',
           user: data.user,
           expires_in: 604800,
@@ -138,6 +151,27 @@ export class AuthModule {
     this.http.clearToken();
     this._emit('SIGNED_OUT', null);
     return { data: null, error: null };
+  }
+
+  /** Refresh the current session with a refresh token. */
+  async refreshSession(refreshToken: string): Promise<ZendbxResponse<AuthData>> {
+    const result = await this.http.request<{ 
+      access_token: string; 
+      refresh_token: string;
+      token_type: string;
+      expires_in: number;
+      user: User 
+    }>(
+      this.routes.auth.refresh(),
+      {
+        method: 'POST',
+        body: { refresh_token: refreshToken },
+        allowAnon: true,
+      },
+    );
+    const auth = this._toAuthData(result);
+    if (auth.data?.session) this._emit('TOKEN_REFRESHED', auth.data.session);
+    return auth;
   }
 
   /** Request a password reset email. */
@@ -168,7 +202,7 @@ export class AuthModule {
     });
     if (result.data) {
       const session = this.http.token
-        ? { access_token: this.http.token, token_type: 'bearer' as const, user: result.data, expires_in: 604800 }
+        ? { access_token: this.http.token, refresh_token: '', token_type: 'bearer' as const, user: result.data, expires_in: 604800 }
         : null;
       this._emit('USER_UPDATED', session);
     }
@@ -207,6 +241,7 @@ export class AuthModule {
     if (!this.http.token) return null;
     return {
       access_token: this.http.token,
+      refresh_token: '', // No refresh token available in local session
       token_type: 'bearer',
       user: { id: '', email: '' },
       expires_in: 604800,
@@ -214,16 +249,22 @@ export class AuthModule {
   }
 
   private _toAuthData(
-    result: ZendbxResponse<{ access_token: string; user: User }>,
+    result: ZendbxResponse<{ 
+      access_token: string; 
+      refresh_token: string;
+      token_type: string;
+      expires_in: number;
+      user: User 
+    }>,
   ): ZendbxResponse<AuthData> {
     if (result.error) return { data: null, error: result.error };
-    const { access_token, user } = result.data!;
+    const { access_token, refresh_token, token_type, expires_in, user } = result.data!;
     if (access_token) this.http.setToken(access_token);
     return {
       data: {
         user,
         session: access_token
-          ? { access_token, token_type: 'bearer', user, expires_in: 604800 }
+          ? { access_token, refresh_token, token_type: token_type as 'bearer', user, expires_in }
           : null,
       },
       error: null,
