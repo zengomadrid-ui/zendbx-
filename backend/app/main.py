@@ -1238,6 +1238,10 @@ app.include_router(billing.router, tags=["billing"])
 # Admin Quota Management API
 app.include_router(admin_quotas.router, tags=["admin-quotas"])
 
+# Project-Scoped Admin API (service_role operations)
+from .api import project_admin
+app.include_router(project_admin.router, tags=["project-admin"])
+
 # Database Migration API (one-time use)
 app.include_router(run_migration.router, prefix="/api/admin", tags=["admin"])
 
